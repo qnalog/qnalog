@@ -46,8 +46,8 @@ export interface LiveAsrPipelineHost {
   updateQueueTask(id: string, patch: Partial<QueueTask>): Promise<void>;
   removeQueueTask(id: string): Promise<void>;
   removeLiveTranscriptBlock(mdPath: string, sessionId: string): Promise<void>;
-  /** 完整母带保存成功后删除该场次的增量分片；savedPath 为已保存的母带路径。 */
-  discardMasterPartials(sessionId: string, savedPath: string): Promise<void>;
+  /** 用已成功写入的母带字节数校验目标后清理该场次的增量分片。 */
+  discardMasterPartials(sessionId: string, savedPath: string, savedBytes: number): Promise<void>;
   getRecorderBufferSummary(): { masterChunkCount: number; masterChunkBytes: number; currentSegmentChunkCount: number; currentSegmentChunkBytes: number };
   syncImportBusyFromSessionProgress(session: RecordingSession): void;
   requestOutlineRefresh(): void;
@@ -435,11 +435,14 @@ export class LiveAsrPipelineService implements LiveAsrPipeline {
       if (!target) throw new Error(t("Could not build a path for the full recording file"));
       const ab = await seg.masterBlob.arrayBuffer();
       await this.host.vault.createBinary(target, ab);
+      // 用刚写入的字节数核对母带；不匹配时保留增量分片并停止引用该目标。
+      try { await this.host.discardMasterPartials(session.id, target, ab.byteLength); }
+      catch (e) {
+        console.error("[QnALog] verify saved master audio failed", e);
+        return;
+      }
       session.masterAudioPath = target;
       session.masterAudioName = target.split("/").pop() || target;
-      // 完整母带已落盘，增量分片不再需要；删除失败只影响清理，不影响已保存的母带。
-      try { await this.host.discardMasterPartials(session.id, target); }
-      catch (e) { console.error("[QnALog] discard master partials failed", e); }
       const oldNames = new Set();
       for (const item of session.segments || []) {
         if (item.audioName) oldNames.add(item.audioName);

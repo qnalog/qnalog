@@ -6,10 +6,12 @@ import { diagnosticError } from "../shared/util-key-diag";
 import { getErrorMessage } from "../shared/util-common";
 import {
   MasterPartialSession,
+  checkMasterPartialTarget,
   markPartialSaved,
   partialSessionPath,
   removeEmptyPartialRoot,
   removePartialDirectory,
+  type MasterPartialTargetCheck,
   type MasterPartialAdapter,
   type MasterPartialSessionInit,
 } from "./master-partial";
@@ -47,10 +49,10 @@ export class MasterPartialService {
   }
 
   /**
-   * 完整母带保存成功后调用：先等待进行中的分片写入结束，再删除分片目录。
-   * 删除失败时在 meta.json 中记下 savedAs，下次启动只清理目录，不会把同一段音频再恢复一次。
+   * 母带写入后调用：先记录目标路径与长度，再按文件类型和字节数核对后删除分片目录。
+   * 目标无法核实时记录诊断、提示用户并保留分片。
    */
-  async discard(sessionId: string, savedPath: string): Promise<void> {
+  async discard(sessionId: string, savedPath: string, savedBytes: number): Promise<void> {
     const session = this.active.get(sessionId);
     const dir = session ? session.directory : partialSessionPath(this.host.getAudioFolder(), sessionId);
     if (session) {
@@ -58,6 +60,28 @@ export class MasterPartialService {
       await session.drain();
     }
     this.active.delete(sessionId);
+    let committedBytes = 0;
+    try {
+      committedBytes = await markPartialSaved(this.host.adapter, dir, savedPath, savedBytes) ?? 0;
+    } catch (error) {
+      await this.host.logDiagnostic("error", "recording.partial_mark_failed", t("The partial files could not be marked as saved"), {
+        sessionId,
+        error: diagnosticError(error),
+      });
+      this.host.showNotice(t("The partial audio could not be safely cleaned up; its files were kept"), 8000);
+      throw error;
+    }
+    const targetCheck: MasterPartialTargetCheck = await checkMasterPartialTarget(this.host.adapter, savedPath, savedBytes, committedBytes);
+    if (targetCheck.ok === false) {
+      await this.host.logDiagnostic("error", "recording.partial_target_invalid", t("The saved recording could not be verified; its partial audio was kept"), {
+        sessionId,
+        reason: String(targetCheck.reason),
+        savedBytes,
+        ...(targetCheck.error ? { error: diagnosticError(targetCheck.error) } : {}),
+      });
+      this.host.showNotice(t("The saved recording could not be verified; its partial audio was kept"), 8000);
+      throw new Error(t("The saved recording could not be verified; its partial audio was kept"));
+    }
     try {
       await removePartialDirectory(this.host.adapter, dir);
     } catch (error) {
@@ -65,14 +89,6 @@ export class MasterPartialService {
         sessionId,
         error: diagnosticError(error),
       });
-      try {
-        await markPartialSaved(this.host.adapter, dir, savedPath);
-      } catch (markError) {
-        await this.host.logDiagnostic("warn", "recording.partial_mark_failed", t("The partial files could not be marked as saved"), {
-          sessionId,
-          error: diagnosticError(markError),
-        });
-      }
       return;
     }
     await this.cleanupEmptyRoot();

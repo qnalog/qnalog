@@ -142,6 +142,13 @@ describe("partial helpers", () => {
     }
   });
 
+  it("rejects invalid handled-target byte counts", () => {
+    const valid = metaFor("s-target-size", 0);
+    for (const [key, value] of [["savedBytes", -1], ["savedBytes", 1.5], ["savedBytes", Number.MAX_SAFE_INTEGER + 1], ["recoveredBytes", -1], ["recoveredBytes", 1.5], ["recoveredBytes", Number.MAX_SAFE_INTEGER + 1]] as const) {
+      expect(() => parseMasterPartialMeta(JSON.stringify({ ...valid, [key]: value }))).toThrow();
+    }
+  });
+
   it("removes only the given session folder", async () => {
     const io = new MemoryAdapter();
     seedSession(io, "keep", ["k"]);
@@ -335,11 +342,108 @@ describe("recoverInterruptedMasterPartials", () => {
 
   it("removes a folder already marked as saved without writing a recovered file", async () => {
     const io = new MemoryAdapter();
-    seedSession(io, "s-saved", ["s"], { savedAs: `${AUDIO_FOLDER}/qnalog-x.webm` });
+    const path = `${AUDIO_FOLDER}/qnalog-x.webm`;
+    seedSession(io, "s-saved", ["s"], { savedAs: path, savedBytes: 1 });
+    io.files.set(path, "s");
     const outcomes = await recoverInterruptedMasterPartials(port(io).port);
     expect(outcomes).toEqual([{ sessionId: "s-saved", status: "already-handled", reason: "saved" }]);
     expect(io.dirs.has(sessionDir("s-saved"))).toBe(false);
     expect([...io.files.keys()].some((key) => key.includes("-recovered"))).toBe(false);
+  });
+
+  it("preserves partials when a recovered target is missing or shorter than its recorded size", async () => {
+    const io = new MemoryAdapter();
+    const missingPath = `${AUDIO_FOLDER}/qnalog-missing-recovered.webm`;
+    const shortPath = `${AUDIO_FOLDER}/qnalog-short-recovered.webm`;
+    seedSession(io, "s-recovered-missing", ["abc"], { recoveredPath: missingPath, recoveredBytes: 3 });
+    seedSession(io, "s-recovered-short", ["def"], { recoveredPath: shortPath, recoveredBytes: 3 });
+    io.files.set(shortPath, "de");
+    const before = ["s-recovered-missing", "s-recovered-short"].map((id) => ({
+      meta: io.text(`${sessionDir(id)}/meta.json`),
+      part: io.text(`${sessionDir(id)}/part-0001.webm`),
+    }));
+    const outcomes = await recoverInterruptedMasterPartials(port(io).port);
+    expect(outcomes).toHaveLength(2);
+    expect(outcomes.every((outcome) => outcome.status === "failed")).toBe(true);
+    for (const [index, id] of ["s-recovered-missing", "s-recovered-short"].entries()) {
+      expect(io.text(`${sessionDir(id)}/meta.json`)).toBe(before[index]!.meta);
+      expect(io.text(`${sessionDir(id)}/part-0001.webm`)).toBe(before[index]!.part);
+    }
+  });
+
+  it("preserves partials for a legacy saved marker without a recorded target size", async () => {
+    const io = new MemoryAdapter();
+    const path = `${AUDIO_FOLDER}/qnalog-legacy.webm`;
+    seedSession(io, "s-saved-legacy", ["abc"], { savedAs: path });
+    io.files.set(path, "abc");
+    const metaBefore = io.text(`${sessionDir("s-saved-legacy")}/meta.json`);
+    const partBefore = io.text(`${sessionDir("s-saved-legacy")}/part-0001.webm`);
+    const outcomes = await recoverInterruptedMasterPartials(port(io).port);
+    expect(outcomes[0]).toMatchObject({ status: "failed" });
+    expect(io.text(`${sessionDir("s-saved-legacy")}/meta.json`)).toBe(metaBefore);
+    expect(io.text(`${sessionDir("s-saved-legacy")}/part-0001.webm`)).toBe(partBefore);
+  });
+
+  it("preserves partials when a saved target is missing or shorter than its recorded size", async () => {
+    const io = new MemoryAdapter();
+    const missingPath = `${AUDIO_FOLDER}/qnalog-missing-saved.webm`;
+    const shortPath = `${AUDIO_FOLDER}/qnalog-short-saved.webm`;
+    seedSession(io, "s-saved-missing", ["abc"], { savedAs: missingPath, savedBytes: 5 });
+    seedSession(io, "s-saved-short", ["xyz"], { savedAs: shortPath, savedBytes: 5 });
+    io.files.set(shortPath, "abcd");
+    const before = ["s-saved-missing", "s-saved-short"].map((id) => ({
+      meta: io.text(`${sessionDir(id)}/meta.json`),
+      part: io.text(`${sessionDir(id)}/part-0001.webm`),
+    }));
+    const outcomes = await recoverInterruptedMasterPartials(port(io).port);
+    expect(outcomes).toHaveLength(2);
+    expect(outcomes.every((outcome) => outcome.status === "failed")).toBe(true);
+    for (const [index, id] of ["s-saved-missing", "s-saved-short"].entries()) {
+      expect(io.text(`${sessionDir(id)}/meta.json`)).toBe(before[index]!.meta);
+      expect(io.text(`${sessionDir(id)}/part-0001.webm`)).toBe(before[index]!.part);
+    }
+  });
+
+  it("preserves partials when the handled target stat fails", async () => {
+    const io = new MemoryAdapter();
+    const path = `${AUDIO_FOLDER}/qnalog-stat-failure.webm`;
+    seedSession(io, "s-stat-failure", ["abc"], { recoveredPath: path, recoveredBytes: 3 });
+    io.files.set(path, "abc");
+    io.stat = async () => { throw new Error("temporarily unavailable"); };
+    const metaBefore = io.text(`${sessionDir("s-stat-failure")}/meta.json`);
+    const partBefore = io.text(`${sessionDir("s-stat-failure")}/part-0001.webm`);
+    const outcomes = await recoverInterruptedMasterPartials(port(io).port);
+    expect(outcomes[0]).toMatchObject({ status: "failed" });
+    expect(io.text(`${sessionDir("s-stat-failure")}/meta.json`)).toBe(metaBefore);
+    expect(io.text(`${sessionDir("s-stat-failure")}/part-0001.webm`)).toBe(partBefore);
+  });
+
+  it("preserves partials when the handled target is a folder", async () => {
+    const io = new MemoryAdapter();
+    const path = `${AUDIO_FOLDER}/qnalog-folder-target.webm`;
+    seedSession(io, "s-folder-target", ["abc"], { recoveredPath: path, recoveredBytes: 3 });
+    io.files.set(path, "abc");
+    io.stat = async () => ({ size: 3, type: "folder" });
+    const outcomes = await recoverInterruptedMasterPartials(port(io).port);
+    expect(outcomes[0]).toMatchObject({ status: "failed" });
+    expect(io.files.has(`${sessionDir("s-folder-target")}/part-0001.webm`)).toBe(true);
+  });
+
+  it("rejects handled target sizes smaller than the committed prefix", async () => {
+    const io = new MemoryAdapter();
+    const savedPath = `${AUDIO_FOLDER}/qnalog-underreported-saved.webm`;
+    const recoveredPath = `${AUDIO_FOLDER}/qnalog-underreported-recovered.webm`;
+    seedSession(io, "s-saved-underreported", ["abc"], { savedAs: savedPath, savedBytes: 0 });
+    seedSession(io, "s-recovered-underreported", ["abc"], { recoveredPath, recoveredBytes: 0 });
+    io.files.set(savedPath, "");
+    io.files.set(recoveredPath, "");
+    const outcomes = await recoverInterruptedMasterPartials(port(io).port);
+    expect(outcomes).toHaveLength(2);
+    expect(outcomes.every((outcome) => outcome.status === "failed")).toBe(true);
+    for (const id of ["s-saved-underreported", "s-recovered-underreported"]) {
+      expect(io.files.has(`${sessionDir(id)}/part-0001.webm`)).toBe(true);
+      expect(io.files.has(`${sessionDir(id)}/meta.json`)).toBe(true);
+    }
   });
 
   it("uses the recording file timestamp format for the recovered name", () => {

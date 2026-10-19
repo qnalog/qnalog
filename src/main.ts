@@ -346,7 +346,7 @@ class QnALogPlugin extends obsidian.Plugin {
       syncImportBusyFromSessionProgress: (session) => this.tasks.syncImportBusyFromSessionProgress(session),
       requestOutlineRefresh: () => this.shell.refreshOutlineView(),
       requestBubbleUpdate: () => this.bubble?.scheduleUpdate(),
-      discardMasterPartials: (sessionId, savedPath) => this.masterPartials.discard(sessionId, savedPath),
+      discardMasterPartials: (sessionId, savedPath, savedBytes) => this.masterPartials.discard(sessionId, savedPath, savedBytes),
     });
     this.shell = new ViewShellService(this);
     this.library = new LibraryViewService(this);

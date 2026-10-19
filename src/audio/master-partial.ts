@@ -17,7 +17,7 @@ export interface MasterPartialAdapter {
   writeBinary(path: string, data: ArrayBuffer): Promise<void>;
   readBinary(path: string): Promise<ArrayBuffer>;
   list(path: string): Promise<{ files: string[]; folders: string[] }>;
-  stat(path: string): Promise<{ size: number } | null>;
+  stat(path: string): Promise<{ size: number; type?: "file" | "folder" } | null>;
   remove(path: string): Promise<void>;
   rmdir(path: string, recursive: boolean): Promise<void>;
 }
@@ -41,12 +41,17 @@ export interface MasterPartialMeta {
   sourceMode: string;
   /** 整理模式 id。 */
   mode: string;
-  /** 已正式保存的完整母带路径：存在时该目录只需删除，不再恢复。 */
+  /** 已正式保存的母带路径与写入字节数；清理前按目标文件类型和字节数核对。 */
   savedAs?: string;
-  /** 恢复后写入的文件路径与字节数：存在时该目录只需删除，不再恢复。 */
+  savedBytes?: number;
+  /** 恢复后的文件路径与写入字节数；清理前按目标文件类型和字节数核对。 */
   recoveredPath?: string;
   recoveredBytes?: number;
 }
+
+export type MasterPartialTargetCheck =
+  | { ok: true }
+  | { ok: false; reason: "size-invalid" | "size-below-prefix" | "missing" | "size-unavailable" | "size-mismatch" | "check-failed"; error?: unknown };
 
 export interface MasterPartialSessionInit {
   sessionId: string;
@@ -117,8 +122,9 @@ export function parseMasterPartialMeta(text: string): MasterPartialMeta {
     mode: str("mode"),
   };
   if (typeof record.savedAs === "string") meta.savedAs = record.savedAs;
+  if (record.savedBytes !== undefined) meta.savedBytes = counter("savedBytes");
   if (typeof record.recoveredPath === "string") meta.recoveredPath = record.recoveredPath;
-  if (typeof record.recoveredBytes === "number") meta.recoveredBytes = record.recoveredBytes;
+  if (record.recoveredBytes !== undefined) meta.recoveredBytes = counter("recoveredBytes");
   return meta;
 }
 
@@ -230,10 +236,32 @@ export async function removeEmptyPartialRoot(adapter: MasterPartialAdapter, audi
   return true;
 }
 
-/** 在分片目录的 meta.json 中记下已正式保存的完整母带路径；失败时由调用方决定如何处理。 */
-export async function markPartialSaved(adapter: MasterPartialAdapter, dir: string, savedPath: string): Promise<void> {
+export async function checkMasterPartialTarget(
+  adapter: MasterPartialAdapter,
+  path: string,
+  expectedBytes: number,
+  minimumBytes: number,
+): Promise<MasterPartialTargetCheck> {
+  if (!Number.isSafeInteger(expectedBytes) || expectedBytes < 0) return { ok: false, reason: "size-invalid" };
+  if (expectedBytes < minimumBytes) return { ok: false, reason: "size-below-prefix" };
+  try {
+    if (!(await adapter.exists(path))) return { ok: false, reason: "missing" };
+    const stat = await adapter.stat(path);
+    if (!stat || !Number.isSafeInteger(stat.size) || stat.size < 0) return { ok: false, reason: "size-unavailable" };
+    if (stat.type !== undefined && stat.type !== "file") return { ok: false, reason: "size-unavailable" };
+    if (stat.size !== expectedBytes) return { ok: false, reason: "size-mismatch" };
+    return { ok: true };
+  } catch (error) {
+    return { ok: false, reason: "check-failed", error };
+  }
+}
+
+/** 在分片目录的 meta.json 中记录正式母带路径与写入时的字节数。 */
+export async function markPartialSaved(adapter: MasterPartialAdapter, dir: string, savedPath: string, savedBytes: number): Promise<number | null> {
   const metaPath = `${dir}/${PARTIAL_META_FILE}`;
-  if (!(await adapter.exists(metaPath))) return;
+  if (!(await adapter.exists(metaPath))) return null;
   const meta = parseMasterPartialMeta(await adapter.read(metaPath));
-  await adapter.write(metaPath, JSON.stringify({ ...meta, savedAs: savedPath }));
+  if (!Number.isSafeInteger(savedBytes) || savedBytes < 0) throw new Error("savedBytes is not a safe integer");
+  await adapter.write(metaPath, JSON.stringify({ ...meta, savedAs: savedPath, savedBytes }));
+  return meta.flushedBytes;
 }

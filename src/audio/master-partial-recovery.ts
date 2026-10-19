@@ -7,6 +7,7 @@ import { t } from "../shared/i18n";
 import { diagnosticError } from "../shared/util-key-diag";
 import {
   PARTIAL_META_FILE,
+  checkMasterPartialTarget,
   parseMasterPartialMeta,
   parsePartName,
   partialRootPath,
@@ -26,7 +27,7 @@ export interface MasterPartialRecoveryPort {
 export type MasterPartialRecoveryOutcome =
   /** 已写入恢复文件。cleanupPending 为真时分片目录未能删除，下次启动只会清理目录，不会再次通知。 */
   | { sessionId: string; status: "recovered"; path: string; bytes: number; parts: number; cleanupPending: boolean }
-  /** 之前已经处理过（已正式保存或已恢复），只需删除残留目录。 */
+  /** 之前已经处理过（已正式保存或已恢复），目标校验通过后删除残留目录。 */
   | { sessionId: string; status: "already-handled"; reason: "saved" | "recovered" }
   /** 目录中没有任何分片且 meta 记录分片数为 0，没有音频可丢失，已删除。 */
   | { sessionId: string; status: "removed-empty" }
@@ -94,6 +95,11 @@ async function recoverOneSession(port: MasterPartialRecoveryPort, dir: string, s
   }
 
   if (meta.savedAs || meta.recoveredPath) {
+    const targetPath = meta.savedAs || meta.recoveredPath;
+    const expectedBytes = meta.savedAs ? meta.savedBytes : meta.recoveredBytes;
+    if (expectedBytes === undefined) return await fail("handled-target-size-unknown");
+    const targetCheck = await checkMasterPartialTarget(adapter, targetPath, expectedBytes, meta.flushedBytes);
+    if (targetCheck.ok === false) return await fail(`handled-target-${targetCheck.reason}`, targetCheck.error);
     try {
       await removePartialDirectory(adapter, dir);
     } catch (error) {
