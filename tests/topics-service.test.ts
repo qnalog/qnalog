@@ -383,6 +383,50 @@ describe("topics service", () => {
     expect(removeEntries).toHaveBeenCalledOnce();
   });
 
+  it("finishes undo from a new service after page restore is followed by a read failure", async () => {
+    const errataFiles = new Map<string, string>([["Topics/Climate.md", "source topic"]]);
+    const topicErrata = makeTopicErrata(errataFiles);
+    const setup = harness({ topicErrata });
+    const members = [{ path: "Notes/a.md", title: "A", sourceId: "Notes/a.md" }];
+    const topic = createTopicPage({ id: "undo-readback-retry-topic", title: "Climate", tags: [], basis: "overview", members });
+    topic.layout = 2;
+    topic.body = renderTopicPage({ overview: "Climate overview.", threads: [{ id: "work", title: "Work", summary: "Current detail.", points: [
+      { id: "point", text: "Off-topic detail.", sources: ["Notes/a.md"] },
+    ] }], disagreements: [], open: [], unsorted: [] }, members);
+    const originalPage = serializeTopicPage(topic);
+    setup.storePort.seed("Topics/Climate.md", originalPage);
+    const block = parseTopicPageBlocks(originalPage).find((item) => item.text.includes("Off-topic detail"))!;
+    const preview = await setup.service.previewExcludeBlock("Topics/Climate.md", block.id);
+    await setup.service.apply(preview, [preview.items[0].id]);
+    const errataPath = "QnALog/勘误表/Climate · 主题勘误.md";
+    const originalRead = setup.storePort.read.bind(setup.storePort);
+    const originalProcess = setup.storePort.process.bind(setup.storePort);
+    let failNextPageRead = false;
+    setup.storePort.read = async (path) => {
+      if (path === "Topics/Climate.md" && failNextPageRead) {
+        failNextPageRead = false;
+        throw new Error("page read failed after restore");
+      }
+      return originalRead(path);
+    };
+    setup.storePort.process = async (path, transform) => {
+      await originalProcess(path, transform);
+      if (path === "Topics/Climate.md") {
+        failNextPageRead = true;
+        throw new Error("process failed after restore");
+      }
+    };
+
+    await expect(setup.service.undoLastUpdate("undo-readback-retry-topic")).rejects.toThrow("process failed after restore");
+    expect(await originalRead("Topics/Climate.md")).toBe(originalPage);
+    expect(errataFiles.get(errataPath)).toContain("Off-topic detail.");
+
+    const restartedService = setup.createService();
+    await expect(restartedService.undoLastUpdate("undo-readback-retry-topic")).resolves.toEqual({ restored: true, errataRemoved: 1 });
+    expect(await originalRead("Topics/Climate.md")).toBe(originalPage);
+    expect(errataFiles.get(errataPath)).not.toContain("Off-topic detail.");
+  });
+
   it("returns no cleaning work without errata and does not call the model", async () => {
     const topicErrata = makeTopicErrata(new Map(), "en");
     const setup = harness({ topicErrata });
@@ -769,9 +813,11 @@ function harness(options: { roots?: string[]; request?: TopicIntegrationPort["re
   }
   const activities = { started: [] as Array<[string, string]>, completed: [] as Array<[string]>, failed: [] as Array<[string, unknown]>, cancelled: [] as Array<[string, string]>, progress: [] as Array<{ progress: number; stageLabel: string }> };
   let ids = 0;
-  const service = new TopicsService({ overviewCards, topicStore: storePort, ...(options.topicErrata ? { topicErrata: options.topicErrata } : {}), getRoots: () => options.roots ?? ["Notes"], getFolder: () => "Topics", integration,
-    createId: () => `topic-${++ids}`, startActivity: (id, title) => activities.started.push([id, title]), updateActivity: (_id, patch) => activities.progress.push(patch), completeActivity: (id) => activities.completed.push([id]), failActivity: (id, error) => activities.failed.push([id, error]), cancelActivity: (id, reason) => activities.cancelled.push([id, reason]) });
-  return { service, files, writes, readPaths, storePort, requests, activities };
+  const serviceHost = { overviewCards, topicStore: storePort, ...(options.topicErrata ? { topicErrata: options.topicErrata } : {}), getRoots: () => options.roots ?? ["Notes"], getFolder: () => "Topics", integration,
+    createId: () => `topic-${++ids}`, startActivity: (id, title) => activities.started.push([id, title]), updateActivity: (_id, patch) => activities.progress.push(patch), completeActivity: (id) => activities.completed.push([id]), failActivity: (id, error) => activities.failed.push([id, error]), cancelActivity: (id, reason) => activities.cancelled.push([id, reason]) };
+  const createService = () => new TopicsService(serviceHost);
+  const service = createService();
+  return { service, createService, files, writes, readPaths, storePort, requests, activities };
 }
 
 function emptyHost(overviewCards: TopicsServicePort) {

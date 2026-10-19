@@ -67,6 +67,7 @@ export const EN: MessageTable = {
   "Topic page was restored, but its errata entries could not be removed. Delete them manually in the errata note.": "Topic page was restored, but its errata entries could not be removed. Delete them manually in the errata note.",
   "Topic errata could not be linked to the update snapshot.": "Topic errata could not be linked to the update snapshot.",
   "The topic page was updated. New errata rows were kept, but their undo tracking could not be confirmed. Check the errata note before continuing. To undo these exclusions, remove the new rows manually.": "The topic page was updated. New errata rows were kept, but their undo tracking could not be confirmed. Check the errata note before continuing. To undo these exclusions, remove the new rows manually.",
+  "Undo could not be confirmed. Check the topic page and its errata, then retry Undo.": "Undo could not be confirmed. Check the topic page and its errata, then retry Undo.",
   "Content cleaning": "Content cleaning",
   "Cleaning will inspect only the current topic page and its errata. Estimated input: {0} characters, about {1} tokens.": "Cleaning will inspect only the current topic page and its errata. Estimated input: {0} characters, about {1} tokens.",
   "Estimated input: {0} characters, about {1} tokens.": "Estimated input: {0} characters, about {1} tokens.",

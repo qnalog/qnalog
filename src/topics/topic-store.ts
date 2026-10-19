@@ -397,19 +397,49 @@ export class TopicStore {
     }
     const path = currentPage.path;
     const current = await this.port.read(path);
-    if (currentPage.page.cacheStatus !== "valid" || state.status !== "valid" || !state.cache.pageHash || hashTopicPage(current) !== state.cache.pageHash) return { restored: false, reason: "page-modified" };
     const snapshot = await this.port.read(snapshotPath);
-    const expectedHash = hashTopicPage(current);
-    await this.port.process(path, (latest) => hashTopicPage(latest) === expectedHash ? snapshot : latest);
-    const restored = await this.port.read(path);
-    if (hashTopicPage(restored) !== hashTopicPage(snapshot)) return { restored: false, reason: "page-modified" };
     const remaining = snapshots.filter((item) => item.path !== snapshotPath).sort((a, b) => b.name.localeCompare(a.name));
     const errataEntries = state.cache.lastSnapshotErrata?.snapshotPath === snapshotPath ? state.cache.lastSnapshotErrata.entries : undefined;
-    const restoredPage = parseTopicPage(restored, path);
-    let restoredTags: string[] = [];
-    try { restoredTags = restoredPage ? await this.port.readMemberTags(restoredPage.members) : []; } catch { /* the restored page is already authoritative */ }
-    await this.cacheAfterWrite(topicId, restored, restoredPage ? rebuildTopicTagAliases(restoredPage.tags, restoredTags) : undefined, remaining[0]?.path || null);
-    return errataEntries?.length ? { restored: true, errataEntries } : { restored: true };
+    const finishUndo = async (restored: string): Promise<TopicUndoResult> => {
+      const restoredPage = parseTopicPage(restored, path);
+      let restoredTags: string[] = [];
+      try { restoredTags = restoredPage ? await this.port.readMemberTags(restoredPage.members) : []; } catch { /* the restored page is already authoritative */ }
+      await this.cacheAfterWrite(topicId, restored, restoredPage ? rebuildTopicTagAliases(restoredPage.tags, restoredTags) : undefined, remaining[0]?.path || null);
+      return errataEntries?.length ? { restored: true, errataEntries } : { restored: true };
+    };
+
+    const hasMatchingErrata = !!errataEntries?.length && state.cache.lastSnapshotErrata?.snapshotPath === snapshotPath;
+    if (currentPage.page.cacheStatus === "stale" && state.status === "stale" && hasMatchingErrata && current === snapshot) {
+      const latest = await this.port.read(path);
+      if (latest !== snapshot) return { restored: false, reason: "page-modified" };
+      return finishUndo(latest);
+    }
+
+    if (currentPage.page.cacheStatus !== "valid" || state.status !== "valid" || !state.cache.pageHash || hashTopicPage(current) !== state.cache.pageHash) return { restored: false, reason: "page-modified" };
+    const expectedHash = hashTopicPage(current);
+    let selectedSnapshot = false;
+    let processFailed = false;
+    let processError: unknown;
+    try {
+      await this.port.process(path, (latest) => {
+        if (hashTopicPage(latest) !== expectedHash) return latest;
+        selectedSnapshot = true;
+        return snapshot;
+      });
+    } catch (error) {
+      processFailed = true;
+      processError = error;
+    }
+    let restored: string;
+    try {
+      restored = await this.port.read(path);
+    } catch (error) {
+      if (processFailed) throw processError;
+      throw error;
+    }
+    if (processFailed && (!selectedSnapshot || restored !== snapshot)) throw processError;
+    if (restored !== snapshot) return { restored: false, reason: "page-modified" };
+    return finishUndo(restored);
   }
 
   async deleteTopic(topicId: string): Promise<void> {
