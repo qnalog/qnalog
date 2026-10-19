@@ -1,6 +1,6 @@
 // 启动时恢复中断录音：把 `录音/.partial/<场次>/` 中按编号排列的分片合并为一个录音文件（文件名带 -recovered）。
-// 只有合并结果的字节数与分片合计一致，并已写入 meta.json 的恢复记录之后，才删除分片目录。
-// 任何一步失败都保留分片目录并记录诊断（不含音频与文字内容）。
+// 只有合并结果通过逐字节核对，且 meta.json 的最终恢复记录写入并读回确认后，才删除分片目录。
+// 恢复状态无法核实时保留分片目录并记录诊断（不含音频与文字内容）；清理异常后按目录实际状态报告结果。
 
 import { NS_AUDIO_PREFIX } from "../shared/namespace";
 import { t } from "../shared/i18n";
@@ -53,6 +53,27 @@ async function availableAudioPath(adapter: MasterPartialAdapter, folder: string,
   return candidate;
 }
 
+function stagePath(dir: string, ext: string): string {
+  return `${dir}/recovered.stage.${ext}`;
+}
+
+function sameBytes(left: ArrayBuffer, right: ArrayBuffer): boolean {
+  if (left.byteLength !== right.byteLength) return false;
+  const a = new Uint8Array(left);
+  const b = new Uint8Array(right);
+  for (let i = 0; i < a.length; i++) if (a[i] !== b[i]) return false;
+  return true;
+}
+
+function recoveryTargetPathAllowed(path: string, folder: string, stamp: string, ext: string): boolean {
+  const stem = `${folder.replace(/\/+$/, "")}/${NS_AUDIO_PREFIX}-${stamp}-recovered`;
+  if (path === `${stem}.${ext}`) return true;
+  if (!path.startsWith(`${stem}-`) || !path.endsWith(`.${ext}`)) return false;
+  const suffix = path.slice(stem.length + 1, -(ext.length + 1));
+  const number = Number(suffix);
+  return Number.isSafeInteger(number) && number >= 2 && String(number) === suffix;
+}
+
 /**
  * 扫描 `<录音目录>/.partial/`，逐个处理非活动场次。
  * 每个场次的结果都会通过返回值给出；单个场次失败不影响其他场次。
@@ -103,9 +124,24 @@ async function recoverOneSession(port: MasterPartialRecoveryPort, dir: string, s
     try {
       await removePartialDirectory(adapter, dir);
     } catch (error) {
+      try {
+        if (!(await adapter.exists(dir))) {
+          return { sessionId, status: "already-handled", reason: meta.savedAs ? "saved" : "recovered" };
+        }
+      } catch (checkError) {
+        return await fail("cleanup-state-check-failed", checkError);
+      }
       return await fail("cleanup-failed", error);
     }
     return { sessionId, status: "already-handled", reason: meta.savedAs ? "saved" : "recovered" };
+  }
+
+  const stagedPath = stagePath(dir, meta.ext);
+  let hasStage: boolean;
+  try {
+    hasStage = await adapter.exists(stagedPath);
+  } catch (error) {
+    return await fail("stage-check-failed", error);
   }
 
   let names: string[];
@@ -121,6 +157,7 @@ async function recoverOneSession(port: MasterPartialRecoveryPort, dir: string, s
     .sort((a, b) => a.parsed.index - b.parsed.index);
 
   if (parts.length === 0) {
+    if (hasStage || meta.pendingRecoveryPath) return await fail("recovery-state-without-parts");
     if (meta.partCount !== 0) return await fail("parts-missing");
     if (meta.flushedBytes !== 0) return await fail("committed-size-mismatch");
     try {
@@ -145,44 +182,157 @@ async function recoverOneSession(port: MasterPartialRecoveryPort, dir: string, s
     return await fail("read-failed", error);
   }
   const committedBytes = buffers.slice(0, meta.partCount).reduce((sum, buffer) => sum + buffer.byteLength, 0);
-  if (committedBytes !== meta.flushedBytes) return await fail("committed-size-mismatch");
+  if (!Number.isSafeInteger(committedBytes) || committedBytes !== meta.flushedBytes) return await fail("committed-size-mismatch");
   const total = buffers.reduce((sum, buffer) => sum + buffer.byteLength, 0);
+  if (!Number.isSafeInteger(total)) return await fail("parts-size-invalid");
   if (total === 0) return await fail("empty-parts");
 
+  let merged: ArrayBuffer;
+  try { merged = await new Blob(buffers, { type: meta.mime }).arrayBuffer(); }
+  catch (error) { return await fail("merge-failed", error); }
+  if (merged.byteLength !== total) return await fail("merged-size-mismatch");
+
   let target: string;
-  try {
-    target = await availableAudioPath(adapter, port.audioFolder, formatRecoveryStamp(meta.startedAt), meta.ext);
-    const merged = await new Blob(buffers, { type: meta.mime }).arrayBuffer();
-    await adapter.writeBinary(target, merged);
-    const written = await adapter.stat(target);
-    if (!written || written.size !== total) {
-      try { await adapter.remove(target); } catch { /* the partial files are still kept */ }
-      return await fail("size-mismatch");
+  let hasPending = meta.pendingRecoveryPath !== undefined;
+  if (hasPending) {
+    const pendingPath = meta.pendingRecoveryPath;
+    if (!pendingPath) return await fail("pending-target-invalid");
+    target = pendingPath;
+    if (!recoveryTargetPathAllowed(target, port.audioFolder, formatRecoveryStamp(meta.startedAt), meta.ext)) {
+      return await fail("pending-target-invalid");
     }
-  } catch (error) {
-    return await fail("write-failed", error);
+    if (meta.pendingRecoveryBytes !== total) return await fail("pending-size-mismatch");
+  } else {
+    let stageMatches = false;
+    if (hasStage) {
+      try {
+        stageMatches = sameBytes(await adapter.readBinary(stagedPath), merged);
+      } catch (error) {
+        return await fail("stage-read-failed", error);
+      }
+      if (!stageMatches) return await fail("stage-content-mismatch");
+    } else {
+      try {
+        await adapter.writeBinary(stagedPath, merged);
+      } catch (error) {
+        // A write may finish before the adapter reports an error; inspect the fixed stage before deciding.
+        try {
+          hasStage = await adapter.exists(stagedPath);
+          if (hasStage) stageMatches = sameBytes(await adapter.readBinary(stagedPath), merged);
+        } catch (checkError) {
+          return await fail("stage-write-check-failed", checkError);
+        }
+        if (!stageMatches) return await fail("stage-write-failed", error);
+      }
+      if (!stageMatches) {
+        try { stageMatches = sameBytes(await adapter.readBinary(stagedPath), merged); }
+        catch (error) { return await fail("stage-read-failed", error); }
+        if (!stageMatches) return await fail("stage-content-mismatch");
+      }
+      hasStage = true;
+    }
+    try {
+      target = await availableAudioPath(adapter, port.audioFolder, formatRecoveryStamp(meta.startedAt), meta.ext);
+    } catch (error) {
+      return await fail("target-path-failed", error);
+    }
+    const pending: MasterPartialMeta = { ...meta, pendingRecoveryPath: target, pendingRecoveryBytes: total };
+    try { await adapter.write(metaPath, JSON.stringify(pending)); } catch { /* Read back to detect writes that completed before throwing. */ }
+    try {
+      const persisted = parseMasterPartialMeta(await adapter.read(metaPath));
+      if (persisted.sessionId !== sessionId || persisted.pendingRecoveryPath !== target || persisted.pendingRecoveryBytes !== total || persisted.recoveredPath) {
+        return await fail("pending-meta-not-committed");
+      }
+      meta = persisted;
+      hasPending = true;
+    } catch (error) {
+      return await fail("pending-meta-unverified", error);
+    }
   }
 
-  // 先记录恢复结果，再删除分片：即使删除失败，下次启动也不会重复恢复。
+  if (!hasPending) return await fail("pending-meta-not-committed");
+
+  let targetExists: boolean;
+  try { targetExists = await adapter.exists(target); }
+  catch (error) { return await fail("target-check-failed", error); }
+  try { hasStage = await adapter.exists(stagedPath); }
+  catch (error) { return await fail("stage-check-failed", error); }
+
+  let stageMatches = false;
+  let targetMatches = false;
+  if (hasStage) {
+    try { stageMatches = sameBytes(await adapter.readBinary(stagedPath), merged); }
+    catch (error) { return await fail("stage-read-failed", error); }
+    if (!stageMatches) return await fail("stage-content-mismatch");
+  }
+  if (targetExists) {
+    const targetCheck = await checkMasterPartialTarget(adapter, target, total, meta.flushedBytes);
+    if (targetCheck.ok === false) return await fail(`pending-target-${targetCheck.reason}`, targetCheck.error);
+    try { targetMatches = sameBytes(await adapter.readBinary(target), merged); }
+    catch (error) { return await fail("pending-target-read-failed", error); }
+    if (!targetMatches) return await fail("pending-target-content-mismatch");
+  }
+
+  if (!hasStage && !targetExists) return await fail("pending-publish-missing");
+  if (hasStage && !targetExists) {
+    try { await adapter.rename(stagedPath, target); } catch { /* Inspect both paths; rename can fail after taking effect. */ }
+    try {
+      hasStage = await adapter.exists(stagedPath);
+      targetExists = await adapter.exists(target);
+    } catch (error) {
+      return await fail("publish-state-check-failed", error);
+    }
+    if (!targetExists) return await fail("publish-not-complete");
+    const targetCheck = await checkMasterPartialTarget(adapter, target, total, meta.flushedBytes);
+    if (targetCheck.ok === false) return await fail(`published-target-${targetCheck.reason}`, targetCheck.error);
+    try { targetMatches = sameBytes(await adapter.readBinary(target), merged); }
+    catch (error) { return await fail("published-target-read-failed", error); }
+    if (!targetMatches) return await fail("published-target-content-mismatch");
+    if (hasStage) {
+      try { stageMatches = sameBytes(await adapter.readBinary(stagedPath), merged); }
+      catch (error) { return await fail("stage-read-failed", error); }
+      if (!stageMatches) return await fail("stage-content-mismatch");
+      // A copy-then-throw adapter can leave both files. Finalize the verified target; directory cleanup removes the duplicate stage.
+    }
+  }
+
+  let finalMetaConfirmed = false;
+  const finalized: MasterPartialMeta = { ...meta, recoveredPath: target, recoveredBytes: total };
+  delete finalized.pendingRecoveryPath;
+  delete finalized.pendingRecoveryBytes;
+  try { await adapter.write(metaPath, JSON.stringify(finalized)); } catch { /* Read back below; do not infer failure from the thrown call alone. */ }
   try {
-    const recorded: MasterPartialMeta = { ...meta, recoveredPath: target, recoveredBytes: total };
-    await adapter.write(metaPath, JSON.stringify(recorded));
+    const persisted = parseMasterPartialMeta(await adapter.read(metaPath));
+    finalMetaConfirmed = persisted.sessionId === sessionId
+      && persisted.recoveredPath === target
+      && persisted.recoveredBytes === total
+      && persisted.pendingRecoveryPath === undefined
+      && persisted.pendingRecoveryBytes === undefined;
   } catch (error) {
-    await port.logDiagnostic("warn", "recording.recovery_meta_failed", t("The recovery record could not be written; the partial files are still kept"), {
-      sessionId,
-      error: diagnosticError(error),
-    });
+    return await fail("final-meta-unverified", error);
+  }
+  if (!finalMetaConfirmed) return await fail("final-meta-not-committed");
+
+  const finalTargetCheck = await checkMasterPartialTarget(adapter, target, total, meta.flushedBytes);
+  if (finalTargetCheck.ok === false) return await fail(`final-target-${finalTargetCheck.reason}`, finalTargetCheck.error);
+  try {
+    if (!sameBytes(await adapter.readBinary(target), merged)) return await fail("final-target-content-mismatch");
+  } catch (error) {
+    return await fail("final-target-read-failed", error);
   }
 
   let cleanupPending = false;
   try {
     await removePartialDirectory(adapter, dir);
   } catch (error) {
-    cleanupPending = true;
-    await port.logDiagnostic("warn", "recording.recovery_cleanup_failed", t("The recovered recording was saved, but its partial files could not be removed"), {
-      sessionId,
-      error: diagnosticError(error),
-    });
+    try { cleanupPending = await adapter.exists(dir); }
+    catch { cleanupPending = true; }
+    if (cleanupPending) {
+      await port.logDiagnostic("warn", "recording.recovery_cleanup_failed", t("The recovered recording was saved, but its partial files could not be removed"), {
+        sessionId,
+        error: diagnosticError(error),
+      });
+    }
   }
   await port.logDiagnostic("info", "recording.recovered", t("Interrupted recording was recovered from its partial files"), {
     sessionId,

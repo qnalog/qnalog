@@ -16,6 +16,7 @@ export interface MasterPartialAdapter {
   read(path: string): Promise<string>;
   writeBinary(path: string, data: ArrayBuffer): Promise<void>;
   readBinary(path: string): Promise<ArrayBuffer>;
+  rename(path: string, newPath: string): Promise<void>;
   list(path: string): Promise<{ files: string[]; folders: string[] }>;
   stat(path: string): Promise<{ size: number; type?: "file" | "folder" } | null>;
   remove(path: string): Promise<void>;
@@ -47,6 +48,9 @@ export interface MasterPartialMeta {
   /** 恢复后的文件路径与写入字节数；清理前按目标文件类型和字节数核对。 */
   recoveredPath?: string;
   recoveredBytes?: number;
+  /** 恢复发布期间的目标意图；最终标记写入前保留，用于重启后判断 stage 与目标状态。 */
+  pendingRecoveryPath?: string;
+  pendingRecoveryBytes?: number;
 }
 
 export type MasterPartialTargetCheck =
@@ -121,10 +125,28 @@ export function parseMasterPartialMeta(text: string): MasterPartialMeta {
     sourceMode: str("sourceMode"),
     mode: str("mode"),
   };
-  if (typeof record.savedAs === "string") meta.savedAs = record.savedAs;
+  if (typeof record.savedAs === "string") {
+    if (!record.savedAs) throw new Error("meta.savedAs is empty");
+    meta.savedAs = record.savedAs;
+  }
   if (record.savedBytes !== undefined) meta.savedBytes = counter("savedBytes");
-  if (typeof record.recoveredPath === "string") meta.recoveredPath = record.recoveredPath;
+  if (typeof record.recoveredPath === "string") {
+    if (!record.recoveredPath) throw new Error("meta.recoveredPath is empty");
+    meta.recoveredPath = record.recoveredPath;
+  }
   if (record.recoveredBytes !== undefined) meta.recoveredBytes = counter("recoveredBytes");
+  const hasPendingPath = record.pendingRecoveryPath !== undefined;
+  const hasPendingBytes = record.pendingRecoveryBytes !== undefined;
+  if (hasPendingPath !== hasPendingBytes) throw new Error("meta pending recovery fields must be paired");
+  if (hasPendingPath) {
+    const pendingPath = str("pendingRecoveryPath");
+    if (!pendingPath) throw new Error("meta.pendingRecoveryPath is empty");
+    meta.pendingRecoveryPath = pendingPath;
+    meta.pendingRecoveryBytes = counter("pendingRecoveryBytes");
+  }
+  if ((meta.savedAs !== undefined || meta.recoveredPath !== undefined) && hasPendingPath) {
+    throw new Error("meta cannot be pending and handled");
+  }
   return meta;
 }
 
