@@ -162,13 +162,25 @@ export class TopicStore {
     const snapshots = await this.port.listMarkdown(history).catch((): Array<{ path: string; name: string }> => []);
     if (!snapshotPath || !snapshotPath.startsWith(`${history}/`) || cache?.lastSnapshot !== snapshotPath || !snapshots.some((file) => file.path === snapshotPath)) {
       this.port.logDiagnostic?.("topic.errata_snapshot_mismatch", { topicId, snapshotPath: snapshotPath || "" });
-      return;
+      throw new Error("Topic errata undo association could not be confirmed");
     }
+    const expectedEntries = [...(cache.lastSnapshotErrata?.snapshotPath === snapshotPath ? cache.lastSnapshotErrata.entries : []), ...entries];
     await this.persistCache({
       ...cache,
-      lastSnapshotErrata: { snapshotPath, entries: [...(cache.lastSnapshotErrata?.snapshotPath === snapshotPath ? cache.lastSnapshotErrata.entries : []), ...entries] },
+      lastSnapshotErrata: { snapshotPath, entries: expectedEntries },
       updatedAt: new Date(this.port.now()).toISOString(),
     });
+    const verified = this.parseCache(await this.readCache(this.cachePath(topicId)), topicId);
+    const actualUndo = verified?.lastSnapshotErrata;
+    const entriesMatch = !!actualUndo && actualUndo.entries.length === expectedEntries.length
+      && expectedEntries.every((entry, index) => {
+        const actual = actualUndo.entries[index];
+        return actual.path === entry.path && actual.description === entry.description && actual.memberLink === entry.memberLink;
+      });
+    if (!verified || verified.lastSnapshot !== snapshotPath || actualUndo?.snapshotPath !== snapshotPath || !entriesMatch) {
+      this.port.logDiagnostic?.("topic.errata_snapshot_write_unconfirmed", { topicId, snapshotPath, entryCount: entries.length });
+      throw new Error("Topic errata undo association could not be confirmed");
+    }
   }
 
   async create(page: TopicPage, content?: string): Promise<string> {

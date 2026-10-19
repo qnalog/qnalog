@@ -200,6 +200,38 @@ describe("topics service", () => {
     expect(await setup.storePort.read("Topics/Climate.md")).toBe(originalPage);
   });
 
+  it("stops after an errata undo association cannot be verified and reports the retained row", async () => {
+    const errataFiles = new Map<string, string>([["Topics/Climate.md", "source topic"]]);
+    const topicErrata = makeTopicErrata(errataFiles);
+    const appendEntry = vi.spyOn(topicErrata, "appendEntry");
+    const setup = harness({ topicErrata });
+    const originalWrite = setup.storePort.writeCache.bind(setup.storePort);
+    setup.storePort.writeCache = async (path, content) => {
+      if (path.endsWith("topic-index/association-failure-topic.json") && (JSON.parse(content) as { lastSnapshotErrata?: unknown }).lastSnapshotErrata) return;
+      await originalWrite(path, content);
+    };
+    const members = [
+      { path: "Notes/a.md", title: "A", sourceId: "Notes/a.md" },
+      { path: "Notes/b.md", title: "B", sourceId: "Notes/b.md" },
+    ];
+    const topic = createTopicPage({ id: "association-failure-topic", title: "Climate", tags: [], basis: "overview", members });
+    topic.layout = 2;
+    topic.body = renderTopicPage({ overview: "Climate overview.", threads: [{ id: "work", title: "Work", summary: "Two details.", points: [
+      { id: "repair", text: "Off-topic repair detail.", sources: ["Notes/a.md"] },
+      { id: "travel", text: "Off-topic travel detail.", sources: ["Notes/b.md"] },
+    ] }], disagreements: [], open: [], unsorted: [] }, members);
+    setup.storePort.seed("Topics/Climate.md", serializeTopicPage(topic));
+    const blocks = parseTopicPageBlocks(serializeTopicPage(topic)).filter((block) => /Off-topic (?:repair|travel) detail/.test(block.text));
+    const preview = await setup.service.previewExcludeBlocks("Topics/Climate.md", blocks.map((block) => block.id));
+
+    await expect(setup.service.apply(preview, preview.items.map((item) => item.id))).rejects.toThrow("The topic page was updated. New errata rows were kept, but their undo tracking could not be confirmed.");
+    expect(appendEntry).toHaveBeenCalledOnce();
+    expect(await setup.storePort.read("Topics/Climate.md")).not.toMatch(/Off-topic (?:repair|travel) detail/);
+    const errata = errataFiles.get("QnALog/勘误表/Climate · 主题勘误.md") || "";
+    expect(errata).toContain("Off-topic repair detail.");
+    expect(errata).not.toContain("Off-topic travel detail.");
+  });
+
   it("undoes all newly added scoped and global errata with the matching multi-block snapshot", async () => {
     const errataPath = "QnALog/勘误表/Climate · 主题勘误.md";
     const originalErrata = "---\nqnalog_topic_errata: true\n---\n主题：[[Topics/Climate]]\n\n## 不属于本主题\n- 既有全局事项\n\n## 说明\n维护者备注\n";
