@@ -439,7 +439,11 @@ export class TopicsService {
           for (const source of scope) {
             const appended = await this.host.topicErrata?.appendEntry(topic.path, topic.page.title, entry.description, source);
             if (appended?.added) {
-              await store.recordSnapshotErrata(topic.page.id, snapshotPath, [{ path: appended.path, description: appended.description, memberLink: appended.memberLink }]);
+              try {
+                await store.recordSnapshotErrata(topic.page.id, snapshotPath, [{ path: appended.path, description: appended.description, memberLink: appended.memberLink }]);
+              } catch {
+                throw new Error(t("The topic page was updated. New errata rows were kept, but their undo tracking could not be confirmed. Check the errata note before continuing. To undo these exclusions, remove the new rows manually."));
+              }
             }
           }
         }

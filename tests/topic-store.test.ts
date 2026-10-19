@@ -98,7 +98,7 @@ describe("topic store", () => {
     const second = await store.apply("Topics/topic.md", preview("topic", "ignored", "Second update."), ["add"]);
     expect(second.snapshotPath).not.toBe(first.snapshotPath);
     expect(JSON.parse(port.files.get(cachePath) || "{}").lastSnapshotErrata).toBeUndefined();
-    await store.recordSnapshotErrata("topic", first.snapshotPath, [entry]);
+    await expect(store.recordSnapshotErrata("topic", first.snapshotPath, [entry])).rejects.toThrow("could not be confirmed");
     expect(JSON.parse(port.files.get(cachePath) || "{}").lastSnapshotErrata).toBeUndefined();
   });
 
@@ -108,6 +108,74 @@ describe("topic store", () => {
     const entry = { path: "QnALog/勘误表/topic · 主题勘误.md", description: "Off-topic aspect", memberLink: null };
     await store.recordSnapshotErrata("topic", result.snapshotPath, [entry]);
     expect(await store.undoLastUpdate("topic")).toEqual({ restored: true, errataEntries: [entry] });
+  });
+
+  it("rejects an errata association that cannot be read back and preserves earlier associations", async () => {
+    const { port, store } = setup();
+    const applied = await store.apply("Topics/topic.md", preview("topic", "ignored"), ["add"]);
+    const cachePath = "QnALog/.cache/topic-index/topic.json";
+    const first = { path: "QnALog/勘误表/topic · 主题勘误.md", description: "First exclusion", memberLink: "Notes/a" };
+    const second = { path: "QnALog/勘误表/topic · 主题勘误.md", description: "Second exclusion", memberLink: "Notes/b" };
+    await store.recordSnapshotErrata("topic", applied.snapshotPath, [first]);
+    const originalWrite = port.writeCache.bind(port);
+    port.writeCache = async (path, content) => {
+      const cache = JSON.parse(content) as { lastSnapshotErrata?: unknown };
+      if (path === cachePath && cache.lastSnapshotErrata) return;
+      await originalWrite(path, content);
+    };
+
+    await expect(store.recordSnapshotErrata("topic", applied.snapshotPath, [second])).rejects.toThrow("could not be confirmed");
+    const savedCache = JSON.parse(port.files.get(cachePath) || "{}") as { lastSnapshot: string; lastSnapshotErrata?: { snapshotPath: string; entries: unknown[] } };
+    expect(savedCache.lastSnapshot).toBe(applied.snapshotPath);
+    expect(savedCache.lastSnapshotErrata).toEqual({ snapshotPath: applied.snapshotPath, entries: [first] });
+    expect(await store.undoLastUpdate("topic")).toEqual({ restored: true, errataEntries: [first] });
+  });
+
+  it("accepts an errata association write that throws after the complete cache was saved", async () => {
+    const { port, store } = setup();
+    const applied = await store.apply("Topics/topic.md", preview("topic", "ignored"), ["add"]);
+    const cachePath = "QnALog/.cache/topic-index/topic.json";
+    const entry = { path: "QnALog/勘误表/topic · 主题勘误.md", description: "Off-topic aspect", memberLink: null };
+    const originalWrite = port.writeCache.bind(port);
+    port.writeCache = async (path, content) => {
+      await originalWrite(path, content);
+      if (path === cachePath && (JSON.parse(content) as { lastSnapshotErrata?: unknown }).lastSnapshotErrata) throw new Error("write failed after effect");
+    };
+
+    await expect(store.recordSnapshotErrata("topic", applied.snapshotPath, [entry])).resolves.toBeUndefined();
+    const savedCache = JSON.parse(port.files.get(cachePath) || "{}") as { lastSnapshotErrata?: { snapshotPath: string; entries: unknown[] } };
+    expect(savedCache.lastSnapshotErrata).toEqual({ snapshotPath: applied.snapshotPath, entries: [entry] });
+  });
+
+  it.each(["readback-missing", "same-length-tamper", "dropped-association", "wrong-associated-snapshot", "wrong-topic", "wrong-last-snapshot", "invalid-json", "wrong-snapshot"] as const)("rejects an unconfirmed errata association when readback is %s", async (failure) => {
+    const { port, store } = setup();
+    const applied = await store.apply("Topics/topic.md", preview("topic", "ignored"), ["add"]);
+    const cachePath = "QnALog/.cache/topic-index/topic.json";
+    const entry = { path: "QnALog/勘误表/topic · 主题勘误.md", description: "Off-topic aspect", memberLink: null };
+    if (failure === "readback-missing") {
+      const originalRead = port.readCache.bind(port);
+      let cacheReads = 0;
+      port.readCache = async (path) => path === cachePath && ++cacheReads === 2 ? null : originalRead(path);
+    } else if (["same-length-tamper", "dropped-association", "wrong-associated-snapshot", "wrong-topic", "wrong-last-snapshot", "invalid-json"].includes(failure)) {
+      const originalWrite = port.writeCache.bind(port);
+      port.writeCache = async (path, content) => {
+        if (path === cachePath && (JSON.parse(content) as { lastSnapshotErrata?: unknown }).lastSnapshotErrata) {
+          if (failure === "invalid-json") { await originalWrite(path, "{"); return; }
+          const cache = JSON.parse(content) as { topicId: string; lastSnapshot: string; lastSnapshotErrata?: { snapshotPath: string; entries: Array<{ description: string }> } };
+          if (failure === "same-length-tamper" && cache.lastSnapshotErrata) cache.lastSnapshotErrata.entries[0].description = "Altered entry";
+          if (failure === "dropped-association") delete cache.lastSnapshotErrata;
+          if (failure === "wrong-associated-snapshot" && cache.lastSnapshotErrata) cache.lastSnapshotErrata.snapshotPath = `${applied.snapshotPath}-other`;
+          if (failure === "wrong-topic") cache.topicId = "other-topic";
+          if (failure === "wrong-last-snapshot") cache.lastSnapshot = `${applied.snapshotPath}-other`;
+          await originalWrite(path, JSON.stringify(cache));
+          return;
+        }
+        await originalWrite(path, content);
+      };
+    }
+
+    const snapshotPath = failure === "wrong-snapshot" ? `${applied.snapshotPath}-other` : applied.snapshotPath;
+    await expect(store.recordSnapshotErrata("topic", snapshotPath, [entry])).rejects.toThrow("could not be confirmed");
   });
 
   it("snapshots block removals and restores the page on undo", async () => {

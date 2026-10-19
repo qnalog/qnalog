@@ -3127,6 +3127,7 @@ export const ZH: MessageTable = {
   "The selected text contains no topic content blocks (headings cannot be marked on their own).": "选中的内容里没有可标记的内容块（标题不能单独标记）。",
   "Topic page was restored, but its errata entries could not be removed. Delete them manually in the errata note.": "主题页已恢复，但主题勘误条目未能移除，请在勘误笔记中手动删除。",
   "Topic errata could not be linked to the update snapshot.": "主题勘误条目无法关联到本次更新快照。",
+  "The topic page was updated. New errata rows were kept, but their undo tracking could not be confirmed. Check the errata note before continuing. To undo these exclusions, remove the new rows manually.": "主题页已更新。新增勘误条目仍保留，但其撤销关联尚未确认。继续前请检查勘误笔记；如需撤销这些排除规则，请手动删除新增条目。",
   "Content cleaning": "内容清洗",
   "Cleaning will inspect only the current topic page and its errata. Estimated input: {0} characters, about {1} tokens.": "清洗只检查当前主题页和主题勘误表。预计输入 {0} 个字符，约 {1} 个词元。",
   "Estimated input: {0} characters, about {1} tokens.": "预计输入 {0} 个字符，约 {1} 个词元。",
