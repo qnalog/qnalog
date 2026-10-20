@@ -4,13 +4,14 @@
 
 阅读导航：
 - 新任务先看 §6（当前推进、待决定事项、人工补验）。
+- **核心原则是 §1.0「录音优先」**：任何改动都不得让用户丢失录音。
 - 维护规则看 §1–§5；按改动再查 §8（类型）、§9–§12（设置与服务接入）、§13–§15（架构与笔记版本）。
 - 产品方向看 §7；它不是已实现功能清单，也不自动改变 §6 的执行顺序。
 - 已完成事项从 Git 提交、PR 与 `.github/release-notes/` 追溯，不在本文记录。
 - `AGENTS.md` 规定代理执行流程；本文件不重复维护另一套流程。
 - 往本文件写入内容前先读 §0。
 
-> English summary: QnALog is MIT-licensed software derived from LexVoice's last MIT-licensed release (2.1.2). LexVoice 2.2.0+ is proprietary; its terms do not reach this repository. Never copy code, text, or assets out of a 2.2.0+ build — implement equivalent functionality independently. Keep the plugin id `qnalog` and keep every update source pointing at this repository.
+> English summary: QnALog is MIT-licensed software derived from LexVoice's last MIT-licensed release (2.1.2). LexVoice 2.2.0+ is proprietary; its terms do not reach this repository. Never copy code, text, or assets out of a 2.2.0+ build — implement equivalent functionality independently. Keep the plugin id `qnalog` and keep every update source pointing at this repository. Core principle: the user's recordings are the plugin's primary asset — never lose, overwrite or auto-delete a recording that may contain sound (§1.0).
 
 ---
 
@@ -33,7 +34,24 @@
 
 ## 1. 维护主线
 
-QnALog 是面向 Obsidian 的开源对话智能插件：录音、转写，并把对话整理成结构化 Markdown 知识。三条主线按优先级排列：
+QnALog 是面向 Obsidian 的开源对话智能插件：录音、转写，并把对话整理成结构化 Markdown 知识。
+
+### 1.0 核心原则：录音优先
+
+**录音是 QnALog 的核心资产。** 转写、整理、主题、问答等后续功能都以录音为前提：笔记、转写和索引丢了可以从录音重新生成，录音丢了就无法恢复。因此在任何情况下，先保住用户的录音，再考虑其他目标。
+
+判断规则（所有改动、所有代理都按此执行）：
+
+1. **录音先落盘**：只要录到了声音，即使没有网络、转写服务或 AI 模型不可用，录音也必须保存到录音目录。其他处理都在录音保存之后进行。
+2. **失败不连累录音**：转写、整理、写笔记、重试、恢复、改名、清理中的任何一步失败，都不得删除、覆盖或截断录音；保留录音与可重试的任务，并告诉用户。
+3. **只有能证明无内容的录音才可自动丢弃**：如不足 1 秒，或整场基本无声且转写为空白（§12）。判定须依据录音本身的声音电平，不能只看转写文本；无法证明时一律保留。
+4. **拿不准就保留**：保留一段无用录音的代价是占一点空间，删除一段有用录音的代价是无法挽回。存储空间、界面整洁、处理速度与录音保全冲突时，录音保全优先。
+5. **清理前先确认**：临时分片、母带或暂存材料，只有在最终录音写入完成并读回核对之后才能清理；核对不通过时保留全部材料。
+6. **改动须有证据**：改动录音、分段、母带、恢复、清理或删除相关代码时，附回归测试，证明失败路径上录音仍在。
+
+崩溃恢复、重试与自动处理的具体设计可以灵活调整，但不得违反以上规则。
+
+三条主线按优先级排列：
 
 ### 1.1 第一条：把原有功能维护好（稳定与安全第一）
 
@@ -71,8 +89,9 @@ QnALog 不承接历史项目数据：不提供笔记迁移命令，不扫描或�
 
 ### 1.4 硬约束（与优先级无关，不可协商）
 
-1. **不得复制上游 2.2.0+ 的表达**（代码、文案、注释、结构、素材），见 §2。
-2. **代码与产物不得指向上游仓库**，插件 `id` 不得与社区目录条目冲突，见 §3。
+1. **不得丢失用户的录音**：录音优先原则见 §1.0。
+2. **不得复制上游 2.2.0+ 的表达**（代码、文案、注释、结构、素材），见 §2。
+3. **代码与产物不得指向上游仓库**，插件 `id` 不得与社区目录条目冲突，见 §3。
 
 ---
 
@@ -530,7 +549,7 @@ HTTP 分段转写支持桌面与移动端；实时 WebSocket 需要浏览器不�
 
 ## 12. 录音收尾的保留规则
 
-**有声的录音不得被自动删除**；只有能判定为空白的录音可以丢弃。
+本节是 §1.0 录音优先原则在当前代码中的具体规则。
 
 - 不足 1 秒丢弃且不转写；1–10 秒转写一次后按内容判定，转写失败保留音频与重试任务（`audio/short-recording-policy.ts`、`audio/short-recording-content.ts`）。
 - 整场有声比例按 `audio/session-silence.ts` 判定。普通录音转写全空、整场基本无声且不足 60 秒时丢弃笔记与音频；有声或达到 60 秒时保留并写入「未检测到语音」。导入音频与续录不丢弃。
