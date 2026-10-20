@@ -7,6 +7,7 @@ let importedAudioIndex = 0;
 let importedAudioDurationMs = 1200;
 let importedAudioResultDurationMs = 1200;
 let importedAudioBinary = new Uint8Array([1, 2, 3]).buffer;
+let importedAudioNoSpeech = false;
 let importedSourceText = "A decision and its owner";
 let lastInitializedSession: RecordingSession | null = null;
 const notices: string[] = [];
@@ -49,7 +50,7 @@ vi.mock("../src/asr/long-audio-transcription", async (importOriginal) => {
     resolveImportTranscribeProvider: () => ({ id: "test-provider", endpoint: "https://asr.example.com/v1/transcriptions", apiKey: "test-key", model: "test-model" }),
     transcribeImportedAudio: async () => {
       const text = importedAudioTexts[importedAudioIndex++] || "";
-      return { text, durationMs: importedAudioResultDurationMs, rawText: text, units: importedAudioUnits };
+      return { text, durationMs: importedAudioResultDurationMs, rawText: text, units: importedAudioUnits, ...(importedAudioNoSpeech ? { noSpeech: true } : {}) };
     },
   };
 });
@@ -228,6 +229,49 @@ describe("text import session ownership", () => {
     expect(lastInitializedSession?.segments[0]?.error).toBeFalsy();
     expect(host.sessionFinalize.finalizeSession).toHaveBeenCalledOnce();
     expect(notes.size).toBeGreaterThan(0);
+  });
+
+  it("finishes an all-blank whole-file import as a no-speech note with no failed task and the audio kept", async () => {
+    notes.clear();
+    importedAudioTexts = [""];
+    importedAudioIndex = 0;
+    importedAudioNoSpeech = true;
+    importedAudioDurationMs = 20_000;
+    importedAudioResultDurationMs = 20_000;
+    const { host, sessionStore, audioPath, queuedTasks } = makeHost(["QnALog/Import/silent-20s.wav"]);
+    const updateImportActivity = vi.fn();
+    host.tasks.updateImportActivity = updateImportActivity as never;
+    // The real finalizer marks an all-blank import with the transcript-empty stage after writing the no-speech note.
+    host.sessionFinalize.finalizeSession = vi.fn(async (session: RecordingSession) => {
+      session.workProgress = { stage: "transcript-empty", label: "No speech detected", percent: 100 } as RecordingSession["workProgress"];
+      sessionStore.end(session);
+    });
+    vi.stubGlobal("window", {
+      moment: () => ({
+        format: (format: string) => format === "YYYYMMDD-HHmmss" ? "20261020-100000" : "2026-10-20",
+        toDate: () => new Date("2026-10-20T10:00:00.000Z"),
+      }),
+      setTimeout: () => 1,
+    });
+    try {
+      const result = await new ImportService(host).importAudioFiles(["QnALog/Import/silent-20s.wav"], "synthesis");
+      expect(result).toMatchObject({ segmentCount: 1, pendingTranscriptionCount: 0 });
+    } finally {
+      vi.unstubAllGlobals();
+      importedAudioTexts = ["Imported audio transcript"];
+      importedAudioIndex = 0;
+      importedAudioNoSpeech = false;
+      importedAudioDurationMs = 1200;
+      importedAudioResultDurationMs = 1200;
+    }
+
+    expect(audioPath).toBe("QnALog/Import/silent-20s.wav");
+    expect(queuedTasks).toEqual([]);
+    expect(lastInitializedSession?.segments[0]).toMatchObject({ text: "", error: null });
+    const errorPatches = updateImportActivity.mock.calls.filter(([patch]) => patch && (patch as { error?: string }).error);
+    expect(errorPatches).toEqual([]);
+    const markdown = [...notes.values()].join("\n");
+    expect(markdown).toContain("silent-20s.wav");
   });
 
   it("keeps anomalous long imported audio retryable and excludes its text", async () => {
