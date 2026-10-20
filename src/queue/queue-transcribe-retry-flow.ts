@@ -4,7 +4,6 @@ import type { AudioChannelMode, Segment, TranscribeQueueTaskPayload } from "../s
 import { MAX_SPEAKER_CHANNELS, initialAudioChannelRuntimeMode, normalizeAudioChannelMode } from "../audio/channel-speakers";
 import { diagnosticError } from "../shared/util-key-diag";
 import { escapeRegExp, formatElapsed } from "../shared/util-common";
-import { getAudioTimeLink } from "../notes/audio-reference-text";
 import { ensureTranscriptBlocks } from "../notes/note-transcript-ledger";
 import { getSourceIdFromMarkdown } from "../notes/note-source-metadata";
 import { findNoteMarkerOffset } from "../notes/note-document";
@@ -20,6 +19,10 @@ import { classifyLongRecordingAnomaly } from "../audio/long-recording-anomaly";
 import { encodeAudioTimeLinkPath } from "../notes/audio-time-source";
 
 export type TranscribeRetryTask = TranscribeQueueTaskPayload & { id?: string };
+
+function escapeHtmlAttribute(value: string): string {
+  return value.replace(/&/g, "&amp;").replace(/"/g, "&quot;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
+}
 
 export interface QueueTranscribeRetryPort {
   getVault(): Pick<obsidian.Vault, "getAbstractFileByPath" | "read" | "process">;
@@ -203,7 +206,10 @@ async function retryTranscribeTaskImpl(port: QueueTranscribeRetryPort, task: Tra
   const makeTranscriptBlock = (segment: Segment): string => {
     const linkOffsetMs = hasIndependentAudioSource || audio.recovered ? selectedAudioOffsetMs : 0;
     const linkPath = segment.audioPath ? encodeAudioTimeLinkPath(selectedAudioPath) : "";
-    const heading = [`### ${labelText("segment", segmentNumber)} (${formatElapsed(startOffsetMs)}–${formatElapsed(endOffsetMs)}) ${getAudioTimeLink(linkPath, linkOffsetMs)}`, taskMarker].filter(Boolean).join("\n\n");
+    const audioLink = linkPath
+      ? `<a class="internal-link qnalog-time-link" data-href="${escapeHtmlAttribute(linkPath)}" href="${escapeHtmlAttribute(linkPath)}">${formatElapsed(linkOffsetMs)}</a>`
+      : "";
+    const heading = [`### ${labelText("segment", segmentNumber)} (${formatElapsed(startOffsetMs)}–${formatElapsed(endOffsetMs)})`, audioLink, taskMarker].filter(Boolean).join("\n\n");
     return `\n${serializeTranscriptBlock(segment, heading, blockVisibleText)}\n`;
   };
   const findTarget = (blocks: ReturnType<typeof readTranscriptBlocks>) => {

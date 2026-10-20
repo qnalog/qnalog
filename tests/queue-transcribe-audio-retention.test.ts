@@ -22,7 +22,7 @@ import { TaskQueue } from "../src/queue/task-queue";
 import type { TaskQueueHost } from "../src/queue/task-queue";
 import { DEFAULT_SETTINGS } from "../src/shared/defaults";
 import { attachTextTranscript } from "../src/transcript/session-transcript";
-import { readTranscriptBlocks, serializeTranscriptBlock } from "../src/transcript/transcript-markdown";
+import { readTranscriptBlocks, replaceTranscriptBlock, serializeTranscriptBlock } from "../src/transcript/transcript-markdown";
 
 afterEach(() => { vi.unstubAllGlobals(); vi.clearAllMocks(); });
 
@@ -132,7 +132,11 @@ describe.each(["adapter", "indexed"] as const)("ordinary segment retry retains c
 
     const block = readTranscriptBlocks(fixture.contents()).find(item => item.segment.text === "recognized words");
     expect(block).toBeDefined();
-    expect(fixture.contents()).toContain(expectedLink);
+    const [, targetPath, timeLabel] = expectedLink.match(/^\[\[(.+)\|([^|]+)\]\]$/) || [];
+    const internalLink = `<a class="internal-link qnalog-time-link" data-href="${targetPath}" href="${targetPath}">${timeLabel}</a>`;
+    expect(fixture.contents()).toContain(internalLink);
+    expect(fixture.contents()).not.toContain(expectedLink);
+    expect(block?.heading).toContain(internalLink);
     if (_label === "readable master") {
       expect(block?.segment).toMatchObject({ audioPath: options.masterAudioPath, segmentAudioPath: CACHE_PATH, audioStartOffsetMs: 60000 });
       expect(block?.segment.transcript?.revisions.at(-1)?.utterances[0]?.audioRef).toMatchObject({ path: options.masterAudioPath, startMs: 61000 });
@@ -162,8 +166,10 @@ describe.each(["adapter", "indexed"] as const)("ordinary segment retry retains c
     await fixture.queue.processOne(queued);
 
     const block = readTranscriptBlocks(fixture.contents()).find(item => item.segment.text === "recognized words");
-    expect(fixture.contents()).toContain(`[[${sourcePath}|01:00]]`);
+    const recoveredAudioLink = `<a class="internal-link qnalog-time-link" data-href="${sourcePath}" href="${sourcePath}">01:00</a>`;
+    expect(fixture.contents()).toContain(recoveredAudioLink);
     expect(fixture.contents()).not.toContain("stale-master.wav");
+    expect(block?.heading).toContain(recoveredAudioLink);
     expect(block?.segment).toMatchObject({ audioPath: sourcePath, segmentAudioPath: "", audioStartOffsetMs: 60000 });
   });
 
@@ -181,9 +187,26 @@ describe.each(["adapter", "indexed"] as const)("ordinary segment retry retains c
     await fixture.queue.processOne(queued);
 
     const block = readTranscriptBlocks(fixture.contents()).find(item => item.segment.text === "recognized words");
-    expect(fixture.contents()).toContain("[[QnALog/.cache/validation%20%23%20%25/clip%2010%25.wav|00:00]]");
+    const internalLink = `<a class="internal-link qnalog-time-link" data-href="QnALog/.cache/validation%20%23%20%25/clip%2010%25.wav" href="QnALog/.cache/validation%20%23%20%25/clip%2010%25.wav">00:00</a>`;
+    expect(fixture.contents()).toContain(internalLink);
+    expect(block?.heading).toContain(internalLink);
     expect(block?.segment).toMatchObject({ audioPath: cachePath, segmentAudioPath: cachePath });
     expect(block?.segment.transcript?.revisions.at(-1)?.utterances[0]?.audioRef).toMatchObject({ path: cachePath, startMs: 1000 });
+    expect(fixture.bytes.get(cachePath)).toEqual(AUDIO_BYTES);
+
+    const updatedText = "updated <& transcript";
+    const updated = replaceTranscriptBlock(fixture.contents(), block!, { ...block!.segment, text: updatedText }, updatedText);
+    const updatedBlock = readTranscriptBlocks(updated)[0];
+    expect(updatedBlock.heading).toContain(internalLink);
+    expect(updatedBlock.heading.match(/qnalog-time-link/g)).toHaveLength(1);
+    expect(updatedBlock.visibleBlock).toBe(updatedText);
+    expect(updated).toContain(internalLink);
+    const nextText = "second <& update";
+    const serializedAgain = replaceTranscriptBlock(updated, updatedBlock, { ...updatedBlock.segment, text: nextText }, nextText);
+    const serializedAgainBlock = readTranscriptBlocks(serializedAgain)[0];
+    expect(serializedAgainBlock.heading.match(/qnalog-time-link/g)).toHaveLength(1);
+    expect(serializedAgainBlock.visibleBlock).toBe(nextText);
+    expect(serializedAgain).toContain(internalLink);
     expect(fixture.bytes.get(cachePath)).toEqual(AUDIO_BYTES);
   });
 
@@ -255,5 +278,20 @@ describe.each(["adapter", "indexed"] as const)("ordinary segment retry retains c
     expect(fixture.queue.snapshot()).not.toContain(queued);
     expect(fixture.contents()).toContain("recognized words");
     expect(fixture.bytes.get(CACHE_PATH)).toEqual(AUDIO_BYTES);
+  });
+});
+
+describe("transcript audio link material", () => {
+  it("does not preserve a generated link when href and data-href differ", () => {
+    const segment = attachTextTranscript({
+      index: 0, startOffsetMs: 0, endOffsetMs: 1000,
+      audioName: "clip.wav", audioPath: "QnALog/Audio/clip.wav", text: "visible text",
+    }, "session-anchor", "asr");
+    const mismatchedAnchor = `<a class="internal-link qnalog-time-link" data-href="QnALog/Audio/clip.wav" href="QnALog/Audio/other.wav">00:00</a>`;
+    const markdown = serializeTranscriptBlock(segment, `### Segment 1 (00:00–00:01)\n\n${mismatchedAnchor}`, "visible text");
+    const block = readTranscriptBlocks(markdown)[0];
+
+    expect(block.heading).toContain("[[clip.wav|00:00]]");
+    expect(block.heading).not.toContain("qnalog-time-link");
   });
 });
