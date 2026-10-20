@@ -1,8 +1,10 @@
+const masterNoticeMessages = vi.hoisted(() => [] as string[]);
+
 vi.mock("obsidian", () => ({
   normalizePath: (p: string) => String(p || ""),
   Notice: class {
     messageEl = { createEl: () => ({ addEventListener: () => undefined }) };
-    constructor(public message: string) {}
+    constructor(public message: string) { masterNoticeMessages.push(message); }
   },
   TFile: class {},
   TFolder: class {},
@@ -10,6 +12,7 @@ vi.mock("obsidian", () => ({
 }));
 
 import { describe, expect, it, vi } from "vitest";
+import { TFile } from "obsidian";
 import { MasterPartialService, type MasterPartialHost, type MasterPartialNotice } from "../src/audio/master-partial-service";
 import { parseMasterPartialMeta, type MasterPartialSessionInit } from "../src/audio/master-partial";
 import { RecordingService } from "../src/audio/recording-service";
@@ -154,7 +157,7 @@ describe("MasterPartialService discard after a saved master audio", () => {
     expect(notices.map((notice) => notice.message)).toContain("The saved recording could not be verified; its partial audio was kept");
   });
 
-  it("references a size-verified master when partial cleanup alone fails", async () => {
+  it("references a byte-verified master when partial cleanup alone fails", async () => {
     const io = new MemoryAdapter();
     const { host, logs } = makeHost(io);
     const partials = new MasterPartialService(host);
@@ -165,6 +168,7 @@ describe("MasterPartialService discard after a saved master audio", () => {
     const pipeline = new LiveAsrPipelineService({
       getSettings: () => ({ audioFolder: AUDIO_FOLDER }) as never,
       vault: {
+        adapter: { readBinary: (path: string) => io.readBinary(path) },
         getAbstractFileByPath: () => null,
         createFolder: async () => undefined,
         createBinary: async (path: string, data: ArrayBuffer) => { io.files.set(path, data.slice(0)); return {} as never; },
@@ -287,28 +291,95 @@ describe("RecordingService master flush result handling", () => {
 });
 
 describe("LiveAsrPipelineService master audio save", () => {
-  function makePipeline(createBinary: () => Promise<unknown>, discardAction: (sessionId: string, savedPath: string, savedBytes: number) => Promise<void> = async () => undefined) {
+  function makePipeline(createBinary: (path: string, data: ArrayBuffer, files: Map<string, ArrayBuffer>) => Promise<unknown>, discardAction: (sessionId: string, savedPath: string, savedBytes: number) => Promise<void> = async () => undefined) {
     const discards: Array<[string, string, number]> = [];
-    const notices: string[] = [];
+    masterNoticeMessages.length = 0;
+    const files = new Map<string, ArrayBuffer>();
     const pipeline = new LiveAsrPipelineService({
       getSettings: () => ({ audioFolder: AUDIO_FOLDER }) as never,
       vault: {
+        adapter: {
+          readBinary: async (path: string) => {
+            const data = files.get(path);
+            if (!data) throw new Error(`missing ${path}`);
+            return data.slice(0);
+          },
+        },
         getAbstractFileByPath: () => null,
         createFolder: async () => undefined,
-        createBinary,
+        createBinary: (path: string, data: ArrayBuffer) => createBinary(path, data, files),
       } as never,
       discardMasterPartials: async (sessionId: string, savedPath: string, savedBytes: number) => {
         discards.push([sessionId, savedPath, savedBytes]);
         await discardAction(sessionId, savedPath, savedBytes);
       },
     } as never);
-    return { pipeline, discards, notices };
+    return { pipeline, discards, notices: masterNoticeMessages, files };
   }
   const makeSession = (segments: Array<{ audioName?: string; audioPath?: string }> = []) => ({ id: "s-save", sessionStamp: "20261006-120000", segments });
   const seg = { masterBlob: new Blob(["full"], { type: MIME }), masterMime: MIME, masterExt: "webm" } as never;
 
+  async function makeIntegratedSaveFlow(options: { writeMode?: "exact" | "same-size-corrupt" | "truncate"; readFails?: boolean; flushedPart?: boolean } = {}) {
+    masterNoticeMessages.length = 0;
+    const io = new MemoryAdapter();
+    const partialHost = makeHost(io);
+    const partials = new MasterPartialService(partialHost.host);
+    const sessionId = "s-integrated-save";
+    const partialSession = partials.createSession(init(sessionId));
+    if (options.flushedPart) await partialSession.append(new Blob([new Uint8Array([1, 2, 3])], { type: MIME }), MIME);
+    const masterPath = `${AUDIO_FOLDER}/qnalog-20261006-120000.webm`;
+    const cachePath = "QnALog/.cache/segments/segment.webm";
+    io.files.set(cachePath, new Uint8Array([9, 8, 7]).buffer);
+    const expected = new Uint8Array([1, 2, 3, 4]);
+    const pipeline = new LiveAsrPipelineService({
+      getSettings: () => ({ audioFolder: AUDIO_FOLDER, keepSegmentAudioFiles: false, consolidatedLayout: true }) as never,
+      vault: {
+        adapter: {
+          exists: (path: string) => io.exists(path),
+          readBinary: async (path: string) => {
+            if (options.readFails && path === masterPath) throw new Error("readback unavailable");
+            return io.readBinary(path);
+          },
+          stat: (path: string) => io.stat(path),
+          remove: (path: string) => io.remove(path),
+        },
+        getAbstractFileByPath: () => null,
+        createFolder: async () => undefined,
+        createBinary: async (path: string, data: ArrayBuffer) => {
+          let bytes = new Uint8Array(data.slice(0));
+          if (options.writeMode === "same-size-corrupt") bytes[bytes.length - 1] = 99;
+          if (options.writeMode === "truncate") bytes = bytes.slice(0, bytes.length - 1);
+          io.files.set(path, bytes.buffer);
+          return Object.assign(new TFile(), { path });
+        },
+      },
+      fileManager: { trashFile: async () => undefined },
+      diagnostics: { logDiagnostic: async () => undefined },
+      queueTasks: () => [],
+      queueRecoveryEntries: () => [],
+      addQueueTask: async () => ({ id: "task" }),
+      updateQueueTask: async () => undefined,
+      removeQueueTask: async () => undefined,
+      removeLiveTranscriptBlock: async () => undefined,
+      discardMasterPartials: (id: string, path: string, bytes: number) => partials.discard(id, path, bytes),
+      getRecorderBufferSummary: () => ({ masterChunkCount: 1, masterChunkBytes: expected.byteLength, currentSegmentChunkCount: 1, currentSegmentChunkBytes: expected.byteLength }),
+      syncImportBusyFromSessionProgress: () => undefined,
+      requestOutlineRefresh: () => undefined,
+      requestBubbleUpdate: () => undefined,
+    } as never);
+    const session = {
+      id: sessionId,
+      sessionStamp: "20261006-120000",
+      segments: [{ segmentAudioPath: cachePath, audioPath: cachePath, audioName: "segment.webm" }],
+    };
+    return { io, partials, pipeline, session, sessionId, masterPath, cachePath, expected };
+  }
+
   it("discards the partial files only after the full master audio is written", async () => {
-    const createBinary = vi.fn(async () => ({}));
+    const createBinary = vi.fn(async (path: string, data: ArrayBuffer, files: Map<string, ArrayBuffer>) => {
+      files.set(path, data.slice(0));
+      return {};
+    });
     const { pipeline, discards } = makePipeline(createBinary);
     await pipeline.saveMasterAudio(makeSession() as never, seg);
     expect(createBinary).toHaveBeenCalledTimes(1);
@@ -316,14 +387,17 @@ describe("LiveAsrPipelineService master audio save", () => {
   });
 
   it("keeps the partial files when the full master audio cannot be written", async () => {
-    const createBinary = vi.fn(async () => { throw new Error("vault locked"); });
+    const createBinary = vi.fn(async (_path: string, _data: ArrayBuffer, _files: Map<string, ArrayBuffer>) => { throw new Error("vault locked"); });
     const { pipeline, discards } = makePipeline(createBinary);
     await pipeline.saveMasterAudio(makeSession() as never, seg);
     expect(discards).toEqual([]);
   });
 
   it("does not reference a master target when partial verification fails", async () => {
-    const createBinary = vi.fn(async () => ({}));
+    const createBinary = vi.fn(async (path: string, data: ArrayBuffer, files: Map<string, ArrayBuffer>) => {
+      files.set(path, data.slice(0));
+      return {};
+    });
     const { pipeline } = makePipeline(createBinary, async () => { throw new Error("target size mismatch"); });
     const session = makeSession([{ audioName: "segment.webm", audioPath: "segment.webm" }]);
     const errorLog = vi.spyOn(console, "error").mockImplementation(() => undefined);
@@ -335,5 +409,70 @@ describe("LiveAsrPipelineService master audio save", () => {
     expect(session).not.toHaveProperty("masterAudioPath");
     expect(session).not.toHaveProperty("masterAudioName");
     expect(session.segments[0]).toEqual({ audioName: "segment.webm", audioPath: "segment.webm" });
+  });
+
+  it.each([
+    ["keeps segment audio when same-size master content differs without partials", { writeMode: "same-size-corrupt" as const }],
+    ["keeps segment audio when master readback fails without partials", { readFails: true }],
+  ])("%s", async (_label, options) => {
+    const fixture = await makeIntegratedSaveFlow(options);
+
+    await fixture.pipeline.saveMasterAudio(fixture.session as never, {
+      masterBlob: new Blob([fixture.expected], { type: MIME }), masterMime: MIME, masterExt: "webm",
+    } as never);
+    await fixture.pipeline.cleanupSuccessfulSegmentAudio(fixture.session as never);
+
+    expect(fixture.session).not.toHaveProperty("masterAudioPath");
+    expect([...new Uint8Array(await fixture.io.readBinary(fixture.cachePath))]).toEqual([9, 8, 7]);
+    expect(fixture.session.segments[0]).toEqual({ segmentAudioPath: fixture.cachePath, audioPath: fixture.cachePath, audioName: "segment.webm" });
+    expect(fixture.io.dirs.has(dirOf(fixture.sessionId))).toBe(false);
+    expect(masterNoticeMessages).toContain("The full recording could not be verified. Check the recording segments before closing Obsidian.");
+  });
+
+  it("keeps persisted partial bytes and segment audio when master content differs", async () => {
+    const fixture = await makeIntegratedSaveFlow({ writeMode: "same-size-corrupt", flushedPart: true });
+
+    await fixture.pipeline.saveMasterAudio(fixture.session as never, {
+      masterBlob: new Blob([fixture.expected], { type: MIME }), masterMime: MIME, masterExt: "webm",
+    } as never);
+    await fixture.pipeline.cleanupSuccessfulSegmentAudio(fixture.session as never);
+
+    expect(fixture.session).not.toHaveProperty("masterAudioPath");
+    expect([...new Uint8Array(await fixture.io.readBinary(fixture.cachePath))]).toEqual([9, 8, 7]);
+    expect([...new Uint8Array(await fixture.io.readBinary(`${dirOf(fixture.sessionId)}/part-0001.webm`))]).toEqual([1, 2, 3]);
+    expect(fixture.io.files.has(`${dirOf(fixture.sessionId)}/meta.json`)).toBe(true);
+    expect(fixture.io.dirs.has(dirOf(fixture.sessionId))).toBe(true);
+    expect(fixture.session.segments[0]).toEqual({ segmentAudioPath: fixture.cachePath, audioPath: fixture.cachePath, audioName: "segment.webm" });
+    expect(masterNoticeMessages).toContain("The full recording could not be verified. Check the recording segments before closing Obsidian.");
+  });
+
+  it("cleans partials and segment audio after byte-identical master readback", async () => {
+    const fixture = await makeIntegratedSaveFlow({ flushedPart: true });
+
+    await fixture.pipeline.saveMasterAudio(fixture.session as never, {
+      masterBlob: new Blob([fixture.expected], { type: MIME }), masterMime: MIME, masterExt: "webm",
+    } as never);
+    await fixture.pipeline.cleanupSuccessfulSegmentAudio(fixture.session as never);
+
+    expect(fixture.session.masterAudioPath).toBe(fixture.masterPath);
+    expect([...new Uint8Array(await fixture.io.readBinary(fixture.masterPath))]).toEqual([...fixture.expected]);
+    expect(fixture.session.segments[0]).toEqual({ segmentAudioPath: fixture.cachePath, audioPath: fixture.masterPath, audioName: "qnalog-20261006-120000.webm" });
+    expect(fixture.io.files.has(fixture.cachePath)).toBe(false);
+    expect(fixture.io.files.has(`${dirOf(fixture.sessionId)}/part-0001.webm`)).toBe(false);
+    expect(fixture.io.dirs.has(dirOf(fixture.sessionId))).toBe(false);
+  });
+
+  it("keeps segment audio and persisted partials when the master is truncated", async () => {
+    const fixture = await makeIntegratedSaveFlow({ writeMode: "truncate", flushedPart: true });
+
+    await fixture.pipeline.saveMasterAudio(fixture.session as never, {
+      masterBlob: new Blob([fixture.expected], { type: MIME }), masterMime: MIME, masterExt: "webm",
+    } as never);
+    await fixture.pipeline.cleanupSuccessfulSegmentAudio(fixture.session as never);
+
+    expect(fixture.session).not.toHaveProperty("masterAudioPath");
+    expect([...new Uint8Array(await fixture.io.readBinary(fixture.cachePath))]).toEqual([9, 8, 7]);
+    expect([...new Uint8Array(await fixture.io.readBinary(`${dirOf(fixture.sessionId)}/part-0001.webm`))]).toEqual([1, 2, 3]);
+    expect(fixture.io.files.has(`${dirOf(fixture.sessionId)}/meta.json`)).toBe(true);
   });
 });
