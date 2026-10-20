@@ -122,14 +122,14 @@ describe("MasterPartialService discard after a saved master audio", () => {
     const service = new MasterPartialService(host);
     const session = service.createSession(init("s-stuck"));
     await session.append(new Blob(["aa"], { type: MIME }), MIME);
-    io.files.set(`${AUDIO_FOLDER}/qnalog-stuck.webm`, "full");
+    io.files.set(`${AUDIO_FOLDER}/qnalog-stuck.webm`, new TextEncoder().encode("aa").buffer as ArrayBuffer);
     io.hooks.rmdir = () => { throw new Error("locked"); };
 
-    await expect(service.discard("s-stuck", `${AUDIO_FOLDER}/qnalog-stuck.webm`, 4)).resolves.toBeUndefined();
+    await expect(service.discard("s-stuck", `${AUDIO_FOLDER}/qnalog-stuck.webm`, 2)).resolves.toBeUndefined();
     expect(logs.map((entry) => entry.code)).toContain("recording.partial_cleanup_failed");
     const meta = parseMasterPartialMeta(io.text(`${dirOf("s-stuck")}/meta.json`));
     expect(meta.savedAs).toBe(`${AUDIO_FOLDER}/qnalog-stuck.webm`);
-    expect(meta.savedBytes).toBe(4);
+    expect(meta.savedBytes).toBe(2);
 
     io.hooks.rmdir = undefined;
     const { host: nextHost, notices, importAudioFiles } = makeHost(io);
