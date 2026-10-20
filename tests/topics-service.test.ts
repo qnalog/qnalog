@@ -609,6 +609,56 @@ describe("topics service", () => {
     expect(errata.append).not.toHaveBeenCalled();
   });
 
+  it("removes chosen members together with everything only they contributed", async () => {
+    const setup = harness();
+    const members = [
+      { path: "Notes/a.md", title: "A", sourceId: "Notes/a.md", date: "2026-01-01", summary: "A note." },
+      { path: "Notes/b.md", title: "B", sourceId: "Notes/b.md", date: "2026-01-02", summary: "B note." },
+      { path: "Notes/c.md", title: "C", sourceId: "Notes/c.md", date: "2026-01-03", summary: "C note." },
+    ];
+    const page = createTopicPage({ id: "climate-topic", title: "Climate", tags: [], members, basis: "overview" });
+    page.layout = 2;
+    page.body = renderTopicPage({ overview: "Overview.", threads: [{ id: "thread", title: "Funding", summary: "A summary.", points: [
+      { id: "p1", text: "Only B says this.", sources: ["Notes/b.md"] },
+      { id: "p2", text: "Only C says this.", sources: ["Notes/c.md"] },
+      { id: "p3", text: "B and C say this.", sources: ["Notes/b.md", "Notes/c.md"] },
+      { id: "p4", text: "A and B agree on this.", sources: ["Notes/a.md", "Notes/b.md"] },
+      { id: "p5", text: "Only A says this.", sources: ["Notes/a.md"] },
+    ] }], disagreements: [], open: [], unsorted: [] }, members);
+    setup.storePort.seed("Topics/Climate.md", serializeTopicPage(page));
+
+    const preview = await setup.service.previewRemoveMembers("climate-topic", ["Notes/b.md", "Notes/c.md"]);
+    expect(preview.items.filter((item) => item.type === "remove_member").map((item) => item.sourceId)).toEqual(["Notes/b.md", "Notes/c.md"]);
+    // Applying every item is the whole flow: the user is not asked about individual points.
+    const result = await setup.service.apply(preview, preview.items.map((item) => item.id));
+    const topic = parseTopicPage(result.markdown)!;
+    expect(topic.members).toEqual(["Notes/a.md"]);
+    expect(topic.excluded).toEqual([]);
+    expect(result.markdown).not.toContain("Only B says this.");
+    expect(result.markdown).not.toContain("Only C says this.");
+    expect(result.markdown).not.toContain("B and C say this.");
+    expect(result.markdown).toContain("A and B agree on this.");
+    expect(result.markdown).toContain("Only A says this.");
+    expect(result.markdown).not.toMatch(/Notes\/[bc]\b/);
+    const cited = [...result.markdown.matchAll(/\[\^([^\]]+)\](?!:)/g)].map((match) => match[1]);
+    for (const id of cited) expect(result.markdown).toMatch(new RegExp(`^\\[\\^${id}\\]:`, "m"));
+
+    // The removed notes are neither members nor excluded, so a scan can suggest them again.
+    const listed = (await setup.service.listTopics())[0].page;
+    expect(listed.members).toEqual(["Notes/a.md"]);
+    expect(listed.excluded).toEqual([]);
+  });
+
+  it("rejects removing a note that is not a member", async () => {
+    const setup = harness();
+    const members = [{ path: "Notes/a.md", title: "A", sourceId: "Notes/a.md", date: "2026-01-01", summary: "A note." }];
+    const page = createTopicPage({ id: "climate-topic", title: "Climate", tags: [], members, basis: "overview" });
+    page.layout = 2;
+    page.body = renderTopicPage({ overview: "Overview.", threads: [], disagreements: [], open: [], unsorted: [] }, members);
+    setup.storePort.seed("Topics/Climate.md", serializeTopicPage(page));
+    await expect(setup.service.previewRemoveMembers("climate-topic", ["Notes/zzz.md"])).rejects.toThrow();
+  });
+
   it("only reads through its port when requested and returns statistics", async () => {
     let reads = 0;
     const now = Date.now();

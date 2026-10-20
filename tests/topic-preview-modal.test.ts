@@ -197,6 +197,28 @@ describe("topic preview dialog", () => {
     });
   });
 
+  it("discards the old preview before the body retry starts and does not cancel again when the modal closes late", async () => {
+    vi.mocked(qnalogConfirm).mockResolvedValue(true);
+    const preview = fixture();
+    preview.items = [];
+    preview.request = { startPath: "Notes/a.md", memberPaths: ["Notes/a.md"], basis: "overview", topicId: "topic-1" };
+    const order: string[] = [];
+    const port = {
+      text: (key: string) => key,
+      estimate: vi.fn(async () => ({ chars: 500, requests: 1 })),
+      preview: vi.fn(async () => { order.push("preview"); return fixture(); }),
+      openSource: vi.fn(), openTopic: vi.fn(), cancel: vi.fn(() => { order.push("cancel"); }), apply: vi.fn(), undoLastUpdate: vi.fn(),
+    };
+    const modal = new TopicPreviewModal({} as never, port as never, preview, () => undefined);
+    // On mobile the modal's onClose can run after the new request has started.
+    modal.close = () => { setTimeout(() => modal.onClose(), 50); };
+    modal.onOpen();
+    descendants(modal.contentEl as unknown as FakeTree).find((item) => item.text === "Retry with body")?.listeners.get("click")?.();
+    await vi.waitFor(() => expect(port.preview).toHaveBeenCalledOnce());
+    await new Promise((resolve) => setTimeout(resolve, 80));
+    expect(order).toEqual(["cancel", "preview"]);
+  });
+
   it("does not offer another body retry for a body-mode empty preview", () => {
     const preview = fixture();
     preview.items = [];
@@ -229,6 +251,7 @@ describe("topic preview dialog", () => {
   });
 
   it("does nothing when body-mode retry cost confirmation is cancelled", async () => {
+    vi.mocked(qnalogConfirm).mockClear();
     vi.mocked(qnalogConfirm).mockResolvedValue(false);
     const preview = fixture();
     preview.items = [];

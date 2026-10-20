@@ -7,6 +7,7 @@ import { qnalogConfirm } from "./helpers";
 import { syncActiveRow } from "./row-active";
 import { renderTopicCandidateGroupHeading, renderTopicCandidateRow } from "./topic-candidate-rows";
 import { runTopicPreviewRequest } from "./topic-ui-actions";
+import { removeMembersFromTopic, topicMemberDisplayTitle, TopicMemberPickModal } from "./topic-member-removal";
 
 /** "MM-DD" in local time, or "" when the date cannot be read. */
 function formatMonthDay(iso: string): string {
@@ -120,6 +121,7 @@ export class TopicsPanel {
     }));
     menu.addItem((item) => item.setTitle(this.port.text("Scan for notes to integrate")).setIcon("scan-search").onClick(() => void this.scan(topicId)));
     if (uncontributed.length) menu.addItem((item) => item.setTitle(this.port.text("Organize notes with no contributed content ({0})").replace("{0}", String(uncontributed.length))).setIcon("list-minus").onClick(() => void this.organizeUncontributed(topicId)));
+    menu.addItem((item) => item.setTitle(this.port.text("Remove notes from this topic…")).setIcon("file-minus").onClick(() => void this.chooseMemberToRemove(topicId)));
     menu.addItem((item) => item.setTitle(this.port.text("Open errata")).setIcon("file-pen").onClick(() => {
       void this.port.openTopicErrata(topicId).catch((error: unknown) => new Notice(error instanceof Error ? error.message : this.port.text("Could not open the topic errata document."), 8000));
     }));
@@ -142,6 +144,13 @@ export class TopicsPanel {
       this.refresh();
     }));
     menu.showAtMouseEvent(event);
+  }
+
+  private async chooseMemberToRemove(topicId: string): Promise<void> {
+    const topic = (await this.port.listTopics()).find((entry) => entry.page.id === topicId);
+    if (!topic?.page.members.length) { new Notice(this.port.text("This topic has no member notes.")); return; }
+    const members = topic.page.members.map((path) => ({ path, title: topicMemberDisplayTitle(topic.page, path) }));
+    new TopicMemberPickModal(this.app, this.port, members, (paths) => void removeMembersFromTopic(this.app, this.port, topicId, paths, () => this.refresh())).open();
   }
 
   private async organizeUncontributed(topicId: string): Promise<void> {

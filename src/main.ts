@@ -88,6 +88,7 @@ import { TopicErrataStore } from "./topics/topic-errata-store";
 import { parseTopicPage } from "./topics/topic-page";
 import { resolveTopicBlocksForRange } from "./topics/topic-block-selection";
 import { TopicPreviewModal } from "./ui/topic-preview-modal";
+import { removeMembersFromTopic } from "./ui/topic-member-removal";
 import { isTopicSourceEligible, TopicSummarySnapshot, type TopicsUiPort } from "./ui/topics-ui-port";
 import type { ErrataUiPort } from "./ui/errata-ui-port";
 import { LibraryViewService } from "./views/library-view-service";
@@ -919,6 +920,14 @@ class QnALogPlugin extends obsidian.Plugin {
             .setIcon("pencil")
             .onClick(() => { void openErrataForFile(this.app, this.errata, file); });
         });
+        const topicsPort = this.createTopicsUiPort();
+        for (const topic of topicsPort.getTopicsSnapshot().filter((entry) => entry.members.includes(file.path))) {
+          menu.addItem((item) => {
+            item.setTitle(t("QnALog: Remove from topic “{0}”").replace("{0}", topic.title))
+              .setIcon("file-minus")
+              .onClick(() => { void removeMembersFromTopic(this.app, topicsPort, topic.id, [file.path], () => this.shell.refreshOutlineView()); });
+          });
+        }
       }
       // 纪要文件的续录入口：右键一篇已生成的转写纪要，追加一段录音。
       // 只对自家纪要显示：续录建纪要时统一写 mode frontmatter
@@ -1002,6 +1011,7 @@ class QnALogPlugin extends obsidian.Plugin {
       previewContentCleaning: (topicId) => this.topics.previewContentCleaning(topicId),
       getUncontributedMembers: (topicId) => this.topics.getUncontributedMembers(topicId),
       previewOrphanMembers: (topicId) => this.topics.previewOrphanMembers(topicId),
+      previewRemoveMembers: (topicId, memberPaths) => this.topics.previewRemoveMembers(topicId, memberPaths),
       apply: async (preview, selection) => { const result = await this.topics.apply(preview, selection); await refreshTopicsSnapshot(); return result; },
       cancel: (id) => this.topics.cancel(id),
       listTopics: () => refreshTopicsSnapshot(),

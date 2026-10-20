@@ -6,7 +6,7 @@ import type { OverviewCardCachePort } from "./overview-card-cache";
 import { OverviewCardCache } from "./overview-card-cache";
 import { overviewCardTimestamp, type OverviewCard } from "./overview-card";
 import { findTopicCandidates, type TopicCandidate, type TopicCandidates } from "./topic-candidates";
-import { generateTopicOperations, generateTopicPageContent, generateTopicPageUpdateOperations, generateTopicCleaningOperations, estimateTopicCleaningInput, estimateIntegrationCost, TopicGenerationError, type TopicChangePreview, type TopicIntegrationMember, type TopicIntegrationPort } from "./topic-integration";
+import { generateTopicOperations, generateTopicPageContent, generateTopicPageUpdateOperations, generateTopicCleaningOperations, estimateTopicCleaningInput, estimateIntegrationCost, TopicGenerationError, type TopicChangePreview, type TopicChangePreviewItem, type TopicIntegrationMember, type TopicIntegrationPort } from "./topic-integration";
 import { applyTopicOps, createTopicPage, hashTopicPage, isLegacyTopicStatusLine, noContributionMembers, parseTopicPage, parseTopicPageBlocks, renderTopicPage, serializeTopicPage, topicBlockHeadingLabel, topicBlockSourcePaths, type TopicBasis, type TopicMember, type TopicPage, type TopicPageV2Model } from "./topic-page";
 import { TopicStore, type TopicStorePort } from "./topic-store";
 import { learnTopicTagSet, learnVerifiedTopicTagUpdates, matchNoteToTopics, type TopicTagMatch } from "./topic-tags";
@@ -587,6 +587,44 @@ export class TopicsService {
       totalBatches: 0,
     };
     this.previews.set(`topics:orphans:${topicId}`, { preview, folder, store, path: topic.path, managesActivity: false });
+    return preview;
+  }
+
+  /**
+   * Previews taking member notes out of a topic. Everything the removed notes contributed goes with them:
+   * points cited only by the removed notes are deleted, points that other notes also cite stay without the removed citations.
+   */
+  async previewRemoveMembers(topicId: string, memberPaths: readonly string[]): Promise<TopicChangePreview> {
+    const folder = this.host.getFolder();
+    const store = this.storeForFolder(folder);
+    const topic = (await store.list()).find((entry) => entry.page.id === topicId);
+    this.assertPreviewFolder(folder);
+    if (!topic) throw new Error("Topic not found: " + topicId);
+    const paths = [...new Set(memberPaths)];
+    if (!paths.length || paths.some((path) => !topic.page.members.includes(path))) throw new Error(t("This note is not a member of the topic."));
+    const markdown = await store.readIndexedMarkdown(topic.path);
+    this.assertPreviewFolder(folder);
+    const removed = new Set(paths);
+    const blockItems = parseTopicPageBlocks(markdown).flatMap((block): TopicChangePreviewItem[] => {
+      const sources = topicBlockSourcePaths(markdown, block);
+      if (!sources.length || !sources.every((source) => removed.has(source))) return [];
+      const operation = { type: "remove_block" as const, blockId: block.id, expectedText: block.text, sourceId: sources[0] };
+      return [{ id: `member-block-${hashText(block.id)}`, operation, type: operation.type, target: topicBlockHeadingLabel(markdown, block.id) || t("Corresponding section"), text: block.text, sourceId: sources[0], expectedText: block.text, cancellable: true }];
+    });
+    const memberItems = paths.map((path): TopicChangePreviewItem => {
+      const title = topicMemberTitle(topic.page, path);
+      const operation = { type: "remove_member" as const, path, force: true };
+      return { id: `member-${hashText(path)}`, operation, type: operation.type, target: title, text: title, sourceId: path, cancellable: true };
+    });
+    const preview: TopicChangePreview = {
+      topicId,
+      expectedHash: hashTopicPage(markdown),
+      pageWasManuallyEdited: topic.page.cacheStatus !== "valid" || (!!topic.page.appliedHash && topic.page.appliedHash !== hashTopicPage(markdown)),
+      items: [...blockItems, ...memberItems],
+      completedBatches: 0,
+      totalBatches: 0,
+    };
+    this.previews.set(`topics:remove-member:${topicId}`, { preview, folder, store, path: topic.path, managesActivity: false });
     return preview;
   }
 
