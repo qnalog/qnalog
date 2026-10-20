@@ -76,7 +76,7 @@ describe("transcript queue retry persistence", () => {
     await service.retryTranscribeTask(task as never);
     const firstContent = content;
     expect(processCalls).toBe(1);
-    expect(cleanup).toHaveBeenCalledTimes(1);
+    expect(cleanup).not.toHaveBeenCalled();
     expect(reasons).toEqual(["transcript-retry-legacy-upgrade"]);
     const blocks = readTranscriptBlocks(content);
     expect(blocks).toHaveLength(2);
@@ -90,7 +90,7 @@ describe("transcript queue retry persistence", () => {
     await service.retryTranscribeTask(task as never);
     expect(content).toBe(firstContent);
     expect(processCalls).toBe(1);
-    expect(cleanup).toHaveBeenCalledTimes(2);
+    expect(cleanup).not.toHaveBeenCalled();
     expect(reasons).toEqual(["transcript-retry-legacy-upgrade", "transcript-retry-idempotent"]);
     expect(obsidian.requestUrl).not.toHaveBeenCalled();
   });
@@ -242,12 +242,12 @@ describe("transcript queue retry persistence", () => {
     expect(committed.segment.transcript?.revisions).toHaveLength(2);
     expect(committed.segment.transcript?.revisions[1].rawText).toBe("Recovered source phrase.");
     expect(committed.visibleBlock).toBe("Recovered source phrase.");
-    expect(deleteAudio).toHaveBeenCalledTimes(1);
+    expect(deleteAudio).not.toHaveBeenCalled();
     expect(refreshIndex).toHaveBeenCalledTimes(1);
 
     await service.retryTranscribeTask(task);
     expect(asrRequests).toBe(3);
-    expect(deleteAudio).toHaveBeenCalledTimes(2);
+    expect(deleteAudio).not.toHaveBeenCalled();
     expect(sessionStore.get()).toBe(currentSession);
     expect(refreshIndex).toHaveBeenCalledTimes(2);
 });

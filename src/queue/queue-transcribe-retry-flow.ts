@@ -71,6 +71,8 @@ async function retryTranscribeTaskImpl(port: QueueTranscribeRetryPort, task: Tra
       logDiagnostic: (level, code, message, data) => port.logDiagnostic(level, code, message, data),
     }, mdFile, storedMarkdown)
     : "";
+  // 普通分段任务没有可持久化的完整录音核验凭据，文字写入成功仍不能证明缓存可删。
+  const canCleanupEphemeralImportCache = task.wholeFileImport === true && task.ephemeralAudio === true;
   const sourceId = String(task.sessionId || (mdFile instanceof obsidian.TFile ? getSourceIdFromMarkdown(currentMarkdown, mdFile) : task.mdPath || "note"));
   const sourceSegmentIndex = Math.max(0, Number(task.segmentIndex) || 0);
   const parentSegmentId = `seg:${encodeURIComponent(sourceId)}:${sourceSegmentIndex}`;
@@ -80,7 +82,7 @@ async function retryTranscribeTaskImpl(port: QueueTranscribeRetryPort, task: Tra
   const existingTranscriptBlock = matchingTranscriptBlocks[0] || null;
   if (existingTranscriptBlock && !existingTranscriptBlock.segment.error && !failMark.test(existingTranscriptBlock.visibleBlock)) {
     if (mdFile instanceof obsidian.TFile) await port.refreshNoteIndex(mdFile, { reason: "transcript-retry-idempotent" });
-    await port.deleteSegmentCache(task.audioPath, task.id);
+    if (canCleanupEphemeralImportCache) await port.deleteSegmentCache(task.audioPath, task.id);
     return;
   }
   if (!existingTranscriptBlock && taskMarker && currentMarkdown.includes(taskMarker) && !(taskPattern && taskPattern.test(currentMarkdown))) {
@@ -88,7 +90,7 @@ async function retryTranscribeTaskImpl(port: QueueTranscribeRetryPort, task: Tra
       const migrated = await port.getVault().process(mdFile, (latest) => ensureTranscriptBlocks(latest, sourceId, { reconcileEditedText: false }));
       if (migrated !== currentMarkdown) await port.refreshNoteIndex(mdFile, { reason: "transcript-retry-legacy-upgrade" });
     }
-    await port.deleteSegmentCache(task.audioPath, task.id);
+    if (canCleanupEphemeralImportCache) await port.deleteSegmentCache(task.audioPath, task.id);
     return;
   }
   const audio = await port.readTaskAudio(task);
@@ -219,9 +221,13 @@ async function retryTranscribeTaskImpl(port: QueueTranscribeRetryPort, task: Tra
     await port.insertBeforeSegmentsEnd(task.mdPath, makeTranscriptBlock(recoveredSegment), task.sessionId);
     replaced = true;
   }
-  if (alreadyCommitted) { await port.deleteSegmentCache(task.audioPath, task.id); if (mdFile instanceof obsidian.TFile) await port.refreshNoteIndex(mdFile, { reason: "transcript-retry-idempotent" }); return; }
+  if (alreadyCommitted) {
+    if (canCleanupEphemeralImportCache) await port.deleteSegmentCache(task.audioPath, task.id);
+    if (mdFile instanceof obsidian.TFile) await port.refreshNoteIndex(mdFile, { reason: "transcript-retry-idempotent" });
+    return;
+  }
   if (replaced && mdFile instanceof obsidian.TFile) await port.refreshNoteIndex(mdFile, { reason: "transcript-retry" });
-  if (!audio.recovered && (!task.wholeFileImport || task.ephemeralAudio)) await port.deleteSegmentCache(task.audioPath, task.id, !!task.ephemeralAudio);
+  if (!audio.recovered && canCleanupEphemeralImportCache) await port.deleteSegmentCache(task.audioPath, task.id, true);
   if (replaced && task.wholeFileImport && task.speakerDiarization !== false) {
     await port.confirmSpeakerNames({ id: task.sessionId, mdPath: task.mdPath, source: "import", importTranscribeProviderId: task.providerId }, writtenSegment ? [writtenSegment] : [{ text }]);
   }
