@@ -133,7 +133,7 @@ gh api "repos/qnalog/qnalog/git/trees/HEAD?recursive=1" > /tmp/ours.json
 npm ci && npm run build && git status --short main.js   # 期望：无输出
 ```
 
-2026-09-13 的历史核验：当时与 `2.2.0` / `2.3.2` 的树相比，唯一内容相同的文件是 MIT 许可正文；当时 `styles.css` 与上游 tag `2.1.2` 逐字节相同。该结果不代表当前 CSS 与上游一致。`main.js` 可由本仓库源码重建（当时哈希稳定）。
+2026-09-13 核验时，与 `2.2.0` / `2.3.2` 的树相比唯一内容相同的文件是 MIT 许可正文。
 
 ### 2.4 版权声明与归属
 
@@ -158,8 +158,8 @@ npm ci && npm run build && git status --short main.js   # 期望：无输出
 | 更新检查 | `src/update/update-source.ts` 常量指向 `qnalog/qnalog@main` | 不得指向上游。改动后必须同步 `tests/` 中的 URL 期望值。 |
 | 自更新 | **已移除** | 开发者政策 "Not allowed" 明列 *"Install or update themselves or their dependencies"*。本插件只检查版本并提示，安装交给 Obsidian 或 BRAT。**不得恢复写入自身文件的能力。** |
 | 社区目录 | 上游 `lexvoice` 条目仍在 | 不可控。它只能被用户主动安装，不会替换本插件；README 已说明两者并存时的处理。 |
-| 书面名称 | 界面、提示词、生成的标题、文档、仓库简介 | 面向人阅读处一律写 **`QnALog`**（含 `manifest.json` 的 `name`）。2026-09-28 起弃用旧书面名 `Q&A Log`：Obsidian 插件命名规范只允许基本拉丁字母与连字符、加号、括号，`&` 不在允许列表；macOS 原生菜单还会把 `&` 当快捷键标记吃掉。**名称里不得再出现 `&`。** 版权署名 `Q&A Log Team` 与提交身份显示名 `Q&A Log` 属于署名，不随产品名改。程序性标识仍是小写 `qnalog` 与 `QNALOG_*`（见下两行）。 |
-| 内部标识符 | `QNALOG_*` 常量、`qnalog-*` CSS 类名与自定义属性 | 2026-09-14 已统一为 `qnalog`：这些字符串只存在于代码里，不写用户文件。**新代码不得再引入 `lexvoice-*` 类名或 `LEXVOICE_*` 常量。** |
+| 书面名称 | 界面、提示词、生成的标题、文档、仓库简介 | 面向人阅读处一律写 **`QnALog`**（含 `manifest.json` 的 `name`）。**产品名里不得出现 `&`**：Obsidian 插件命名规范不允许该字符，macOS 原生菜单会把它当作快捷键标记。 版权署名 `Q&A Log Team` 与提交身份显示名 `Q&A Log` 属于署名，不随产品名改。程序性标识仍是小写 `qnalog` 与 `QNALOG_*`（见下两行）。 |
+| 内部标识符 | `QNALOG_*` 常量、`qnalog-*` CSS 类名与自定义属性 | 只存在于代码里，不写用户文件。**新代码不得引入 `lexvoice-*` 类名或 `LEXVOICE_*` 常量**（`check:legacy-prefixes` 拦截）。 |
 | 数据层 | 标签 `qnalog/*`、默认目录 `QnALog/…`、Frontmatter 业务字段 `qnalog_*`（`qnalog_speakers` 等）、类型值 `QnALog派生版本`、视图类型 `qnalog-*-view`、旧密钥解码 marker `qnk1:` 与盐 `QnALog/local-key-obfuscation/v1` | 2026-09-15 起统一品牌命名空间；Frontmatter 业务字段另按 §1.1.2 兼容历史中文和未加前缀的英文键。插件不扫描或批量改写笔记，单篇重整/更新写 canonical 键。字段字面量集中在 `src/shared/namespace.ts`；新代码不得引入 `lexvoice-*` 字面量。`qnk1:` 与盐仅用于读取迁移前的 `data.json`，新写入的 API Key 使用 Obsidian SecretStorage。默认目录子目录名按界面语言在读取时取（`src/shared/defaults.ts` 的 `FOLDER_NAMES`），已保存路径优先。 |
 
 发版前的隔离检查已并入本地 `npm run verify` 与 `validate.yml`。
@@ -239,11 +239,10 @@ git tag X.Y.Z && git push origin X.Y.Z
 
 ### 4.3.1 分支验证、授权与安装
 
-按序执行：分支实现 → 本地检查与提交 → 有用户可见行为变化时由维护者在 Obsidian 真机验证 → 当轮推送授权 → `npm run verify:push`、push、PR → CI → 当轮合并授权 → merge commit 并删除远端分支 → 按授权安装 `main`。
+流程与授权线以 `AGENTS.md` §4 为准（分支实现 → 本地检查 → 维护者真机验证 → 推送授权 → PR 与 CI → 合并授权 → 重装发版构建），本文不另写一套。补充两条项目事实：
 
-纯文档、注释或行为等价的内部搬迁只免真机验证，不免推送与合并授权。每次安装必须获授权访问当前点名的知识库；安装前确认目标并留档。安装后同一轮用 `shasum -a 256` 比对仓库与目标 `main.js`、`styles.css`，并用 `jq -r .version` 读取目标 manifest。没有授权不得访问知识库；交付说明写明未安装。
-
-人工验证说明包括前置条件、具体入口与步骤、预期文件/界面/状态、实际结果及设备和版本。维护者确认才算通过；CI 不代替真机验证。合并后只在取得当轮安装授权时安装 `main` 上的发版构建。
+- 纯文档、注释或行为等价的内部搬迁只免真机验证，不免推送与合并授权。
+- 每次安装后同一轮用 `shasum -a 256` 比对仓库与目标 `main.js`、`styles.css`，并用 `jq -r .version` 读取目标 manifest；人工验证说明写明前置条件、入口与步骤、预期结果、实际结果及设备和版本。
 
 ### 4.4 CI 与本地检查
 
@@ -256,10 +255,11 @@ git tag X.Y.Z && git push origin X.Y.Z
 
 `verify:push` 在 `verify` 基础上执行 `check:bundle-consistency`：从已提交 HEAD 重建并与 HEAD 的 `main.js` 比较。`git status --porcelain main.js` 只能发现已重建但未提交，不能发现根本未重建；bundle 检查要求源码先提交。
 
-`npm run build` 运行下表中 build 项；`npm run verify` 另运行 legacy-prefix、settings-map、lint 与测试。装配与合并冒烟脚本分别在构建路径执行一次，不将聚合命令误算为额外重复运行。
+`npm run build` 运行下表中 build 项；`npm run verify` 另运行 lint、测试、主线隔离、legacy-prefix 与 settings-map。完整顺序以 `package.json` 为准。
 
 | 命令 | 阶段 | 检查内容 |
 |---|---|---|
+| `npm run check:document-dom-creation` | build | `src/` 不直接调用 `document.create*`（改用 Obsidian 的 DOM 辅助方法） |
 | `npm run check:versions` | build | 四处版本一致 |
 | `npm run check:undefined-symbols` | build | `@ts-nocheck` 文件未定义引用 |
 | `npm run check:domain-boundaries` | build | 插件成员与 Host/service 能力真实存在 |
@@ -267,11 +267,13 @@ git tag X.Y.Z && git push origin X.Y.Z
 | `npm run check:plugin-onload` | build | 域服务装配与模拟宿主加载 |
 | `npm run check:merge-pipeline` | build | 模拟宿主中真实 bundle 的会话收尾到写笔记路径 |
 | `npm run typecheck:core`、`tsc -noEmit` | build | strict-core 与常规 TypeScript 诊断 |
+| `scripts/check-mobile-bundle-load.mjs` | build | 构建产物在无 Node/Electron 全局的环境中可加载（移动端） |
+| `npm run check:mainline-isolation` | verify | 上游标识、更新源、插件 id，见 §3 |
 | `npm run check:legacy-prefixes` | verify | 禁止旧项目品牌前缀回到源码/样式 |
 | `npm run check:settings-map` | verify | §9.1 键集合与落盘路径一致 |
 | `npm run lint`、`npm test` | verify | ESLint 与 Vitest |
 
-检查器的分工：legacy-prefix 拦截品牌漏改；plugin-onload 拦截服务漏装；merge-pipeline 运行收尾到笔记写入链；domain-boundaries 校验成员归属。构建对装配检查与 merge-pipeline 各执行一次。
+plugin-onload 与 merge-pipeline 在 build 中各执行一次，没有重复运行。
 
 ### 4.5 设置结构版本政策
 
@@ -293,8 +295,9 @@ git tag X.Y.Z && git push origin X.Y.Z
    只负责那一次结构变更，**不要重建整个对象**（那会把用户填的值换成默认值）；
 3. 在 `tests/settings-schema-policy.test.ts` 加一条「旧版 data.json → 用户配置仍在」的用例。
 
-本次 1 → 2 迁移新增 `security.apiKeyStorageNamespace`，用于区分不同知识库的 SecretStorage 条目。`loadAll` 先恢复或导入 API Key；只有 SecretStorage 写入成功后，`saveAll` 才清空设置快照中的密钥字段。Obsidian SecretStorage 没有删除方法，清除密钥时写入空值；设置版本高于当前版本时不改动 SecretStorage，也不写 `data.json`。
-新增 `topicsFolder` 是可由规范化逻辑补齐的设置字段，现有 schema 无须升级。升级会使 schema 2 用户被判定为旧版本；若没有对应迁移链，设置读回会被拒绝，旧版插件随后也会因未来版本保护而停止写盘。
+**不是每个新字段都要升版本**：能由 `normalizePluginSettings` 用默认值补齐的字段（如 `topicsFolder`）不升 schema。无谓升级会让旧版插件把新数据判为 `future` 而停止写盘。
+
+当前 schema 为 2。1 → 2 迁移新增 `security.apiKeyStorageNamespace`，用于区分不同知识库的 SecretStorage 条目。`loadAll` 先恢复或导入 API Key；只有 SecretStorage 写入成功后，`saveAll` 才清空设置快照中的密钥字段。Obsidian SecretStorage 没有删除方法，清除密钥时写入空值；设置版本高于当前版本时不改动 SecretStorage，也不写 `data.json`。
 
 缺链时 `migrateSettingsForward` 返回 `null` 而不是半成品，调用方据此不写盘——
 宁可让用户停在可读状态，也不要用一半的迁移结果覆盖他的配置。
@@ -321,67 +324,47 @@ git tag X.Y.Z && git push origin X.Y.Z
 ### 6.1 当前推进
 
 1. **主题层后续**（暂缓）。近似重复要点（措辞不同、事实相同）仍可能同时加入，目前靠预览里取消勾选处理；纪要列表可考虑「展开概要」；已合并的聚类建议暂不使用。
-2. **主题勘误表与内容清洗**（已决定）。主题勘误表记录用户确认的排除方面；整合读取规则，手动清洗现有主题页内容。
-
-3. **长录音的转写异常输出**（已决定）。`audio/long-recording-anomaly.ts` 在写入母本前拦截每秒字符数超过 15 或重复片段占比超过 0.6 的文本；拦截后保留音频与失败任务。真实转写服务是否复现此异常仍未证实。
-4. **空白录音收尾**（已决定）。丢弃的条件是转写为空白且整场基本无声；整场有声的录音保留笔记与音频，不因转写结果丢弃。录音器每 160 毫秒统计一次有声或无声，有声占比低于 2% 且统计不少于 5 次时判为基本无声（`src/audio/session-silence.ts`）。普通录音全部分段成功转写为空时，基本无声且不足 60 秒丢弃笔记与音频；有声或达到 60 秒时保留笔记与音频并写入「未检测到语音」。1–10 秒短录音转写为空白时，基本无声则丢弃，有声则只保留音频、不建笔记。导入音频与续录不丢弃，保留材料并提示。音频块的均方根低于 `QUIET_AUDIO_RMS_LIMIT`（`src/shared/limits.ts`）时，该块连续两次返回空结果即按成功的空白结果处理，不论时长；音量达到上限的块返回空结果仍按失败处理。静音标记以 `quiet` 字段附在 ASR 结果上（`src/asr/transcript-result.ts`）。实时分段（`src/notes/live-segment-flow.ts`）与重试（`src/queue/queue-transcribe-retry-flow.ts`）检查到该字段为真时，把空结果记为成功的空白段；百炼 Flash 的「无语音」错误（HTTP 400，错误码 ASR_RESPONSE_HAVE_NO_WORDS）同样视为成功的空白结果，该块不重试，全部块如此时以 `noSpeech` 字段标记（`src/asr/transcribe.ts`）；`quiet` 与 `noSpeech` 均不写入笔记与转写账本。
-
-### 已完成
-
-- **1.6.12 发布（已完成）**。新建勘误文件名、首行和小节标题按界面语言生成；解析器识别中英文小节标题，追加内容写入对应小节；修复空行触发的无限追加（`src/errata/errata-sections.ts:5–30`、`src/errata/errata-parser.ts:31–45`、`src/errata/errata-store.ts:150–163`、`tests/errata-store.test.ts:200–218`）。
-- **1.6.11 发布（已完成）**。新增每篇笔记对应的勘误笔记，整理流程读取勘误内容；笔记菜单新增打开勘误项，并按操作类别分组（`src/errata/errata-service.ts:49–67`、`src/ui/outline-view.ts:5967–6109`）。
-- **1.6.9 发布**。短录音按转写内容判定（见 §6.3）；删除带衍生版本的笔记时可让最新衍生版本接替或一并删除；重试整理在笔记被改动时不再覆盖；密钥写入 SecretStorage 失败时队列仍保存；选择服务预设不再沿用旧服务密钥，向导在服务匹配时回填已存密钥。
-- **1.6.8 发布**。笔记列表去掉单目录容器，根目录笔记归入「未分类」；筛选改为搜索框加筛选弹层，已生效筛选显示为可移除标签，搜索覆盖全部笔记；看板可删除分组；修正行内排版与文案。
-- **1.6.7 发布**。清理社区目录扫描的 53 条警告；清理空短录音与清空诊断日志的删除动作跟随 Obsidian「已删除文件」设置；release 工作流为三个资产生成构建证明。
-- **1.6.6 发布**。插件元数据移入折叠区或不可见元素，不再显示在正文；原始转写按段折叠；「纪要」界面名改为「笔记」；修复单段转写超过约 3,500 字符时导入音频失败。
-- **主题库与「主题」标签页（1.6.5 发布）**。从笔记创建主题，按标签与内容相近选候选，默认只读概要；主题页为 `QnALog/主题/` 下的普通笔记；更新先预览、保留快照可撤销，不改原笔记。
-- **无感开始（1.6.4 发布）**。新增通用整理模式，没有保存过默认模式的安装从它开始；已有保存的模式不变；录音按钮为「新语音笔记」。
+2. **长录音转写异常的真实来源**（取证中）。拦截已实现（§6.3）；真实转写服务是否会产生此类输出仍未证实，阈值是否需要调整取决于取证结果。
 
 ### 6.2 待取证、待维护者决定与暂停项
 
-- **机器数据展示**与**历史 `partial` 原因**是条件调查，按 §6.4 的授权与取证边界执行。`invalid-json` 不证明磁盘 JSON 损坏；不删除状态标记、不伪造 `complete`，不访问未授权知识库。
-- **A12 产品决定**：索引写入和两种笔记布局的代价见 §14.4；由维护者决定。当前写入行为不变。
-- 服务推荐需在具体需求出现时重新核实能力、地区与费用；历史流式任务恢复仅在实际恢复需求出现时调查。
-- `modals.ts` 按域拆包、更新检查薄转发、专属服务展示、整体 `OutlineView` 拆分均暂停或可选，不排入当前执行队列。
-- 剩余正则漏检或 CSS 输出问题只在审计证据或真实输出问题出现时启动。三个 `@ts-nocheck` 文件的处理条件见 §8。
-- 暂停恢复任务弹窗的排版与状态栏任务条（右下角，点开为待处理队列）的显示，实际界面仍待维护者确认。
-- 真实用户数据损坏或安全问题优先。尚未定位的截图或 `partial` 状态不作为已定位故障。
-- 类型收敛：`SessionFinalizeService`、`QueueRetryService`、`RepolishService` 外壳，`NoteWriter` 材料编排与 `RecordingService` 启停为可选项，按具体需求排期。
-- **多说话人确认**（待决定）。检测到多个未命名说话人时，整理等待姓名确认（`notes/speaker-confirmation-flow.ts:40`）。是否先以会话内编号整理、之后再命名，由维护者决定。
-- **全库问答**（探索，不进入开发）。范围与退出条件见 §7.3。
+- **多说话人确认**（待决定）。检测到多个未命名说话人时，整理等待姓名确认（`notes/speaker-confirmation-flow.ts`）。是否先以会话内编号整理、之后再命名，由维护者决定。
+- **A12 笔记索引与布局**（待决定）：代价见 §14.4；当前写入行为不变。
+- **全库问答**（探索，不进入开发）：范围与退出条件见 §7.3。
+- **待维护者确认界面**：暂停恢复任务弹窗的排版；状态栏任务条（右下角，点开为待处理队列）的显示。
+- **条件调查**：机器数据展示与历史 `partial` 原因按 §6.4 的授权与取证边界执行。`invalid-json` 不证明磁盘 JSON 损坏；不删除状态标记、不伪造 `complete`。尚未定位的截图或 `partial` 状态不作为已定位故障。
+- **暂停或可选**（不排入当前执行队列）：`modals.ts` 按域拆包、更新检查薄转发、专属服务展示、整体 `OutlineView` 拆分；类型收敛（`SessionFinalizeService`、`QueueRetryService`、`RepolishService` 外壳，`NoteWriter` 材料编排与 `RecordingService` 启停）；三个 `@ts-nocheck` 文件（条件见 §8）；剩余正则漏检或 CSS 输出问题（只在出现审计证据或真实输出问题时启动）；服务推荐（有具体需求时再核实能力、地区与费用）；历史流式任务恢复（有实际恢复需求时再调查）。
+- 真实用户数据损坏或安全问题优先于以上各项。
 
 ### 6.3 已完成与验收范围
 
-| 事项 | 已完成结果与证据入口 | 人工确认范围 |
+本表只列对后续改动仍有约束意义的已完成事项：规则所在文件、回归测试，以及尚未覆盖的验证。逐版变更见 `.github/release-notes/`。
+
+| 事项 | 规则与证据入口 | 尚未覆盖的验证 |
 |---|---|---|
-| 设置迁移与恢复工具 | 正式用户四态迁移见 §4.5；恢复脚本路径边界由 CLI 测试及临时目录冒烟覆盖 | 未进行真实 Obsidian 验证 |
-| 短录音按内容判定 | 不足 1 秒丢弃且不转写；1 秒至不足 10 秒转写一次：转写为空白且整场基本无声则丢弃，转写为空白但有声则只保留音频，成文建笔记，不成文保留音频并通知，文字量远超时长（`SHORT_RECORDING_ANOMALY_*`）保留音频不建笔记；转写失败保留音频与重试任务；续录与导入音频按 `audio/short-recording-policy.ts` 处理。见 `tests/short-recording-content.test.ts`、`tests/short-recording-flow.test.ts`、`tests/live-segment-flow.test.ts` | 单次录音场景已走查；流式转写服务下的失败任务恢复、续录遇异常结果的收尾仅单测覆盖 |
-| 长录音异常拦截与空白录音收尾 | 长录音在写入母本前按每秒字符数上限 15 或重复片段占比超过 0.6 拦截；普通录音全空、整场基本无声时不足 60 秒丢弃，有声或达到 60 秒保留并写入「未检测到语音」，导入与续录保留。见 `tests/blank-recording-policy.test.ts`、`tests/short-recording-flow.test.ts`、`tests/long-recording-anomaly.test.ts`、`tests/dashscope-chat-asr.test.ts` | 2 秒空白录音自动删除已确认；10 秒与 60 秒以上空白、长录音异常拦截仅自动测试 |
-| 密钥写入失败时的队列保存 | `_saveAllSnapshot` 在 SecretStorage 写入失败时只替换已落盘数据中的 `backgroundJobs`；数据缺失或版本更高时不写盘；见 `tests/save-all-secret-failure.test.ts` | 仅自动测试，未做真实宿主验证 |
-| 重试整理的编辑保护 | consolidated 分支用模型调用前读取的正文做提交时比对，变化则不写入并保留失败任务；见 `tests/queue-merge-retry-flow.test.ts` | 仅自动测试，未做真实宿主验证 |
-| 录音母带分片保存与中断恢复 | `MasterPartialSession` 逐片保存母带及已提交片数、字节数；恢复校验已提交前缀并允许一个未提交尾片。母带写入后及已处理标记清理前，按目标文件类型和记录字节数核对；正式保存的 `savedBytes` 来自成功写入的母带数据，恢复文件的 `recoveredBytes` 来自分片合计。恢复发布先在场次目录写固定 stage，逐字节核对分片合并结果，再持久化受路径范围限制的 pending 目标；发布后核对目标内容，最终标记写入并读回确认后才清理分片。pending 阶段会根据 stage、目标和分片的实际内容处理重试；无法证明目标与源分片相同则保留材料，不覆盖或重建最终目标。缺少预期大小、目标缺失或大小不符时保留已处理标记与分片；母带目标未通过校验时保留原音频引用。旧 `savedAs` 标记没有大小记录时保留分片并报告失败；目标完整性按文件类型、字节数和发布阶段的字节内容核对，不检查音频可解码性。见 `src/audio/master-partial.ts`、`src/audio/master-partial-service.ts`、`src/audio/master-partial-recovery.ts`、`src/asr/live-asr-pipeline-service.ts`、`tests/master-partial-recovery.test.ts`、`tests/master-partial-service.test.ts` | 已在真实桌面 Obsidian 中完成合成音频恢复前缀、正常尾片、目标缺失或截短、读取异常、旧标记未知长度及目标清理失败场景的程序验收；stage/pending/final 发布、写入与改名报错前后的实际状态、异常后重试、同长内容冲突、损坏标记及唯一 stage 保全已完成真实宿主程序验收。真实麦克风采集、进程强制退出和移动端尚未验证 |
-| 删除带衍生版本的笔记 | 确认框提供「最新衍生版本接替」与「一并删除」；元数据缓存缺项时读取文件，所有候选均以当前正文核对来源关系；普通删除也在确认后复核派生稿集合，集合或正文变化时保留文件并提示重新确认。见 `tests/delete-note-with-variants.test.ts`、`tests/outline-tab-behavior.test.ts` | 已在真实桌面 Obsidian 中用合成笔记完成程序验收，覆盖未索引派生稿接替与一并删除、确认期间新增或修改派生稿、读取失败保全及普通删除；未进行维护者视觉确认与移动端验证 |
-| 主题排除勘误与撤销 | 页面更新提交后立即失效排除预览；预览固定主题文件夹、服务实例和目标路径，应用前核对文件夹、路径和主题 ID。目标 ID 在该文件夹内重复时拒绝应用；其他 ID 的重复页不影响目标。`TopicStore.apply` 和重建写回前再次核对目标 ID。每条新增勘误写入后，快照关联须写入并读回核对主题、快照路径和完整条目后，程序才继续追加下一条。`appendEntry` 的写入回调已执行且拟提交全文与失败后读回全文完全相同时，程序采用该次 `added` 结果；既有重复行仍为 `added: false`，不会关联到本次撤销。回调未执行、读回失败或全文不同则保留原错误。撤销写回报错时，只有回调选择了快照且页面读回全文与快照完全一致，程序才返回已确认的勘误条目；撤销读回失败后，后续撤销仅在缓存为过期、快照关联与历史文件匹配且页面全文等于快照时完成，并再次读回确认。页面全文变化、关联缺失或历史缺失时拒绝撤销；面板与预览窗显示本地化失败通知。追加结果无法确认时，页面可能已更新，新增勘误行可能尚未登记撤销关联。页面、勘误和缓存写入不具原子性。见 `src/topics/topics-service.ts`、`src/topics/topic-store.ts`、`src/topics/topic-errata-store.ts`、`src/ui/topics-panel.ts`、`src/ui/topic-preview-modal.ts`、`tests/topics-service.test.ts`、`tests/topic-store.test.ts`、`tests/topic-errata.test.ts`、`tests/topics-panel.test.ts`、`tests/topic-preview-modal.test.ts` | 已在真实桌面 Obsidian 中用合成主题完成主题排除追加异常、关联缓存异常、撤销写回报错、读回失败后的同实例和新实例重试、完整字段及用户编辑保护、快照或关联缺失、精确勘误清理的程序验收；失败通知由界面测试覆盖。目标目录、路径与主题 ID 绑定已完成真实宿主程序验收，覆盖目录切换、同 ID 副本、原页移动或删除、同路径 ID 替换及写入期间 ID 变化；确定性模型桩下的新建、清洗、重建和更新已覆盖正常写入、生成期间或应用前目录变化、替换路径变化及精确撤销，未调用在线模型服务。未进行真实宿主视觉确认、进程强制退出与移动端验证 |
-| 服务预设与密钥隔离 | `applyLlmServicePresetToWorkingConfig` 选预设后清空活动方案与密钥，选「Custom service…」保持原状；向导仅在地址匹配时回填；见 `tests/llm-config.test.ts`、`tests/setup-wizard.test.ts` | 界面行为已走查 |
-| 初稿/派生稿及重新整理文案 | 有效快照时显示本地化 Original/初稿；任务状态和通知使用界面模式名称；见 `tests/outline-recent-variants.test.ts`、`tests/recent-note-variants.test.ts`、`tests/clean-transcript-storage.test.ts` | 英文新写入、列表观察仍待 §6.4 |
-| 负向装配隔离 | 独立临时 bundle 检查漏装，不改写共享源码；见 `tests/plugin-onload.test.ts` | 不适用 |
-| 笔记正文保全 | 实时转写按结束标记长度清理；转写内容按字面量插入；见 `tests/live-asr-pipeline-service.test.ts`、`tests/transcript-queue-retry.test.ts` | 未进行真实 Obsidian 验证 |
-| A6 结构归属 | `note-document.ts` 提供位置/范围操作；协议语义留在各领域模块；消费者矩阵见 §14.4 | 2026-10-01 维护者确认 `note-document-readers` 本批无特定问题，不代表 A6 全部变更均已验收 |
-| A10 非 UI 辅助归属 | 音频输入纯函数在 `audio/audio-input.ts`，前言剥离在 `note-document.ts` | 设备枚举与权限仍由宿主/UI 处理 |
-| 会话状态与实时转写 | PR #83 完成抽取；维护者确认整理期间续录成功 | 其它场景仅按 §6.4 条件补验 |
-| Q 图标 | PR #85 完成图标更新 | 桌面辨识已确认；移动端见 §6.4 |
-| 首次配置与说话人设置 | 向导、快捷配置、侧栏入口已实现；API 页含说话人配置，见 §10–§12 | 未记录的新写入场景不宣称已人工确认 |
-| 持久化域能力与失败分类 | `TaskQueue` / `VersionStore` 窄能力及纯失败策略已完成；`RecorderService` 使用七项窄宿主能力并纳入 strict-core，见 `tests/recorder-service.test.ts`；`recording-segment-flow.ts` 纳入 strict-core，分段缓存/母带保存时点、串行处理、失败保留及收尾等待见 `tests/recording-segment-flow.test.ts` 和 `tests/short-recording-flow.test.ts`；会话收尾执行体 `session-finalize-sources.ts`、`session-finalize-run-flow.ts` 纳入 strict-core，执行体合同见 `tests/session-finalize-run-flow.test.ts`；`util-audio.ts`、`util-key-diag.ts`、`task-queue.ts` 与 `queue-recovery.ts` 也已纳入 strict-core。队列恢复解析、原行保留、依赖/音频引用保护及恢复编排已完成，见 `tests/queue-recovery.test.ts`、`tests/continuation-queue.test.ts`、`tests/queue-transcribe-retry-flow.test.ts`、`tests/queue-merge-retry-flow.test.ts`、`tests/queue-append-task-flow.test.ts`、`tests/queue-prompt-task-flow.test.ts`、`tests/queue-retry-task-paths.test.ts`、`tests/live-asr-pipeline-service.test.ts`、`tests/progress-modal-contract.test.ts` | 队列恢复等待维护者在测试库实际走查；本次会话收尾仍需按 §6.4 人工补验 |
+| 短录音按内容判定 | 不足 1 秒丢弃且不转写；1–10 秒转写一次后按内容与有声比例判定，失败保留音频与重试任务；续录与导入不丢弃。`audio/short-recording-policy.ts`、`audio/short-recording-content.ts`；`tests/short-recording-*.test.ts`、`tests/live-segment-flow.test.ts` | 流式服务下的失败任务恢复、续录遇异常结果的收尾仅单测覆盖 |
+| 空白录音收尾 | 整场有声比例按 `audio/session-silence.ts` 判定；普通录音转写全空、整场基本无声且不足 60 秒时丢弃笔记与音频；有声或达到 60 秒时保留并写入「未检测到语音」。低音量块的连续空结果（`QUIET_AUDIO_RMS_LIMIT`）与百炼「无语音」错误按成功的空白段处理，标记字段 `quiet` / `noSpeech` 不写入笔记与转写账本（`asr/transcript-result.ts`、`asr/transcribe.ts`）。`tests/blank-recording-policy.test.ts` | 10 秒与 60 秒以上空白录音仅自动测试 |
+| 长录音异常拦截 | 写入母本前按每秒字符数与重复片段占比拦截，阈值见 `audio/long-recording-anomaly.ts`；拦截后保留音频与失败任务。`tests/long-recording-anomaly.test.ts` | 仅自动测试；真实来源见 §6.1 |
+| 录音母带分片保存与中断恢复 | 逐片保存母带并记录已提交片数与字节数；恢复与发布经固定 stage、pending、final 三阶段，每阶段读回核对，无法证明目标与源分片相同时保留材料不覆盖。完整性只按文件类型、字节数与内容核对，不检查音频可解码性。`audio/master-partial*.ts`；`tests/master-partial-*.test.ts` | 真实麦克风采集、进程强制退出、移动端 |
+| 删除带衍生版本的笔记 | 确认框提供「最新衍生版本接替」与「一并删除」；确认后复核派生稿集合与正文，变化时保留文件并提示重新确认。`tests/delete-note-with-variants.test.ts` | 维护者视觉确认、移动端 |
+| 主题排除勘误与撤销 | 预览固定主题文件夹、服务实例、目标路径与主题 ID，应用前与写回前再次核对；每条勘误与撤销关联须写入并读回确认。页面、勘误与缓存写入不具原子性：追加结果无法确认时，页面可能已更新而撤销关联尚未登记。`topics/topics-service.ts`、`topics/topic-store.ts`、`topics/topic-errata-store.ts`；`tests/topic*.test.ts` | 真实宿主视觉确认、进程强制退出、移动端；未调用在线模型 |
+| 重试整理的编辑保护 | 模型调用前读取的正文在提交时比对，变化则不写入并保留失败任务。`tests/queue-merge-retry-flow.test.ts` | 未进行真实宿主验证 |
+| 密钥写入失败时的队列保存 | SecretStorage 写入失败时只替换已落盘数据中的 `backgroundJobs`。`tests/save-all-secret-failure.test.ts` | 未进行真实宿主验证 |
+| 服务预设与密钥隔离 | 选预设清空活动方案与密钥，向导仅在地址匹配时回填。`tests/llm-config.test.ts`、`tests/setup-wizard.test.ts` | — |
+| 初稿/派生稿文案 | 有效快照时显示本地化初稿；任务与通知使用界面模式名称。`tests/outline-recent-variants.test.ts` | 英文新写入与列表观察，见 §6.4 |
+| 笔记正文保全 | 实时转写按结束标记长度清理；转写内容按字面量插入。`tests/live-asr-pipeline-service.test.ts`、`tests/transcript-queue-retry.test.ts` | 未进行真实宿主验证 |
+| 队列与会话收尾结构 | `TaskQueue`、`VersionStore`、`RecorderService` 使用窄能力；队列恢复保留原行与依赖、音频引用。`tests/queue-*.test.ts`、`tests/session-finalize-run-flow.test.ts`、`tests/recording-segment-flow.test.ts`；strict-core 范围见 `tsconfig.strict-core.json` | 会话收尾与队列恢复的人工补验见 §6.4 |
+| 设置迁移与恢复工具 | 四态迁移见 §4.5；恢复脚本路径边界由 CLI 测试覆盖 | 未进行真实宿主验证 |
 
 ### 6.4 人工补验清单
 
-以下是相关改动或取证获得授权时的条件清单，不要求现在全部执行，也不阻塞无关离线改动。维护者确认才算真实宿主验收；自动模拟不代验。
+相关改动或取证获得授权时执行，不阻塞无关离线改动。维护者确认才算真实宿主验收；自动模拟不代验。没有条件时只记录自动测试覆盖，不宣称真机验收。
 
-1. **初稿/派生稿与英文新写入**：在本轮获授权的测试库副本中选择有有效原稿快照的纪要，分别用中文和英文重新整理为同类型、不同类型。检查新版本卡标签、任务/通知/完成日志是否使用界面类型名称；展开侧栏母本的 variants，分别点击 Original/初稿和派生稿，确认显示对应版本。普通重新整理只生成派生稿，不要求自动激活、母本重命名或派生稿独立顶层条目。缺快照时不得显示假初稿链接；不得覆盖用户自定义类型名，也不批量翻译旧原始材料。曾报告列表未找到输出，只待界面观察，不代表文件丢失或列表故障已定位。
-2. **机器数据展示**：在包含会话知识、索引和活动版本标记的同一授权副本中，分别打开源码、实时预览和阅读视图，记录模式与截图。源码显示存储标记是预期；分别记录其他模式中长注释和索引折叠标题是否占正文，不预设已隐藏。对照切换版本前后的正文与结构读取结果，确认机器数据可读且活动范围未删除；此项只调查展示，不修复笔记。
-3. **历史 `partial` 原因**：取得单独日志/服务授权后，核对同场转写来源、诊断与模型原始回复，区分非合法 JSON、响应结构不符和后续保存异常。保留 `partial` 与 `issues` 原文，只记录证据能证明的原因。找不到历史响应时记“原因未核实”；不改为 `complete`，不擅自重跑原笔记或请求在线服务。
-4. **会话/正文路径**：仅在相关改动需要真实验证时使用授权测试副本。普通录音超过 10 秒后暂停、恢复、停止，确认音频可播放且转写与成稿来源一致；普通录音分别低于 1 秒、1–10 秒空白与 1–10 秒整句，确认丢弃、丢弃空白与建笔记规则；断网时录 1–10 秒，确认保留音频与重试任务；音频与文字导入，确认原材料和整理来源；中断服务后恢复并手动重试，确认失败任务与材料保留且不重复追加；异步准备续录期间切换活动笔记，确认只写原定目标或阻止操作。未逐项记录的宿主覆盖只标“未记录”，不宣称从未测试。正文修复补验需固定返回文本的测试转写服务：在实时转写结束标记后放置多行 Unicode 正文，令服务返回含 `$&`、美元符号紧接反引号、`$'`、`$$` 的文本，结束录音后检查全文，确认标记后正文未截断且字符串按字面量保存。没有该服务条件时，只记录自动消费者测试覆盖，不宣称真机验收。续录遇空白或异常结果时原笔记不变，见 §6.3。本次收尾迁移的人工补验：在测试库副本各录一次普通录音、续录追加、导入音频和导入文本，并人为使模型服务不可达一次；检查笔记正文、失败后待处理队列、通知文案与改名行为是否与迁移前一致。
-5. **移动端 Q 图标**：维护者有手机和授权测试库时重载插件，打开实际工具栏/侧栏入口，确认 Q 可辨识、未裁切且点击打开正确视图；记录系统、Obsidian/插件版本与截图。桌面辨识已确认，不要求重复验证。
+1. **初稿/派生稿与英文新写入**：选有有效原稿快照的笔记，分别用中文和英文界面重新整理为同类型与不同类型；检查版本标签、任务/通知文案使用界面类型名称，点击初稿与派生稿显示对应版本。缺快照时不得显示初稿链接。
+2. **机器数据展示**：在源码、实时预览、阅读视图中分别记录会话知识、索引与活动版本标记是否占正文；切换版本前后核对机器数据可读、活动范围未删除。只调查，不修复笔记。
+3. **历史 `partial` 原因**：取得日志与服务授权后，区分非合法 JSON、响应结构不符和后续保存异常；找不到历史响应记「原因未核实」。不改为 `complete`，不重跑原笔记。
+4. **会话与正文路径**：普通录音的暂停、恢复、停止；不足 1 秒、1–10 秒空白与有声、断网录音；音频与文字导入；服务中断后手动重试不重复追加；续录准备期间切换活动笔记只写原定目标。正文保全需固定返回含 `$&`、`` $` ``、`$'`、`$$` 文本的测试转写服务，确认结束标记后的正文未截断、文本按字面量保存。
+5. **移动端 Q 图标**：确认工具栏/侧栏入口的 Q 可辨识、未裁切且点击打开正确视图，记录系统与版本。
 
 ## 7. 产品方向、阶段验收与功能边界
 
@@ -409,9 +392,9 @@ git tag X.Y.Z && git push origin X.Y.Z
 
 ### 7.3 分阶段交付与验收
 
-本表记录发展顺序，不承诺版本或日期，也不是新增的执行队列。每阶段以实际使用效果决定是否继续；当前候选与实施状态只在 §6 维护。
+P0–P3 已有实现（主题层自 1.6.5 起发布，后续版本补充成员增删、勘误与撤销）。下表的验收重点继续作为主题层改动的约束；后续改进只在 §6 维护。
 
-| 阶段 | 可交付的用户能力 | 验收重点 |
+| 阶段 | 用户能力 | 验收重点（持续约束） |
 |---|---|---|
 | P0. 概要卡片与增量缓存 | 生成概要卡片并支持按变更重算 | 不全量重算；主题页不进入候选语料；原笔记不改 |
 | P1. 主题页读写与手动创建/整合 | 用户选定候选后建立或增量更新主题页 | 来源可回溯；原笔记不改；用户编辑不被覆盖；预览和撤销可用；额度估算可见 |
@@ -427,7 +410,8 @@ git tag X.Y.Z && git push origin X.Y.Z
 - **待调研**：哪些关系信息足以连接相关笔记；关系结构能否从现有文件重建、成本多大；用固定问题集比较「词法检索加索引卡」与「再加关系扩展」的必要来源召回。
 - **验证形式**：合成笔记集上的离线原型与一份短调研记录；不访问真实知识库。
 - **退出条件**：找到可行方案后，由维护者决定是否转为本表中的阶段并写入 §6.1；未找到则保留单篇问答与主题层。
-- **转入开发的前置条件**：索引卡读取时核对当前来源修订（`topics/overview-card.ts:67`、`indexing/related-notes-corpus.ts:133` 现不核对）；引用带转写时间精度；同源版本只计一份来源。
+- **转入开发的前置条件**：索引卡读取时核对当前来源修订（`topics/overview-card.ts` 的 `buildOverviewCard`、`indexing/related-notes-corpus.ts` 的候选读取现不核对）；引用带转写时间精度；同源版本只计一份来源。
+
 ### 7.4 数据、实现与隐私边界
 
 每批开发应包含一个完整的用户场景：入口、读取范围、结果、失败边界和验证。检索先用分块、关键词、中文字符二元切分和索引卡；后续根据效果评估云端 embedding，不先建设脱离用户用途的基础设施。
@@ -463,9 +447,10 @@ git tag X.Y.Z && git push origin X.Y.Z
 - 如需估算某个 `@ts-nocheck` 文件的退出成本，可用 TypeScript `CompilerHost` 在内存中移除指令并读取语法、语义诊断；过滤 TS2304 只用于区分已有 undefined-symbols 门禁，不得掩盖真实错误。
 - 常见修法：跨模块读取的 class state 显式声明字段；用联合类型收窄表达变体差异；修正错误缺失的联合成员或参数可选性。先核对调用点，不能为消除诊断改变真实行为。
 - 新文件不得使用 `@ts-nocheck`；`@ts-nocheck` 退出、常规类型检查与 strict-core 覆盖是三个不同目标。
+
 ## 9. 设置映射表
 
-本节包含 `PluginSettings` 全部 87 个顶层键与 `SETTINGS_SCHEMA_VERSION = 2` 的当前映射。
+本节列出 `PluginSettings` 全部顶层键的当前映射（键集合由 `check:settings-map` 核对）。
 
 `scripts/check-settings-map.mjs` 只校验键集合与落盘路径。表格“拟归属”列是原分层设计注记，不是未批准的页面迁移任务。新增设置键必须同步登记 `normalizePluginSettings` 与 `serializePluginSettings` 白名单，否则读写会丢失该键。
 
@@ -567,15 +552,7 @@ git tag X.Y.Z && git push origin X.Y.Z
 
 当前设置页由首页和六个功能页组成：录音、API、AI 整理、资料库、自动导入、关于。API 页包含说话人配置；快捷配置、首次配置向导与侧栏入口是三项不同操作。具体入口以 `src/ui/settings-tab.ts` 为准。
 
-### 9.3 设置材料维护
-
-以当前代码为准修正事实，不建立与实现平行的第二套规则。完成项和历史冲突记录不构成待办；新问题需由 §6 收录。
-
-### 9.4 服务推荐
-
-服务推荐需在有具体需求时核实模型能力、地区和费用，不从代码默认值推导推荐结论；任务入口见 §6。
-
-### 9.5 设置改动约束
+### 9.3 设置改动约束
 
 1. 一次只解决一个明确问题；不把设置页改造与录音流程重构捆绑。
 2. 设置只有一套实际存储；不同界面读写同一组字段，不新增同步副本。
@@ -584,11 +561,12 @@ git tag X.Y.Z && git push origin X.Y.Z
 5. 不引入通用表单框架、预设市场或新依赖。
 6. 新业务逻辑放有类型检查的模块，不以退出 `settings-tab.ts` 的 `@ts-nocheck` 为前置条件（见 §8）。
 7. 测试覆盖用户后果：无效密钥、部分服务失败、取消、重启读回及已有配置保留。设置 schema 改动遵守 §4.5。
+8. 本节与 §9.1 以当前代码为准修正，不建立与实现平行的第二套规则；服务推荐不从代码默认值推导，有具体需求时再核实能力、地区和费用。
 
 ---
 ## 10. 首次配置：预设范围、检测与四态
 
-任务 1 的产物。对应的实现在 `src/setup/index.ts`（有类型检查），行为测试在 `tests/setup.test.ts`。
+实现在 `src/setup/index.ts`（有类型检查），行为测试在 `tests/setup.test.ts`。
 
 ### 10.1 预设改哪些字段
 
@@ -597,12 +575,11 @@ git tag X.Y.Z && git push origin X.Y.Z
 | 写入 | 键 |
 |---|---|
 | 是 | `transcribeProviders`、`activeTranscribeProvider`、`importTranscribeProvider`、`importSpeakerDiarization`、`llmServicePreset`、`llmEndpoint`、`llmModel`、`llmApiKey`、`llmProfiles`、`activeLlmProfile` |
-| 否 | 其余 77 个键，含目录、提示词、录音设备、分段与并发、重试、诊断、自动导入 |
+| 否 | 其余全部键，含目录、提示词、录音设备、分段与并发、重试、诊断、自动导入 |
 
-`tests/setup.test.ts` 会拿一份「用户已经改过很多项」的设置逐键核对：清单之外的键必须逐项不变。
-反向验证过——一旦让预设顺手写 `audioFolder`，该用例立刻失败。
+`tests/setup.test.ts` 用一份「用户已经改过很多项」的设置逐键核对：清单之外的键必须逐项不变。
 
-两条容易被忽略的边界：
+容易被忽略的边界：
 
 - **不改用户已选的转写语言**：预设填地址、模型、密钥，`language` 只在用户没设过时才用默认值。
   用户把语言调成 `en` 之后套预设，仍是 `en`。
@@ -643,7 +620,7 @@ git tag X.Y.Z && git push origin X.Y.Z
 - **检测失败**：只记录结果，不写入任何设置；用户已填的密钥不被清空。
 - **未点「应用」**：不会有任何写盘调用。
 
-以上四条都有用例，且逐条做过反向验证（故意破坏实现后对应用例失败）。
+以上各条都有对应用例。
 
 ---
 
@@ -666,6 +643,7 @@ git tag X.Y.Z && git push origin X.Y.Z
 登记的接口族包括 Qwen Audio 原生短音频 HTTP、旧 `qwen3-asr-flash` Chat Completions、Qwen Audio / Fun-ASR / Paraformer / SenseVoice 文件转写、DashScope 任务式实时 WebSocket，以及独立的 Qwen3-ASR-Realtime 事件 WebSocket。文件转写接收整段音频，录音分段间隔不会拆分该请求；任务失败或队列重试都重新发送保留的完整音频。流式模型不会降级到 HTTP multipart。
 
 Qwen3 事件 WebSocket 使用 `/api-ws/v1/realtime`，通过握手 `Authorization` 头发送 Key、在 URL 查询中发送完整模型 ID，并为客户端事件提供唯一 `event_id`。音频使用 16 kHz PCM；服务端 partial / completed 事件更新实时文本，`session.finish` 只在收到 `session.finished` 后完成。其他 DashScope 实时模型使用 `/api-ws/v1/inference` 的任务事件协议；8 kHz Paraformer / Fun-ASR 型号使用对应采样率。`gummy-chat-v1` 每个任务识别一句话；客户端按 55 秒输入音频边界结束并新建任务，任务交接时暂存尚未发送的 PCM 帧。
+
 Qwen-Audio-3.1-ASR-Flash 的短音频接口使用 `model`、`input.messages[].content[].input_audio.data` 与 `parameters`；响应文本从 `output.text` 读取。百炼[短音频 API 文档](https://help.aliyun.com/zh/model-studio/fun-asr-flash-recorded-speech-recognition-http-api)允许使用 `https://dashscope.aliyuncs.com/api/v1/services/aigc/multimodal-generation/generation`；新建录音转写配置使用该 endpoint。千问 AI 平台模型页展示的是另一个服务域名，不自动替换百炼地址，也不假定两处 API Key 通用。语言未指定时省略 `language_hints`。WAV 只有在头部读到采样率时才发送 `sample_rate`；原样上传的 WebM/MP4 不会被标记为 16 kHz。短音频默认不请求说话人分离或时间戳；转写正文经过现有本地词汇纠正，原始服务文字保留在转写单元中。该模型可执行原生文本润色，结果可能不是逐字转写。
 
 转写服务连通性检测使用一段静音录音。若百炼返回 `ASR_RESPONSE_HAVE_NO_WORDS`，检测将其视为请求已到达并通过服务鉴权的证据；成功结果显示目标模型名，不显示空转写文本。这只验证连接，不验证有声录音的识别效果。其他 HTTP 或服务错误仍显示为检测失败。
@@ -685,8 +663,6 @@ Qwen-Audio-3.1-ASR-Flash 的短音频接口使用 `model`、`input.messages[].co
 
 价格来源：[百炼模型调用价格](https://help.aliyun.com/zh/model-studio/model-pricing)、[短音频原生 HTTP API](https://help.aliyun.com/zh/model-studio/fun-asr-flash-recorded-speech-recognition-http-api)、[整文件 HTTP API](https://help.aliyun.com/zh/model-studio/fun-asr-recorded-speech-recognition-http-api)、[Streaming WebSocket 指南](https://help.aliyun.com/zh/model-studio/fun-asr-realtime-websocket-api)。千问 AI 平台单模型价格页也列出 Flash/Filetrans 的 Token 单价，但其通用语音识别计费指南仍写按秒计费；本文只采用百炼模型专属价格与接口资料，不混用不同平台的计费说明。
 
-百炼快捷配置仍选用 `qwen-audio-3.1-asr-flash`。模型目录可以让维护者另选已登记的识别模型；DashScope 任务 WebSocket 与 Qwen3 事件 WebSocket 均需桌面端。`gummy-chat-v1` 使用单句任务，客户端在输入音频达到 55 秒时结束并重新启动任务，交接期间暂存新到的音频帧；导入整文件模型继续走异步提交、轮询和下载。
-
 ### 11.2 协议参数
 
 Paraformer 实时模型使用 Paraformer 专属 `disfluency_removal_enabled`；其他家族不发送该参数。`language_hints` 只对登记且接受语种参数的模型发送，Gummy 族不发送。8 kHz 型号将采样率同时用于音频编码和 `parameters.sample_rate`。参数构造位于 `src/asr/realtime-params.ts`；模型协议和采样率登记于 `src/asr/bailian-asr-registry.ts`，由 `tests/realtime-params.test.ts` 覆盖。
@@ -697,11 +673,11 @@ Paraformer 实时模型使用 Paraformer 专属 `disfluency_removal_enabled`；�
 
 ### 11.4 平台与请求限制
 
-HTTP 分段转写支持桌面与移动端；实时 WebSocket 受浏览器鉴权头限制，仅在可用桌面环境手动选择。Flash 请求不超过客户端 10,000,000 字节 Base64 预算，并以 3 分钟 WAV 块处理较长录音；此预算不等同于官方文件规格。非实时整文件识别按服务协议异步执行。服务限制和费用以供应商当前文档为准。
+HTTP 分段转写支持桌面与移动端；实时 WebSocket（DashScope 任务协议与 Qwen3 事件协议）受浏览器鉴权头限制，仅在桌面端可用。Flash 上传预算与分块见 §11.1。服务限制和费用以供应商当前文档为准。
 
-### 11.5 已修复的协议检测问题
+### 11.5 连通性检测按协议区分
 
-历史检测曾把 `wss://` 地址交给 HTTP 上传，误报协议不受支持；真实流式检测现执行 WebSocket 握手，HTTP 服务仍使用上传检测。endpoint 按协议校验，未放宽明文传输与内网限制。回归覆盖见 `tests/endpoint-transport.test.ts`、`tests/bailian-setup.test.ts`。
+流式服务的检测执行 WebSocket 握手，HTTP 服务使用上传检测；不得把 `wss://` 地址交给 HTTP 上传。endpoint 按协议校验，不放宽明文传输与内网限制。回归覆盖见 `tests/endpoint-transport.test.ts`、`tests/bailian-setup.test.ts`。
 
 ### 11.6 流式服务与历史分段任务
 
@@ -739,7 +715,7 @@ OpenRouter 是快捷配置可选预设之一，面向能够访问其服务的用
 
 ### 12.2 与百炼的差异
 
-导入音频在此路径中同步返回；百炼使用异步提交与轮询，具体协议见 §11.1。时限、费用和模型限制以服务方当前文档为准。维护者曾反馈所选 OpenRouter 整理模型速度较慢，该观察只是当时模型选择的原因，不是持续性能断言。
+导入音频在此路径中同步返回；百炼使用异步提交与轮询，具体协议见 §11.1。时限、费用和模型限制以服务方当前文档为准。
 
 ### 12.3 界面
 
@@ -780,13 +756,13 @@ OpenRouter 是快捷配置可选预设之一，面向能够访问其服务的用
 | 编号 | 主题 | 当前事实 / 条件 |
 |---|---|---|
 | A1 | Host 构造类型 | 已完成；服务构造时检查 Host 契约。 |
-| A2 | Host 宽能力 | 门禁完成；存量收窄未完成，纳入 §6 的 P2.3。 |
-| A3 | 录音会话状态 | PR #83 已完成；人工场景按 §6.4 条件补验。 |
-| A4 | 服务运行时依赖环 | PR #83 已处理；静态门禁见 §13。 |
+| A2 | Host 宽能力 | 门禁完成，阻止新增；存量收窄按具体需求排期（§6.2 类型收敛）。 |
+| A3 | 录音会话状态 | 已完成；人工场景按 §6.4 条件补验。 |
+| A4 | 服务运行时依赖环 | 已处理；静态门禁见 §13。 |
 | A5 | 基础组件反向依赖界面 | 已移除队列直接刷新界面的调用。 |
 | A6 | 笔记结构操作归属 | 通用位置/范围操作在 `note-document.ts`；协议矩阵见 §14.4。 |
-| A7 | 严格类型覆盖 | strict-core 继续扩展；具体推进只见 §6。 |
-| A8 | 沉淀工作流与 DOM | 控制器范围见 §6；不启动整体 `OutlineView` 拆分。 |
+| A7 | 严格类型覆盖 | 范围见 `tsconfig.strict-core.json`；可选推进项见 §6.2。 |
+| A8 | 沉淀工作流与 DOM | 新增非 DOM 逻辑走 controller（`AGENTS.md` §6.3）；整体 `OutlineView` 拆分暂停（§6.2）。 |
 | A9 | 目录归属 | 既有搬迁已完成；不启动全仓命名搬迁。 |
 | A10 | 非 UI 依赖 UI 辅助 | 五个纯函数依赖已迁移；设备交互仍由 UI/宿主负责。 |
 | A11 | 门禁正则识别 | 仅在证据表明存在漏检时启动。 |
@@ -804,7 +780,8 @@ OpenRouter 是快捷配置可选预设之一，面向能够访问其服务的用
 - i18n 继续以英文原文为键；英文 locale 文件为空是有意设计。
 - ASR、LLM、队列三层重试分别处理服务不可用、模型请求与任务恢复，不合并。
 
-排除项：`settings-io.ts` 读取 `update-source` 是有意依赖；构建中的 `check:plugin-onload` 与直接执行 `check-merge-pipeline` 各跑一次，不是重复。
+排除项：`settings-io.ts` 读取 `update-source` 是有意依赖。
+
 ### 14.4 结构归属与产品待决
 
 **A6 消费者矩阵**
@@ -819,7 +796,7 @@ OpenRouter 是快捷配置可选预设之一，面向能够访问其服务的用
 
 **A12 待维护者决定**
 
-- **笔记索引**：① 停止自动索引，不删除笔记中的旧索引块，并保护机器块；② 保留索引写入；索引卡已有两个读取方（`indexing/related-notes-corpus.ts:133`、`topics/overview-card.ts:67`），均不核对当前正文。全库问答探索（§7.3）如复用索引卡，须先补读时校验；这不等于决定永久保留笔记内嵌写入。前者减少索引刷新及额外写入机会；后者须验证读取用途、界面、更新与来源去重。实施前由维护者决定存储取舍，当前写入行为不变。
+- **笔记索引**：① 停止自动索引，不删除笔记中的旧索引块，并保护机器块；② 保留索引写入；索引卡已有两个读取方（`indexing/related-notes-corpus.ts`、`topics/overview-card.ts`），均不核对当前正文。全库问答探索（§7.3）如复用索引卡，须先补读时校验；这不等于决定永久保留笔记内嵌写入。前者减少索引刷新及额外写入机会；后者须验证读取用途、界面、更新与来源去重。实施前由维护者决定存储取舍，当前写入行为不变。
 - **笔记布局**：① 通过设置迁移下线 `consolidatedLayout=false` 与 `appendPolishBlock`，减少维护路径，但曾关闭该选项的用户后续写入会得到不同结构；必须按 §4.5 保留设置，不批量改写旧笔记。② 保留两种布局，涉及笔记结构的修改须覆盖两条路径。导入强制 rewrite 的现有规则不变。
 
 ## 15. 笔记版本保存流程
@@ -837,6 +814,7 @@ OpenRouter 是快捷配置可选预设之一，面向能够访问其服务的用
 | 音频 / 文字导入 | `ImportService` 建立会话并调用 `SessionFinalizeService.finalizeSession` | 导入内容先写入新母本；转写检查通过后进入首次 AI 整理写入 | 音频导入保存 ASR 分段；文字导入保留来源文字；整理结果写母本 | 首次整理本身不创建原稿快照 | 转写检查未通过时停止 AI 整理；收尾错误保留在会话状态及任务进度中 |
 | 后台合并重试 | `QueueRetryService.retryMergeTask` | 重试成功后直接重写或追加母本，再更新索引；不先归档当前可见正文 | 重试成稿写入母本；原始转写仍留在母本 | 不创建版本缓存，不更新 `activeVersionId` | 异常向队列重试路径返回；已有可见正文没有插件快照保护 |
 | 转写重试补齐后的自动整理 | `maybeAutoRepolish`（`src/queue/queue-transcribe-retry-flow.ts`） | 最后一段失败切片补齐、且该笔记没有其他待转写任务时执行。笔记没有整理正文（只剩 AI 整理失败占位，见 `src/notes/organized-body.ts`）则调用原地整理（`reorganizeNoteInPlace(file, { firstOrganizing: true })`）；否则调用普通重新整理。原地整理与首次整理一致：只补缺失的会话键 `qnalog_mode`、`qnalog_time`、`qnalog_duration`、`qnalog_audio`、`qnalog_status`（取值来自笔记的「录音信息」块、`qnalog/<模式>` 标签与音频嵌入，实现见 `src/notes/first-organizing-session.ts`；已有键不覆盖），写入成功后按整理正文与模式自动改名（受 `autoRenameWithTitle` 设置控制）。手动「原地重新整理」不补键、不改名 | 原地整理：整理正文写入母本，原始转写保留；普通重新整理：母本正文不变 | 原地整理：原稿快照更新为新结果，有活动版本时切换到该快照（`src/notes/reorganize-in-place-flow.ts`）；普通重新整理：`minutes`，`activate:false` | 读取笔记或整理失败时记录 `queue.auto_repolish_failed`，已补齐的转写不回滚；改名失败只记录控制台警告，整理结果保留在原文件名下 |
+
 续录暂存使用队列中保存的 `targetPath` 与 `targetSourceId`；重试不会根据当前活动笔记改写目标。`readTranscriptBlocks` 校验完整逐字稿块及其来源、版本和可见文本；追加布局在现有分段容器结束标记前插入，若缺少容器标记则接在最后一个完整转写块后。整篇布局根据已验证的账本重建原始材料区。只有目标提交路径写入续录成功标记；暂存收尾与普通整篇重写不授予该标记。
 
 同一插件实例按来源 ID 串行执行版本缓存和活动 ID 的 manifest 读改写；它不协调 Obsidian 同步或其他插件对同一文件的写入。仅凭磁盘状态无法归因外部修改或同步冲突。
