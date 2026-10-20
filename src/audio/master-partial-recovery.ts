@@ -115,27 +115,6 @@ async function recoverOneSession(port: MasterPartialRecoveryPort, dir: string, s
     return await fail("meta-invalid", error);
   }
 
-  if (meta.savedAs || meta.recoveredPath) {
-    const targetPath = meta.savedAs || meta.recoveredPath;
-    const expectedBytes = meta.savedAs ? meta.savedBytes : meta.recoveredBytes;
-    if (expectedBytes === undefined) return await fail("handled-target-size-unknown");
-    const targetCheck = await checkMasterPartialTarget(adapter, targetPath, expectedBytes, meta.flushedBytes);
-    if (targetCheck.ok === false) return await fail(`handled-target-${targetCheck.reason}`, targetCheck.error);
-    try {
-      await removePartialDirectory(adapter, dir);
-    } catch (error) {
-      try {
-        if (!(await adapter.exists(dir))) {
-          return { sessionId, status: "already-handled", reason: meta.savedAs ? "saved" : "recovered" };
-        }
-      } catch (checkError) {
-        return await fail("cleanup-state-check-failed", checkError);
-      }
-      return await fail("cleanup-failed", error);
-    }
-    return { sessionId, status: "already-handled", reason: meta.savedAs ? "saved" : "recovered" };
-  }
-
   const stagedPath = stagePath(dir, meta.ext);
   let hasStage: boolean;
   try {
@@ -158,6 +137,7 @@ async function recoverOneSession(port: MasterPartialRecoveryPort, dir: string, s
 
   if (parts.length === 0) {
     if (hasStage || meta.pendingRecoveryPath) return await fail("recovery-state-without-parts");
+    if (meta.savedAs || meta.recoveredPath) return await fail("handled-parts-missing");
     if (meta.partCount !== 0) return await fail("parts-missing");
     if (meta.flushedBytes !== 0) return await fail("committed-size-mismatch");
     try {
@@ -191,6 +171,33 @@ async function recoverOneSession(port: MasterPartialRecoveryPort, dir: string, s
   try { merged = await new Blob(buffers, { type: meta.mime }).arrayBuffer(); }
   catch (error) { return await fail("merge-failed", error); }
   if (merged.byteLength !== total) return await fail("merged-size-mismatch");
+
+  if (meta.savedAs || meta.recoveredPath) {
+    const targetPath = meta.savedAs || meta.recoveredPath;
+    const expectedBytes = meta.savedAs ? meta.savedBytes : meta.recoveredBytes;
+    if (expectedBytes === undefined) return await fail("handled-target-size-unknown");
+    if (expectedBytes !== merged.byteLength) return await fail("handled-target-parts-size-mismatch");
+    const targetCheck = await checkMasterPartialTarget(adapter, targetPath, expectedBytes, meta.flushedBytes);
+    if (targetCheck.ok === false) return await fail(`handled-target-${targetCheck.reason}`, targetCheck.error);
+    try {
+      if (!sameBytes(await adapter.readBinary(targetPath), merged)) return await fail("handled-target-content-mismatch");
+    } catch (error) {
+      return await fail("handled-target-read-failed", error);
+    }
+    try {
+      await removePartialDirectory(adapter, dir);
+    } catch (error) {
+      try {
+        if (!(await adapter.exists(dir))) {
+          return { sessionId, status: "already-handled", reason: meta.savedAs ? "saved" : "recovered" };
+        }
+      } catch (checkError) {
+        return await fail("cleanup-state-check-failed", checkError);
+      }
+      return await fail("cleanup-failed", error);
+    }
+    return { sessionId, status: "already-handled", reason: meta.savedAs ? "saved" : "recovered" };
+  }
 
   let target: string;
   let hasPending = meta.pendingRecoveryPath !== undefined;
