@@ -183,6 +183,10 @@ describe("live segment consumer contract", () => {
   it("keeps audio and skips note creation when a short transcription is anomalously long", async () => {
     const { service, host, blocks } = makeHost();
     const session = makeSession({ shortRecordingTier: "probe", shortRecordingDurationMs: 2000 });
+    host.asrPipeline.saveMasterAudio.mockImplementation(async () => {
+      session.masterAudioPath = "QnALog/录音/qnalog-20261009-100000.webm";
+      session.masterAudioName = "qnalog-20261009-100000.webm";
+    });
     const anomalousText = "<chinese>重复识别文本</chinese>".repeat(1600);
     transcribeMock.mockResolvedValueOnce({ text: anomalousText, rawText: anomalousText, providerId: "provider", units: [] });
 

@@ -176,6 +176,91 @@ describe.each(["trash", "adapter"] as const)("LiveAsrPipelineService retained au
     expect(adapterRemove).not.toHaveBeenCalled();
     expect(cachePresent).toBe(true);
   });
+
+  it("keeps the only segment cache when master readback verification fails for a keep-audio short recording", async () => {
+    const { service, host } = makeService(vi.fn().mockResolvedValue(undefined));
+    const cachePath = "QnALog/.cache/segments/qnalog-short-segment.webm";
+    const notePath = "QnALog/转写纪要/short-recording.md";
+    const cacheFile = Object.assign(new TFile(), { path: cachePath });
+    const masterPath = "QnALog/Audio/qnalog-20261020-120000.webm";
+    let cachePresent = true;
+    const trashFile = vi.fn(async (file: TFile) => {
+      if (file.path === cachePath) cachePresent = false;
+    });
+    const adapterRemove = vi.fn(async (path: string) => {
+      if (path === cachePath) cachePresent = false;
+    });
+    host.fileManager.trashFile = trashFile;
+    host.vault.adapter.exists = vi.fn(async (path: string) => path === cachePath && cachePresent);
+    host.vault.adapter.remove = adapterRemove;
+    host.vault.createFolder = vi.fn().mockResolvedValue(new TFolder()) as never;
+    host.vault.createBinary = vi.fn().mockResolvedValue(Object.assign(new TFile(), { path: masterPath })) as never;
+    host.discardMasterPartials = vi.fn().mockRejectedValue(new Error("master readback verification failed"));
+    host.vault.getAbstractFileByPath = (path: string) => {
+      if (cleanupRoute === "trash" && path === cachePath) return cacheFile;
+      return null;
+    };
+
+    const session = {
+      id: "short-session",
+      sessionStamp: "20261020-120000",
+      mdPath: notePath,
+      shortRecordingTier: "keep-audio",
+      masterAudioPath: "",
+      masterAudioName: "",
+      segments: [{ segmentAudioPath: cachePath }],
+    };
+    const consoleError = vi.spyOn(console, "error").mockImplementation(() => undefined);
+    await service.saveMasterAudio(session as never, {
+      masterBlob: new Blob(["recorded speech"], { type: "audio/webm" }),
+      masterMime: "audio/webm",
+      masterExt: "webm",
+    } as never);
+    consoleError.mockRestore();
+    expect(host.discardMasterPartials).toHaveBeenCalledWith("short-session", masterPath, 15);
+    expect(session.masterAudioPath).toBe("");
+
+    await service.discardShortRecordingNote(session as never);
+
+    expect(cachePresent).toBe(true);
+    expect(trashFile).not.toHaveBeenCalledWith(cacheFile);
+    expect(adapterRemove).not.toHaveBeenCalledWith(cachePath);
+  });
+
+  it("keeps discard-tier cache and session-note cleanup behavior", async () => {
+    const { service, host } = makeService(vi.fn().mockResolvedValue(undefined));
+    const cachePath = "QnALog/.cache/segments/qnalog-silent-short-segment.webm";
+    const notePath = "QnALog/转写纪要/short-recording.md";
+    const cacheFile = Object.assign(new TFile(), { path: cachePath });
+    const noteFile = Object.assign(new TFile(), { path: notePath });
+    let cachePresent = true;
+    const trashFile = vi.fn(async (file: TFile) => {
+      if (file.path === cachePath) cachePresent = false;
+    });
+    const adapterRemove = vi.fn(async (path: string) => {
+      if (path === cachePath) cachePresent = false;
+    });
+    host.fileManager.trashFile = trashFile;
+    host.vault.adapter.exists = vi.fn(async (path: string) => path === cachePath && cachePresent);
+    host.vault.adapter.remove = adapterRemove;
+    host.vault.getAbstractFileByPath = (path: string) => {
+      if (path === notePath) return noteFile;
+      if (cleanupRoute === "trash" && path === cachePath) return cacheFile;
+      return null;
+    };
+
+    await service.discardShortRecordingNote({
+      id: "silent-session",
+      mdPath: notePath,
+      shortRecordingTier: "discard",
+      segments: [{ segmentAudioPath: cachePath }],
+    } as never);
+
+    expect(cachePresent).toBe(false);
+    expect(trashFile).toHaveBeenCalledWith(noteFile);
+    if (cleanupRoute === "trash") expect(trashFile).toHaveBeenCalledWith(cacheFile);
+    else expect(adapterRemove).toHaveBeenCalledWith(cachePath);
+  });
 });
 
 

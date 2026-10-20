@@ -784,7 +784,10 @@ describe("短录音整条路径", () => {
     expect(transcribeMock).toHaveBeenCalledOnce();
     expect([...files.keys()].filter((path) => path.startsWith("QnALog/录音/"))).toHaveLength(1);
     expect(trashed).toContain(mdPath);
-    expect([...files.keys()].filter((path) => path !== "QnALog/录音/qnalog-20260918-120000.webm")).toEqual([]);
+    expect([...files.keys()].sort()).toEqual([
+      "QnALog/录音/qnalog-20260918-120000.webm",
+      "QnALog/.cache/segments/qnalog-20260918-120000-seg01.webm",
+    ].sort());
     expect(notices.join("\n")).toContain("Short recording was not made into a note; audio was kept. Recognized: 好的");
   });
 

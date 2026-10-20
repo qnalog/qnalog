@@ -289,8 +289,8 @@ export class SessionFinalizeService {
    * 短录音的收尾：删掉结尾创建的纪要，只保留音频（丢弃级别连音频也不留）。
    *
    * 录音开始时无法预知总时长，纪要头是那一刻就写进磁盘的，因此这里负责把它摘掉。
-   * `discard` 级别在 `handleSegment` 里就没保存音频；`keep-audio` 级别的音频已经写进
-   * 录音目录，用户之后可以用「导入已有音频文件」手动转写。
+   * `discard` 级别清理可丢弃的音频。`keep-audio` 级别保留音频；母带保存或核验失败时，
+   * 保留分段缓存并提示用户检查路径。
    */
   async finishShortRecording(session: RecordingSession): Promise<void> {
     return finishShortRecordingFlow(this.shortRecordingPort(), session);
