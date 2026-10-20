@@ -172,7 +172,7 @@ describe("transcription retry consumer contract", () => {
     expect(written).not.toContain(labelText("waitingBackground"));
     expect(fixture.diagnostics.logDiagnostic).not.toHaveBeenCalledWith("warn", "queue.transcribe_empty_result", expect.any(String), expect.anything());
     expect(fixture.diagnostics.logDiagnostic).not.toHaveBeenCalledWith("warn", "asr.long_recording_anomaly", expect.any(String), expect.anything());
-    expect(fixture.cleanup).toHaveBeenCalledWith(fixture.task.audioPath, fixture.task.id, false);
+    expect(fixture.cleanup).not.toHaveBeenCalled();
     expect(fixture.host.repolish.repolishMarkdownFile).toHaveBeenCalledTimes(1);
   });
 
@@ -188,7 +188,7 @@ describe("transcription retry consumer contract", () => {
     expect(written).toContain(labelText("noContentSegment"));
     expect(written).not.toContain(labelText("waitingBackground"));
     expect(fixture.diagnostics.logDiagnostic).not.toHaveBeenCalledWith("warn", "queue.transcribe_empty_result", expect.any(String), expect.anything());
-    expect(fixture.cleanup).toHaveBeenCalledWith(fixture.task.audioPath, fixture.task.id, false);
+    expect(fixture.cleanup).not.toHaveBeenCalled();
   });
 
   it("keeps throwing for a non-quiet empty retry result", async () => {
