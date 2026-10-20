@@ -341,6 +341,25 @@ export async function runSessionFinalization(port: SessionFinalizeRunPort, sessi
         catch { /* intentionally empty */ }
       }
     }
+    // Keep the note text the rewrite is about to replace. Skipped when the pre-append snapshot above already covered this write.
+    if (!(session.continuationSourcePath && !session.continuation)) {
+      try {
+        const targetFile = port.getVault().getAbstractFileByPath(session.mdPath);
+        if (targetFile instanceof obsidian.TFile) {
+          const priorContent = await port.getVault().read(targetFile);
+          if (priorContent) {
+            await port.saveVersion(targetFile, priorContent, segmentsForFinal, {
+              kind: "pre-polish", label: t("Before polish") + " " + port.formatNow("YYYY-MM-DD HH:mm"), mode: session.mode,
+              idLabel: "pre-polish-" + port.formatNow("YYYYMMDD-HHmmss"), body: priorContent, activate: false,
+            });
+          }
+        }
+      } catch (archiveError) {
+        console.warn("[QnALog] pre-polish version archive failed", archiveError);
+        try { await port.logDiagnostic("warn", "session.pre_polish_archive_failed", t("Archiving the note before AI polish failed; the note write is unaffected"), { mdPath: session.mdPath, error: diagnosticError(archiveError) }); }
+        catch { /* intentionally empty */ }
+      }
+    }
     try {
       if (shouldRewriteConsolidatedNote(port.getSettings(), writeSession)) await port.rewriteConsolidated(writeSession, polished);
       else await port.appendPolishBlock(writeSession, polished, null, false);

@@ -1,5 +1,6 @@
 import * as obsidian from "obsidian";
 import type { MergeQueueTaskPayload, QueueTaskDeferred, RecordingSession, Segment } from "../shared/types";
+import type { VersionSaveInput } from "../versions/version-save-store";
 import { readSessionKnowledge } from "../briefing/session-knowledge";
 import { labelPattern, labelText } from "../shared/note-labels";
 import { t } from "../shared/i18n";
@@ -14,6 +15,8 @@ export interface QueueMergeRetryPort {
   mergeAndPolish(segments: Segment[], mode: string, sessionMeta: Record<string, unknown>, speakerFrontmatter: Record<string, unknown> | null): Promise<string>;
   shouldRewriteConsolidated(session: MergeRetrySession): boolean;
   rewriteConsolidated(session: MergeRetrySession, polished: string, expectedMarkdown: string): Promise<void>;
+  saveVersion(file: obsidian.TFile, content: string, segments: Segment[], input: VersionSaveInput): Promise<unknown>;
+  formatNow(format: string): string;
   mergeLeadingFrontmatter(documentText: string, generated: string): { content: string; body: string };
   getModePrefix(mode: string): string;
   clearCommittedBriefingCheckpoint(sessionMeta: unknown): Promise<void>;
@@ -58,6 +61,17 @@ async function retryMergeTaskImpl(port: QueueMergeRetryPort, task: MergeRetryTas
     multiSourceAudio: task.source === "merged-notes",
   };
   if (port.shouldRewriteConsolidated(retrySession)) {
+    // Best-effort snapshot of the note text the rewrite will replace; a failure must not block the write.
+    try {
+      if (currentMarkdown) {
+        await port.saveVersion(file, currentMarkdown, retrySession.segments, {
+          kind: "pre-polish", label: t("Before polish") + " " + port.formatNow("YYYY-MM-DD HH:mm"), mode: task.mode,
+          idLabel: "pre-polish-" + port.formatNow("YYYYMMDD-HHmmss"), body: currentMarkdown, activate: false,
+        });
+      }
+    } catch (archiveError) {
+      console.warn("[QnALog] pre-polish version archive failed", archiveError);
+    }
     await port.rewriteConsolidated(retrySession, polished, currentMarkdown);
   } else {
     const vault = port.getVault();
