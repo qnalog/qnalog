@@ -300,6 +300,36 @@ describe("session finalization flow consumer contract", () => {
     expect(fixture.events).not.toContain("stage:indexing");
   });
 
+  it("saves a hidden pre-polish snapshot of the note before the rewrite replaces it", async () => {
+    const fixture = setup({ layout: true });
+    vi.mocked(fixture.port.saveVersion).mockImplementation(async () => { fixture.events.push("snapshot"); });
+    await runSessionFinalization(fixture.port, fixture.session);
+    expect(fixture.port.saveVersion).toHaveBeenCalledWith(fixture.file, "A note body", expect.any(Array), expect.objectContaining({ kind: "pre-polish", activate: false, body: "A note body" }));
+    expect(fixture.events.indexOf("snapshot")).toBeLessThan(fixture.events.indexOf("rewrite"));
+    expect(fixture.port.rewriteConsolidated).toHaveBeenCalledWith(fixture.session, "Polished note");
+  });
+
+  it("still rewrites the note and finishes when the pre-polish snapshot fails", async () => {
+    const fixture = setup({ layout: true });
+    vi.mocked(fixture.port.saveVersion).mockRejectedValue(new Error("disk full"));
+    await runSessionFinalization(fixture.port, fixture.session);
+    expect(fixture.port.rewriteConsolidated).toHaveBeenCalledWith(fixture.session, "Polished note");
+    expect(fixture.events).toContain("diag:session.pre_polish_archive_failed");
+    expect(fixture.events).not.toContain("diag:briefing.commit_failed");
+    expect(fixture.events.indexOf("rewrite")).toBeLessThan(fixture.events.indexOf("end"));
+    expect(fixture.port.addQueueTask).not.toHaveBeenCalled();
+  });
+
+  it("does not add a pre-polish snapshot when the pre-append snapshot already ran", async () => {
+    const fixture = setup({ layout: true });
+    fixture.session.continuationSourcePath = "Notes/prior.md";
+    fixture.session.continuationBaseSegments = [{ index: 9, startOffsetMs: 0, endOffsetMs: 500, text: "Previous text." }];
+    await runSessionFinalization(fixture.port, fixture.session);
+    const kinds = vi.mocked(fixture.port.saveVersion).mock.calls.map(call => (call[3] as { kind?: string }).kind);
+    expect(kinds).toEqual(["pre-append"]);
+    expect(fixture.port.rewriteConsolidated).toHaveBeenCalledTimes(1);
+  });
+
   it("uses the execution-time sediment setting changed during merge", async () => {
     const fixture = setup();
     vi.mocked(fixture.port.mergeAndPolish).mockImplementation(async () => {

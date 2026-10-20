@@ -56,8 +56,10 @@ function setup(options: { text?: string; layout?: boolean; task?: Record<string,
   const rewritten = vi.fn(async () => { log.push("rewrite"); });
   const renamed = vi.fn(async () => { log.push("rename"); return note; });
   const refresh = vi.fn(async () => { log.push("refresh"); });
+  const saveVersion = vi.fn(async () => { log.push("snapshot"); return undefined; });
   const host = {
     app: { vault }, settings: { ...DEFAULT_SETTINGS, consolidatedLayout: options.layout ?? false },
+    versions: { saveVersion },
     continuations: { runOnTarget: vi.fn(async (_target: unknown, operation: () => Promise<unknown>) => {
       log.push("runOnTarget");
       return options.onTarget ? options.onTarget(operation) : operation();
@@ -73,7 +75,7 @@ function setup(options: { text?: string; layout?: boolean; task?: Record<string,
   const service = new QueueRetryService(host as never);
   const task = { mdPath: String(note.path), mode: "meeting", source: "recording", segments: [], ...(options.task ?? {}) };
   vi.stubGlobal("window", { moment: (value?: unknown) => ({ format: () => `stamp:${String(value ?? "now")}` }) });
-  return { service, host, note, files, contents, vault, log, rewritten, renamed, refresh, task };
+  return { service, host, note, files, contents, vault, log, rewritten, renamed, refresh, saveVersion, task };
 }
 
 describe("merge queue retry consumer contract", () => {
@@ -164,6 +166,43 @@ describe("merge queue retry consumer contract", () => {
     );
     expect(contents.get(String(note.path))).toBe(userEdit);
     expect(clearCheckpointMock).not.toHaveBeenCalled();
+  });
+
+  it("saves a hidden pre-polish snapshot of the note before the consolidated rewrite", async () => {
+    const original = "# Note\n\nOriginal text.";
+    const { service, task, note, saveVersion, rewritten, log } = setup({ layout: true, text: original });
+    await service.retryMergeTask(task as never);
+    expect(saveVersion).toHaveBeenCalledWith(note, original, [], expect.objectContaining({ kind: "pre-polish", activate: false, body: original }));
+    expect(rewritten).toHaveBeenCalledTimes(1);
+    expect(log.indexOf("snapshot")).toBeLessThan(log.indexOf("rewrite"));
+  });
+
+  it("still writes the merged note when the pre-polish snapshot fails", async () => {
+    const { service, task, saveVersion, rewritten } = setup({ layout: true });
+    saveVersion.mockRejectedValueOnce(new Error("disk full"));
+    await service.retryMergeTask(task as never);
+    expect(saveVersion).toHaveBeenCalledTimes(1);
+    expect(rewritten).toHaveBeenCalledTimes(1);
+    expect(clearCheckpointMock).toHaveBeenCalledTimes(1);
+  });
+
+  it("keeps the pre-polish snapshot when the compare-before-write rewrite refuses a changed note", async () => {
+    const original = "Original note.";
+    const { service, host, task, contents, note, saveVersion } = setup({ layout: true, text: original });
+    const userEdit = "Original note.\n\nUser edit during merge.";
+    mergeAndPolishMock.mockImplementationOnce(async () => {
+      contents.set(String(note.path), userEdit);
+      return "---\ntitle: polished\n---\n\nPolished body.";
+    });
+    host.noteWriter = new NoteWriter({
+      vault: host.app.vault,
+      settings: host.settings,
+      noteIndex: host.noteIndex,
+    } as never) as never;
+
+    await expect(service.retryMergeTask(task as never)).rejects.toThrow("The note changed while the merge was running");
+    expect(saveVersion).toHaveBeenCalledWith(note, original, [], expect.objectContaining({ kind: "pre-polish", body: original }));
+    expect(contents.get(String(note.path))).toBe(userEdit);
   });
 
   it("keeps a user edit made while an append merge is running", async () => {

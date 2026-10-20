@@ -250,6 +250,8 @@ export class QueueRetryService {
       mergeAndPolish: (segments, mode, sessionMeta, speakerFrontmatter) => mergeAndPolish(this.host, segments, mode, sessionMeta, speakerFrontmatter),
       shouldRewriteConsolidated: (session) => shouldRewriteConsolidatedNote(this.host.settings, session),
       rewriteConsolidated: (session, polished, expectedMarkdown) => this.host.noteWriter.rewriteConsolidatedIfUnchanged(session, polished, expectedMarkdown),
+      saveVersion: (file, content, base, input) => this.host.versions.saveVersion(file, content, base, input),
+      formatNow: (format) => window.moment().format(format),
       mergeLeadingFrontmatter: mergeLeadingFrontmatterIntoDocument,
       getModePrefix: (mode) => getModeMeta(this.host.settings, mode).prefix,
       clearCommittedBriefingCheckpoint: (sessionMeta) => clearCommittedBriefingCheckpoint(this.host, sessionMeta),
