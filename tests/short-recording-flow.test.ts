@@ -108,6 +108,11 @@ function makeHost(sound: { voicedTicks: number; silentTicks: number; evidenceUnk
         exists: async (path: string) => folders.has(path) || files.has(path),
         mkdir: async (path: string) => { folders.add(path); },
         writeBinary: async (path: string, data: ArrayBuffer) => { files.set(path, { binary: data }); },
+        readBinary: async (path: string) => {
+          const data = files.get(path)?.binary;
+          if (!data) throw new Error(`missing binary file: ${path}`);
+          return data.slice(0);
+        },
         remove: async (path: string) => { files.delete(path); },
         list: async () => ({ files: [], folders: [] }),
         stat: async () => ({ mtime: 0 }),

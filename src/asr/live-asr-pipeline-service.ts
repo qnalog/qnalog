@@ -28,6 +28,7 @@ export interface LiveAsrPipelineHost {
       exists(path: string): Promise<boolean>;
       mkdir(path: string): Promise<void>;
       writeBinary(path: string, data: ArrayBuffer): Promise<void>;
+      readBinary(path: string): Promise<ArrayBuffer>;
       remove(path: string): Promise<void>;
       list(path: string): Promise<{ files: string[]; folders: string[] }>;
       stat(path: string): Promise<{ mtime?: number } | null>;
@@ -46,7 +47,7 @@ export interface LiveAsrPipelineHost {
   updateQueueTask(id: string, patch: Partial<QueueTask>): Promise<void>;
   removeQueueTask(id: string): Promise<void>;
   removeLiveTranscriptBlock(mdPath: string, sessionId: string): Promise<void>;
-  /** 用已成功写入的母带字节数校验目标后清理该场次的增量分片。 */
+  /** 用已成功写入并读回核对的母带清理该场次的增量分片。 */
   discardMasterPartials(sessionId: string, savedPath: string, savedBytes: number): Promise<void>;
   getRecorderBufferSummary(): { masterChunkCount: number; masterChunkBytes: number; currentSegmentChunkCount: number; currentSegmentChunkBytes: number };
   syncImportBusyFromSessionProgress(session: RecordingSession): void;
@@ -440,7 +441,26 @@ export class LiveAsrPipelineService implements LiveAsrPipeline {
       if (!target) throw new Error(t("Could not build a path for the full recording file"));
       const ab = await seg.masterBlob.arrayBuffer();
       await this.host.vault.createBinary(target, ab);
-      // 用刚写入的字节数核对母带；不匹配时保留增量分片并停止引用该目标。
+      // 逐字节读回核对；无法读取或内容不符时保留增量分片与分段缓存。
+      try {
+        const saved = await this.host.vault.adapter.readBinary(target);
+        let matches = saved.byteLength === ab.byteLength;
+        if (matches) {
+          const expectedBytes = new Uint8Array(ab);
+          const savedBytes = new Uint8Array(saved);
+          for (let i = 0; i < expectedBytes.length; i++) {
+            if (expectedBytes[i] !== savedBytes[i]) {
+              matches = false;
+              break;
+            }
+          }
+        }
+        if (!matches) throw new Error("master-readback-content-mismatch");
+      } catch (e) {
+        console.error("[QnALog] verify saved master audio readback failed", e);
+        new obsidian.Notice(t("The full recording could not be verified. Check the recording segments before closing Obsidian."), 10000);
+        return;
+      }
       try { await this.host.discardMasterPartials(session.id, target, ab.byteLength); }
       catch (e) {
         console.error("[QnALog] verify saved master audio failed", e);

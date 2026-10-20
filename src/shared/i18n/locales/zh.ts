@@ -3166,6 +3166,7 @@ export const ZH: MessageTable = {
   "The full recording was saved, but its partial files could not be removed": "完整录音已保存，但进行中的录音临时文件无法删除",
   "The partial files could not be marked as saved": "无法在临时文件中标记为已保存",
   "The saved recording could not be verified; its partial audio was kept": "无法按文件类型和字节数核对已写入录音文件，录音分片已保留",
+  "The full recording could not be verified. Check the recording segments before closing Obsidian.": "完整录音未能通过核验。关闭 Obsidian 前，请检查录音分段。",
   "The partial audio could not be safely cleaned up; its files were kept": "无法安全清理录音分片，临时文件已保留",
   "An interrupted recording could not be recovered; its partial files were kept": "中断的录音无法自动恢复，临时文件已保留",
   "An interrupted recording could not be recovered automatically. Its partial files are kept in the recording folder.": "中断的录音无法自动恢复，临时文件已保留在录音文件夹中。",

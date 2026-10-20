@@ -1,8 +1,10 @@
 import { describe, expect, it, vi } from "vitest";
 
+const masterNoticeMessages = vi.hoisted(() => [] as string[]);
+
 vi.mock("obsidian", () => ({
   normalizePath: (path: string) => String(path || "").replace(/\\/g, "/").replace(/\/+$/, ""),
-  Notice: class Notice {},
+  Notice: class Notice { constructor(message: unknown) { masterNoticeMessages.push(String(message)); } },
   TFile: class TFile {},
   TFolder: class TFolder {},
 }));
@@ -13,6 +15,7 @@ import type { LiveAsrPipelineHost } from "../src/asr/live-asr-pipeline-service";
 function makeService(writeBinary: () => Promise<void>) {
   const diagnostics = { logDiagnostic: vi.fn().mockResolvedValue(undefined) };
   const addQueueTask = vi.fn().mockResolvedValue({ id: "task-1" });
+  const masterFiles = new Map<string, ArrayBuffer>();
   const host = {
     getSettings: () => ({
       segmentCacheFolder: "QnALog/.cache/segments",
@@ -32,10 +35,21 @@ function makeService(writeBinary: () => Promise<void>) {
         exists: vi.fn().mockResolvedValue(false),
         mkdir: vi.fn().mockResolvedValue(undefined),
         writeBinary,
+        readBinary: vi.fn(async (path: string) => {
+          const data = masterFiles.get(path);
+          if (!data) throw new Error(`missing ${path}`);
+          return data.slice(0);
+        }),
         remove: vi.fn().mockResolvedValue(undefined),
         list: vi.fn().mockResolvedValue({ files: [], folders: [] }),
         stat: vi.fn().mockResolvedValue({ mtime: 0 }),
       },
+      createBinary: vi.fn(async (path: string, data: ArrayBuffer) => {
+        masterFiles.set(path, data.slice(0));
+        return Object.assign(new TFile(), { path });
+      }),
+      getAbstractFileByPath: vi.fn(() => null),
+      createFolder: vi.fn().mockResolvedValue(new TFolder()),
     },
     fileManager: { trashFile: vi.fn().mockResolvedValue(undefined) },
     diagnostics,
@@ -50,7 +64,7 @@ function makeService(writeBinary: () => Promise<void>) {
     requestOutlineRefresh: vi.fn(),
     requestBubbleUpdate: vi.fn(),
   } as unknown as LiveAsrPipelineHost;
-  return { service: new LiveAsrPipelineService(host), diagnostics, addQueueTask, host };
+  return { service: new LiveAsrPipelineService(host), diagnostics, addQueueTask, host, masterFiles };
 }
 
 describe.each(["trash", "adapter"] as const)("LiveAsrPipelineService retained audio references via %s", (cleanupRoute) => {
@@ -178,7 +192,8 @@ describe.each(["trash", "adapter"] as const)("LiveAsrPipelineService retained au
   });
 
   it("keeps the only segment cache when master readback verification fails for a keep-audio short recording", async () => {
-    const { service, host } = makeService(vi.fn().mockResolvedValue(undefined));
+    masterNoticeMessages.length = 0;
+    const { service, host, masterFiles } = makeService(vi.fn().mockResolvedValue(undefined));
     const cachePath = "QnALog/.cache/segments/qnalog-short-segment.webm";
     const notePath = "QnALog/转写纪要/short-recording.md";
     const cacheFile = Object.assign(new TFile(), { path: cachePath });
@@ -194,7 +209,10 @@ describe.each(["trash", "adapter"] as const)("LiveAsrPipelineService retained au
     host.vault.adapter.exists = vi.fn(async (path: string) => path === cachePath && cachePresent);
     host.vault.adapter.remove = adapterRemove;
     host.vault.createFolder = vi.fn().mockResolvedValue(new TFolder()) as never;
-    host.vault.createBinary = vi.fn().mockResolvedValue(Object.assign(new TFile(), { path: masterPath })) as never;
+    host.vault.createBinary = vi.fn(async (path: string, data: ArrayBuffer) => {
+      masterFiles.set(path, data.slice(0));
+      return Object.assign(new TFile(), { path: masterPath });
+    }) as never;
     host.discardMasterPartials = vi.fn().mockRejectedValue(new Error("master readback verification failed"));
     host.vault.getAbstractFileByPath = (path: string) => {
       if (cleanupRoute === "trash" && path === cachePath) return cacheFile;
