@@ -2722,6 +2722,7 @@ export const ZH: MessageTable = {
   "Segment processing error (swallowed to avoid poisoning the write chain)": "分段处理异常（已吞，避免毒化写入链）",
   "Could not build a path for the full recording file": "无法生成完整录音文件路径",
   "Cleaned up expired transcription segments": "已清理过期转写分段",
+  "Expired segment audio was kept because final recording verification was not recorded": "缺少最终录音的核验记录，已保留过期分段音频",
   "Live transcription backlog state changed": "实时转写积压状态变化",
   "Recording segment entered the on-disk transcription queue": "录音分段已进入磁盘转写队列",
   "Failed to write the recording segment to the cache; the segment is temporarily kept in memory as a fallback": "录音分段写入缓存失败，将临时保留该段内存兜底",

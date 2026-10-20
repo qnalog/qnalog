@@ -186,7 +186,8 @@ export class LiveAsrPipelineService implements LiveAsrPipeline {
       };
       await walkAdapter(folderPath);
     }
-    let deleted = 0, skipped = 0, failed = 0;
+    const deleted = 0, failed = 0;
+    let skipped = 0, retainedWithoutVerifiedFinalCopy = 0;
     for (const file of files) {
       const path = obsidian.normalizePath(file.path || "");
       const ext = String(path.split(".").pop() || "").toLowerCase();
@@ -194,16 +195,20 @@ export class LiveAsrPipelineService implements LiveAsrPipeline {
       const mtime = Number(file.mtime) || 0;
       if (mtime > cutoff) { skipped++; continue; }
       if (this.isQueuedTranscribeAudioReferenced(path)) { skipped++; continue; }
-      try {
-        await this.maybeDeleteSegmentCacheFile(path);
-        deleted++;
-      } catch (e) {
-        failed++;
-        console.error("[QnALog] expired segment cache cleanup failed", path, e);
-      }
+      // No durable marker proves that an expired segment has a verified final recording copy.
+      // Keep unreferenced segments; successful sessions already clean them after master verification.
+      skipped++;
+      retainedWithoutVerifiedFinalCopy++;
     }
-    if (deleted || failed) {
-      await this.host.diagnostics.logDiagnostic("info", "segment_cache.cleanup", t("Cleaned up expired transcription segments"), { folderPath, deleted, skipped, failed });
+    if (retainedWithoutVerifiedFinalCopy) {
+      await this.host.diagnostics.logDiagnostic("info", "segment_cache.cleanup", t("Expired segment audio was kept because final recording verification was not recorded"), {
+        folderPath,
+        deleted,
+        skipped,
+        failed,
+        retainedWithoutVerifiedFinalCopy,
+        retentionReason: "no-verified-final-copy",
+      });
     }
     return { deleted, skipped, failed };
   }

@@ -99,15 +99,82 @@ describe.each(["trash", "adapter"] as const)("LiveAsrPipelineService retained au
     }
     const result = await service.cleanupExpiredSegmentCacheFiles(60 * 60 * 1000);
 
-    expect(result.deleted).toBe(1);
-    expect(result.skipped).toBe(3);
+    expect(result.deleted).toBe(0);
+    expect(result.skipped).toBe(4);
     if (cleanupRoute === "trash") {
-      expect(trashFile.mock.calls.map(([file]) => file.path)).toEqual([unrelatedPath]);
+      expect(trashFile).not.toHaveBeenCalled();
       expect(adapterRemove).not.toHaveBeenCalled();
     } else {
-      expect(adapterRemove).toHaveBeenCalledExactlyOnceWith(unrelatedPath);
+      expect(adapterRemove).not.toHaveBeenCalled();
       expect(trashFile).not.toHaveBeenCalled();
     }
+  });
+
+  it("keeps expired cache audio without a verified final recording copy", async () => {
+    const { service, host } = makeService(vi.fn().mockResolvedValue(undefined));
+    const cacheFolder = "QnALog/.cache/segments";
+    const path = `${cacheFolder}/qnalog-20261001-120000-seg01.webm`;
+    const oldMtime = Date.now() - 30 * 24 * 60 * 60 * 1000;
+    const cacheFile = Object.assign(new TFile(), { path, name: path.split("/").pop(), stat: { mtime: oldMtime } });
+    let cachePresent = true;
+    const trashFile = vi.fn(async () => { cachePresent = false; });
+    const adapterRemove = vi.fn(async () => { cachePresent = false; });
+    host.fileManager.trashFile = trashFile;
+    host.vault.adapter.exists = vi.fn().mockResolvedValue(true);
+    host.vault.adapter.remove = adapterRemove;
+    host.vault.adapter.list = vi.fn().mockResolvedValue({ files: [path], folders: [] });
+    host.vault.adapter.stat = vi.fn().mockResolvedValue({ mtime: oldMtime });
+    host.vault.getAbstractFileByPath = (candidate: string) => {
+      if (cleanupRoute === "trash" && candidate === cacheFolder) {
+        return Object.assign(new TFolder(), { path: cacheFolder, children: [cacheFile] });
+      }
+      return cleanupRoute === "trash" && candidate === path ? cacheFile : null;
+    };
+
+    const result = await service.cleanupExpiredSegmentCacheFiles(60 * 60 * 1000);
+
+    expect(result).toMatchObject({ deleted: 0, skipped: 1, failed: 0 });
+    expect(trashFile).not.toHaveBeenCalled();
+    expect(adapterRemove).not.toHaveBeenCalled();
+    expect(cachePresent).toBe(true);
+    expect(host.diagnostics.logDiagnostic).toHaveBeenCalledWith(
+      "info",
+      "segment_cache.cleanup",
+      expect.any(String),
+      expect.objectContaining({ retainedWithoutVerifiedFinalCopy: 1 }),
+    );
+  });
+
+  it("does not treat a same-name master file as proof that expired cache audio is safe to delete", async () => {
+    const { service, host } = makeService(vi.fn().mockResolvedValue(undefined));
+    const cacheFolder = "QnALog/.cache/segments";
+    const path = `${cacheFolder}/qnalog-20261001-120000-seg01.webm`;
+    const masterPath = "QnALog/Audio/qnalog-20261001-120000.webm";
+    const oldMtime = Date.now() - 30 * 24 * 60 * 60 * 1000;
+    const cacheFile = Object.assign(new TFile(), { path, name: path.split("/").pop(), stat: { mtime: oldMtime } });
+    const masterFile = Object.assign(new TFile(), { path: masterPath, name: masterPath.split("/").pop() });
+    let cachePresent = true;
+    const trashFile = vi.fn(async () => { cachePresent = false; });
+    const adapterRemove = vi.fn(async () => { cachePresent = false; });
+    host.fileManager.trashFile = trashFile;
+    host.vault.adapter.exists = vi.fn().mockResolvedValue(true);
+    host.vault.adapter.remove = adapterRemove;
+    host.vault.adapter.list = vi.fn().mockResolvedValue({ files: [path], folders: [] });
+    host.vault.adapter.stat = vi.fn().mockResolvedValue({ mtime: oldMtime });
+    host.vault.getAbstractFileByPath = (candidate: string) => {
+      if (cleanupRoute === "trash" && candidate === cacheFolder) {
+        return Object.assign(new TFolder(), { path: cacheFolder, children: [cacheFile] });
+      }
+      if (candidate === masterPath) return masterFile;
+      return cleanupRoute === "trash" && candidate === path ? cacheFile : null;
+    };
+
+    const result = await service.cleanupExpiredSegmentCacheFiles(60 * 60 * 1000);
+
+    expect(result).toMatchObject({ deleted: 0, skipped: 1, failed: 0 });
+    expect(trashFile).not.toHaveBeenCalled();
+    expect(adapterRemove).not.toHaveBeenCalled();
+    expect(cachePresent).toBe(true);
   });
 });
 
