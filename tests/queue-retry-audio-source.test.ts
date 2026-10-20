@@ -26,6 +26,7 @@ import { t } from "../src/shared/i18n";
 import {
   readTaskAudioBlob,
   readVaultAudioBlob,
+  readVerifiedTaskAudioSource,
   recoverTaskAudioBlob,
   resolveRetrySourceFile,
   type TranscribeAudioSourcePort,
@@ -102,6 +103,18 @@ describe("queue retry audio source", () => {
     expect(await service.readVaultAudioBlob("missing.wav", "missing.wav")).toBeNull();
     replaceVault({ getAbstractFileByPath: () => null, readBinary: async () => new ArrayBuffer(0), adapter: null });
     expect(await readVaultAudioBlob(port, "adapter-unavailable.wav", "adapter-unavailable.wav")).toBeNull();
+  });
+
+  it("verifies only nonempty audio under safe relative vault paths", async () => {
+    const { port, vault } = setup();
+    expect(await readVerifiedTaskAudioSource(port, ".cache/clip.wav", "clip.wav")).toMatchObject({ sourcePath: ".cache/clip.wav" });
+    vault.adapter.exists.mockClear();
+    expect(await readVerifiedTaskAudioSource(port, "../Audio/recording.wav", "recording.wav")).toBeNull();
+    expect(await readVerifiedTaskAudioSource(port, "/Audio/recording.wav", "recording.wav")).toBeNull();
+    expect(await readVerifiedTaskAudioSource(port, "https://example.test/recording.wav", "recording.wav")).toBeNull();
+    expect(vault.adapter.exists).not.toHaveBeenCalled();
+    vault.adapter.readBinary.mockResolvedValueOnce(new ArrayBuffer(0));
+    expect(await readVerifiedTaskAudioSource(port, ".cache/clip.wav", "clip.wav")).toBeNull();
   });
 
   it("tries explicit source paths before segment-name candidates and fallback files", () => {

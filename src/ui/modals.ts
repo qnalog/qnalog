@@ -5,6 +5,7 @@ import { NS_AUDIO_ALT, NS_SESSION_RE, NS_SEGMENTS_START_RE } from "../shared/nam
 import { t as i18nT } from '../shared/i18n';
 import { formatAutomaticRetryHint, latestAutomaticRetryAt } from '../shared/retry-hint';
 import * as obsidian from "obsidian";
+import type { AudioTimePlaybackSource } from "../notes/audio-time-source";
 import { loadPeopleDirectory, normalizePeopleRelation, normalizePeopleSuggestion } from '../people';
 import { diagnosticError, redactDiagnosticText } from "../shared/util-key-diag";
 import { classifyImportTextFileForModal, enumerateAudioDevices, qnalogConfirm, makeImportTextCheckboxId } from './helpers';
@@ -139,31 +140,41 @@ export function pickReportAccentColor(app, defaultHex = null) {
 }
 
 export class AudioTimeModal extends obsidian.Modal {
-  constructor(app, file, startMs, label) {
+  constructor(app, playbackSource: AudioTimePlaybackSource, startMs, label) {
     super(app);
-    this.file = file;
+    this.playbackSource = playbackSource;
+    this.file = playbackSource.kind === "file" ? playbackSource.file : null;
     this.startMs = Math.max(0, Number(startMs) || 0);
     this.label = label || formatElapsed(this.startMs);
     this.objectUrl = "";
+    this.closed = false;
   }
 
   async onOpen() {
+    this.closed = false;
     const { contentEl } = this;
     contentEl.empty();
     contentEl.addClass("qnalog-audio-modal");
     contentEl.createEl("h3", { text: i18nT("QnALog listen back") });
-    contentEl.createDiv({ cls: "qnalog-audio-modal-meta", text: `${this.file.path} · ${this.label}` });
+    const sourcePath = this.playbackSource.kind === "file" ? this.playbackSource.file.path : this.playbackSource.path;
+    contentEl.createDiv({ cls: "qnalog-audio-modal-meta", text: `${sourcePath} · ${this.label}` });
 
     const playerWrap = contentEl.createDiv({ cls: "qnalog-audio-player-wrap" });
     const audio = playerWrap.createEl("audio", { attr: { controls: "true" } });
+    this.audioElement = audio;
     audio.preload = "metadata";
 
     try {
-      const ab = await this.app.vault.readBinary(this.file);
-      const blob = new Blob([ab], { type: mimeFromExt(this.file.extension) });
+      const ab = this.playbackSource.kind === "file"
+        ? await this.app.vault.readBinary(this.playbackSource.file)
+        : await this.playbackSource.readBinary();
+      if (this.closed) return;
+      const extension = this.playbackSource.kind === "file" ? this.playbackSource.file.extension : this.playbackSource.extension;
+      const blob = new Blob([ab], { type: mimeFromExt(extension) });
       this.objectUrl = URL.createObjectURL(blob);
       audio.src = this.objectUrl;
       audio.addEventListener("loadedmetadata", () => {
+        if (this.closed) return;
         try {
           const target = Math.max(0, Math.min(audio.duration || 0, this.startMs / 1000));
           audio.currentTime = target;
@@ -171,18 +182,30 @@ export class AudioTimeModal extends obsidian.Modal {
         } catch { /* intentionally empty */ }
       });
     } catch (e) {
+      if (this.closed) return;
       console.error("[QnALog] audio time modal failed", e);
       contentEl.createDiv({ cls: "qnalog-audio-modal-error", text: `${i18nT("Could not read audio:")}${(e && e.message) || e}` });
     }
 
-    const actions = contentEl.createDiv({ cls: "qnalog-audio-modal-actions" });
-    actions.createEl("button", { text: i18nT("Open audio file") }).onclick = () => {
-      void this.app.workspace.getLeaf(false).openFile(this.file);
-    };
+    if (this.file) {
+      const actions = contentEl.createDiv({ cls: "qnalog-audio-modal-actions" });
+      actions.createEl("button", { text: i18nT("Open audio file") }).onclick = () => {
+        void this.app.workspace.getLeaf(false).openFile(this.file);
+      };
+    }
   }
 
   onClose() {
+    this.closed = true;
     this.contentEl.empty();
+    if (this.audioElement) {
+      try {
+        this.audioElement.pause();
+        this.audioElement.removeAttribute("src");
+        this.audioElement.load();
+      } catch { /* intentionally empty */ }
+      this.audioElement = null;
+    }
     if (this.objectUrl) {
       try { URL.revokeObjectURL(this.objectUrl); } catch { /* intentionally empty */ }
       this.objectUrl = "";

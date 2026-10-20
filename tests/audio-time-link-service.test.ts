@@ -36,6 +36,7 @@ vi.mock("../src/shared/i18n", () => ({ t: (key: string) => key }));
 
 import * as obsidian from "obsidian";
 import { AudioTimeLinkService } from "../src/notes/audio-time-link-service";
+import { encodeAudioTimeLinkPath } from "../src/notes/audio-time-source";
 
 const source = new obsidian.TFile("Notes/session.md");
 const latest = new obsidian.TFile("Recordings/latest.webm");
@@ -53,18 +54,24 @@ function ledgerSegment(audioPath = latest.path, noteStart = 148418, localStart =
   };
 }
 
-function service(files: Array<{ path: string; name: string; basename: string; extension: string }> = [source, latest], sourceContent = "ledger") {
+function service(files: Array<{ path: string; name: string; basename: string; extension: string }> = [source, latest], sourceContent = "ledger", cacheFolder = "QnALog/.cache/segments", adapterPath = "QnALog/.cache/segments/hidden.wav") {
+  const adapterBytes = new Uint8Array([82, 73, 70, 70]);
+  const adapter = {
+    exists: vi.fn(async (path: string) => path === adapterPath),
+    readBinary: vi.fn(async (path: string) => path === adapterPath ? adapterBytes.buffer : new ArrayBuffer(0)),
+  };
   const vault = {
     getAbstractFileByPath: (path: string) => files.find(file => file.path === path) || null,
     cachedRead: vi.fn(async () => sourceContent),
     getFiles: () => files,
+    adapter,
   };
   const app = {
     vault,
     metadataCache: { getFirstLinkpathDest: (target: string) => files.find(file => file.path === target) || null },
     workspace: { getLeavesOfType: () => [{ view: { seekInlineAudio: mocks.seek } }] },
   };
-  return { instance: new AudioTimeLinkService({ app, settings: { audioFolder: "Recordings" } } as never), vault };
+  return { instance: new AudioTimeLinkService({ app, settings: { audioFolder: "Recordings", segmentCacheFolder: cacheFolder } } as never), vault, adapter, app };
 }
 
 beforeEach(() => {
@@ -104,5 +111,56 @@ describe("audio time-link consumer behavior", () => {
     expect(onTimeLink).not.toHaveBeenCalled();
     expect(mocks.seek).not.toHaveBeenCalled();
     expect(mocks.notice).toHaveBeenCalledOnce();
+  });
+
+  it("opens the exact hidden cache path through the adapter playback source", async () => {
+    const { instance, adapter, app } = service([source]);
+    mocks.segments = [ledgerSegment("QnALog/.cache/segments/hidden.wav", 60000, 0)];
+    const context = await instance.resolveAudioTimeLinkContext("QnALog/.cache/segments/hidden.wav", "00:00", source.path);
+
+    expect(context).toMatchObject({ file: null, playbackSource: { kind: "adapter", path: "QnALog/.cache/segments/hidden.wav" }, localMs: 0, globalMs: 60000 });
+    await expect(context?.playbackSource?.kind === "adapter" ? context.playbackSource.readBinary() : Promise.reject()).resolves.toEqual(new Uint8Array([82, 73, 70, 70]).buffer);
+    expect(adapter.exists).toHaveBeenCalledExactlyOnceWith("QnALog/.cache/segments/hidden.wav");
+    expect(adapter.readBinary).toHaveBeenCalledExactlyOnceWith("QnALog/.cache/segments/hidden.wav");
+
+    await instance.openAudioTimeLink("QnALog/.cache/segments/hidden.wav", "00:00", source.path);
+    const modalSource = mocks.modalOpen.mock.calls.find(call => call[0] === "constructed")?.[2];
+    expect(modalSource).toMatchObject({ kind: "adapter", path: "QnALog/.cache/segments/hidden.wav" });
+    expect(mocks.seek).not.toHaveBeenCalled();
+    expect(app).toBeDefined();
+  });
+
+  it("uses the default segment cache folder when the setting is empty", async () => {
+    const { instance, adapter } = service([source], "ledger", "");
+    const context = await instance.resolveAudioTimeLinkContext("QnALog/.cache/segments/hidden.wav", "00:00", source.path);
+    expect(context?.playbackSource).toMatchObject({ kind: "adapter", path: "QnALog/.cache/segments/hidden.wav" });
+    expect(adapter.exists).toHaveBeenCalledExactlyOnceWith("QnALog/.cache/segments/hidden.wav");
+  });
+
+  it("resolves encoded cache paths containing spaces, hash, and percent characters exactly once", async () => {
+    const path = "QnALog/.cache/validation # %/segment 10%.wav";
+    const { instance, adapter } = service([source], "ledger", "QnALog/.cache/validation # %", path);
+    mocks.segments = [ledgerSegment(path, 60000, 0)];
+    const context = await instance.resolveAudioTimeLinkContext(encodeAudioTimeLinkPath(path), "00:00", source.path);
+    expect(context).toMatchObject({ file: null, playbackSource: { kind: "adapter", path }, globalMs: 60000 });
+    expect(adapter.exists).toHaveBeenCalledExactlyOnceWith(path);
+  });
+
+  it("keeps indexed audio links with a time fragment working", async () => {
+    const { instance } = service();
+    expect(await instance.resolveAudioTimeLinkContext("latest.webm#t=10", "00:10", source.path))
+      .toMatchObject({ file: latest, localMs: 10000 });
+  });
+
+  it.each([
+    "/QnALog/.cache/segments/hidden.wav",
+    "../QnALog/.cache/segments/hidden.wav",
+    "QnALog/.cache/segments/%2e%2e/out.wav",
+    "https://example.test/hidden.wav",
+    "file:///QnALog/.cache/segments/hidden.wav",
+  ])("rejects an unsafe audio-time path before adapter access: %s", async path => {
+    const { instance, adapter } = service([source, latest]);
+    expect(await instance.resolveAudioTimeLinkContext(path, "00:00", source.path)).toBeNull();
+    expect(adapter.exists).not.toHaveBeenCalled();
   });
 });
