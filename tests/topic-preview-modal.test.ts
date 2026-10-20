@@ -99,29 +99,6 @@ describe("topic preview dialog", () => {
     expect(port.apply).toHaveBeenCalledWith(preview, [itemId, topicMemberExcludeSelectionId(itemId)]);
   });
 
-  it("lists a sole-cited point unchecked so applying keeps it unless the user checks it", () => {
-    const preview = fixture();
-    preview.items = [
-      { id: "drop-point", type: "remove_block", operation: { type: "remove_block", blockId: "p1", expectedText: "Only B says this.", sourceId: "Notes/b.md" }, target: "Funding", text: "Only B says this.", sourceId: "Notes/b.md", expectedText: "Only B says this.", cancellable: true, defaultSelected: false },
-      { id: "remove-b", type: "remove_member", operation: { type: "remove_member", path: "Notes/b.md", force: true }, target: "B", text: "B", sourceId: "Notes/b.md", cancellable: true },
-    ];
-    const port = { text: (key: string) => key, openSource: vi.fn(), openTopic: vi.fn(), undoLastUpdate: vi.fn(), cancel: vi.fn(), apply: vi.fn(() => new Promise<never>(() => undefined)) };
-    const modal = new TopicPreviewModal({} as never, port as never, preview, () => undefined);
-    modal.onOpen();
-    const text = allText(modal.contentEl as unknown as FakeTree);
-    expect(text).toContain("This point cites only the removed note.");
-    expect(text).toContain("Also removes the member entry");
-    const apply = () => descendants(modal.contentEl as unknown as FakeTree).find((item) => item.text === "Apply selected");
-    apply()?.listeners.get("click")?.();
-    expect(port.apply).toHaveBeenLastCalledWith(preview, ["remove-b"]);
-    const boxes = descendants(modal.contentEl as unknown as FakeTree).filter((item) => item.listeners.has("change"));
-    expect(boxes[0].checked).toBe(false);
-    boxes[0].checked = true;
-    boxes[0].listeners.get("change")?.();
-    apply()?.listeners.get("click")?.();
-    expect(port.apply).toHaveBeenLastCalledWith(preview, expect.arrayContaining(["remove-b", "drop-point"]));
-  });
-
   it("shows when unknown model enums were normalized", () => {
     const port = { text: (key: string) => key, openSource: vi.fn(), openTopic: vi.fn(), apply: vi.fn(), undoLastUpdate: vi.fn() };
     const preview = fixture();

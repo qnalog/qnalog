@@ -88,7 +88,7 @@ import { TopicErrataStore } from "./topics/topic-errata-store";
 import { parseTopicPage } from "./topics/topic-page";
 import { resolveTopicBlocksForRange } from "./topics/topic-block-selection";
 import { TopicPreviewModal } from "./ui/topic-preview-modal";
-import { previewMemberRemoval } from "./ui/topics-panel";
+import { removeMembersFromTopic } from "./ui/topic-member-removal";
 import { isTopicSourceEligible, TopicSummarySnapshot, type TopicsUiPort } from "./ui/topics-ui-port";
 import type { ErrataUiPort } from "./ui/errata-ui-port";
 import { LibraryViewService } from "./views/library-view-service";
@@ -925,7 +925,7 @@ class QnALogPlugin extends obsidian.Plugin {
           menu.addItem((item) => {
             item.setTitle(t("QnALog: Remove from topic “{0}”").replace("{0}", topic.title))
               .setIcon("file-minus")
-              .onClick(() => { void previewMemberRemoval(this.app, topicsPort, topic.id, file.path, () => this.shell.refreshOutlineView()); });
+              .onClick(() => { void removeMembersFromTopic(this.app, topicsPort, topic.id, [file.path], () => this.shell.refreshOutlineView()); });
           });
         }
       }
@@ -1011,7 +1011,7 @@ class QnALogPlugin extends obsidian.Plugin {
       previewContentCleaning: (topicId) => this.topics.previewContentCleaning(topicId),
       getUncontributedMembers: (topicId) => this.topics.getUncontributedMembers(topicId),
       previewOrphanMembers: (topicId) => this.topics.previewOrphanMembers(topicId),
-      previewRemoveMember: (topicId, memberPath) => this.topics.previewRemoveMember(topicId, memberPath),
+      previewRemoveMembers: (topicId, memberPaths) => this.topics.previewRemoveMembers(topicId, memberPaths),
       apply: async (preview, selection) => { const result = await this.topics.apply(preview, selection); await refreshTopicsSnapshot(); return result; },
       cancel: (id) => this.topics.cancel(id),
       listTopics: () => refreshTopicsSnapshot(),

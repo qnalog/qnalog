@@ -590,32 +590,37 @@ export class TopicsService {
     return preview;
   }
 
-  /** Previews taking one member note out of a topic; body points citing only that note are listed unchecked. */
-  async previewRemoveMember(topicId: string, memberPath: string): Promise<TopicChangePreview> {
+  /**
+   * Previews taking member notes out of a topic. Everything the removed notes contributed goes with them:
+   * points cited only by the removed notes are deleted, points that other notes also cite stay without the removed citations.
+   */
+  async previewRemoveMembers(topicId: string, memberPaths: readonly string[]): Promise<TopicChangePreview> {
     const folder = this.host.getFolder();
     const store = this.storeForFolder(folder);
     const topic = (await store.list()).find((entry) => entry.page.id === topicId);
     this.assertPreviewFolder(folder);
     if (!topic) throw new Error("Topic not found: " + topicId);
-    if (!topic.page.members.includes(memberPath)) throw new Error(t("This note is not a member of the topic."));
+    const paths = [...new Set(memberPaths)];
+    if (!paths.length || paths.some((path) => !topic.page.members.includes(path))) throw new Error(t("This note is not a member of the topic."));
     const markdown = await store.readIndexedMarkdown(topic.path);
     this.assertPreviewFolder(folder);
-    const title = topicMemberTitle(topic.page, memberPath);
-    const exclusive = parseTopicPageBlocks(markdown).filter((block) => {
+    const removed = new Set(paths);
+    const blockItems = parseTopicPageBlocks(markdown).flatMap((block): TopicChangePreviewItem[] => {
       const sources = topicBlockSourcePaths(markdown, block);
-      return sources.length > 0 && sources.every((source) => source === memberPath);
+      if (!sources.length || !sources.every((source) => removed.has(source))) return [];
+      const operation = { type: "remove_block" as const, blockId: block.id, expectedText: block.text, sourceId: sources[0] };
+      return [{ id: `member-block-${hashText(block.id)}`, operation, type: operation.type, target: topicBlockHeadingLabel(markdown, block.id) || t("Corresponding section"), text: block.text, sourceId: sources[0], expectedText: block.text, cancellable: true }];
     });
-    const blockItems = exclusive.map((block): TopicChangePreviewItem => {
-      const operation = { type: "remove_block" as const, blockId: block.id, expectedText: block.text, sourceId: memberPath };
-      return { id: `member-block-${hashText(block.id)}`, operation, type: operation.type, target: topicBlockHeadingLabel(markdown, block.id) || t("Corresponding section"), text: block.text, sourceId: memberPath, expectedText: block.text, cancellable: true, defaultSelected: false };
+    const memberItems = paths.map((path): TopicChangePreviewItem => {
+      const title = topicMemberTitle(topic.page, path);
+      const operation = { type: "remove_member" as const, path, force: true };
+      return { id: `member-${hashText(path)}`, operation, type: operation.type, target: title, text: title, sourceId: path, cancellable: true };
     });
-    const operation = { type: "remove_member" as const, path: memberPath, force: true };
-    const memberItem: TopicChangePreviewItem = { id: `member-${hashText(memberPath)}`, operation, type: operation.type, target: title, text: title, sourceId: memberPath, cancellable: true };
     const preview: TopicChangePreview = {
       topicId,
       expectedHash: hashTopicPage(markdown),
       pageWasManuallyEdited: topic.page.cacheStatus !== "valid" || (!!topic.page.appliedHash && topic.page.appliedHash !== hashTopicPage(markdown)),
-      items: [...blockItems, memberItem],
+      items: [...blockItems, ...memberItems],
       completedBatches: 0,
       totalBatches: 0,
     };

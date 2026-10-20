@@ -26,8 +26,6 @@ export interface TopicChangePreviewItem {
   cancellable: boolean;
   expectedText?: string;
   programGenerated?: boolean;
-  /** False: shown in the preview but unchecked until the user opts in. */
-  defaultSelected?: boolean;
 }
 export function topicMemberExcludeSelectionId(itemId: string): string { return `exclude-member:${itemId}`; }
 export interface TopicAssessment { memberId: string; claim: string; relation: "same" | "supplement" | "conflict" | "unrelated"; relatedBlockId?: string }
