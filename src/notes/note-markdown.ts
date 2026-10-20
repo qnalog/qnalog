@@ -671,7 +671,7 @@ export async function maybePreSummarizeTextImportForMerge(plugin, segments, mode
     text: t("[Long-text pre-summary {0}/{1}]\n{2}")
       .replace("{0}", String(i + 1))
       .replace("{1}", String(summaries.length))
-      .replace("{2}", summary),
+      .replace("{2}", () => summary),
   }));
 }
 

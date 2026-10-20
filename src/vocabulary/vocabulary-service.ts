@@ -54,11 +54,11 @@ export class VocabularyService {
     const modeLabel = meta && meta.prefix ? meta.prefix : mode;
     const sys = "你是 Prompt 工程师，专门为真实工作和学习场景生成可直接用于录音整理的 Markdown Prompt。输出要克制、清晰、可维护，不要堆砌 callout。";
     const userMsg = INDUSTRY_META_PROMPT
-      .replace(/\{\{INDUSTRY\}\}/g, p.industry || "（未指定）")
-      .replace(/\{\{SCENARIOS\}\}/g, p.scenarios || "（未指定）")
-      .replace(/\{\{FOCUS\}\}/g, p.focus || "（未指定）")
-      .replace(/\{\{OUTPUT_PREFERENCE\}\}/g, p.outputPreference || "（未指定）")
-      .replace(/\{\{MODE\}\}/g, `${mode}（${modeLabel}）`);
+      .replace(/\{\{INDUSTRY\}\}/g, () => p.industry || "（未指定）")
+      .replace(/\{\{SCENARIOS\}\}/g, () => p.scenarios || "（未指定）")
+      .replace(/\{\{FOCUS\}\}/g, () => p.focus || "（未指定）")
+      .replace(/\{\{OUTPUT_PREFERENCE\}\}/g, () => p.outputPreference || "（未指定）")
+      .replace(/\{\{MODE\}\}/g, () => `${mode}（${modeLabel}）`);
     const text = await callLlm(this.host, sys, userMsg);
     let cleaned = text
       .replace(/^```\w*\s*/, "")

@@ -479,7 +479,7 @@ export class LiveAsrPipelineService implements LiveAsrPipeline {
         let outline = String(session.realtimeOutline);
         for (const oldName of oldNames) {
           if (oldName && oldName !== session.masterAudioName) {
-            outline = outline.replace(new RegExp("\\[\\[" + escapeRegExp(oldName) + "\\|", "g"), "[[" + session.masterAudioName + "|");
+            outline = outline.replace(new RegExp("\\[\\[" + escapeRegExp(oldName) + "\\|", "g"), () => "[[" + session.masterAudioName + "|");
           }
         }
         session.realtimeOutline = outline;
@@ -490,7 +490,7 @@ export class LiveAsrPipelineService implements LiveAsrPipeline {
           let anchor = String(node.anchor || "");
           for (const oldName of oldNames) {
             if (oldName && oldName !== session.masterAudioName) {
-              anchor = anchor.replace(new RegExp("\\[\\[" + escapeRegExp(oldName) + "\\|", "g"), "[[" + session.masterAudioName + "|");
+              anchor = anchor.replace(new RegExp("\\[\\[" + escapeRegExp(oldName) + "\\|", "g"), () => "[[" + session.masterAudioName + "|");
             }
           }
           node.anchor = anchor;
@@ -502,7 +502,7 @@ export class LiveAsrPipelineService implements LiveAsrPipeline {
         let memory = String(session.realtimeOutlineMemory);
         for (const oldName of oldNames) {
           if (oldName && oldName !== session.masterAudioName) {
-            memory = memory.replace(new RegExp("\\[\\[" + escapeRegExp(oldName) + "\\|", "g"), "[[" + session.masterAudioName + "|");
+            memory = memory.replace(new RegExp("\\[\\[" + escapeRegExp(oldName) + "\\|", "g"), () => "[[" + session.masterAudioName + "|");
           }
         }
         session.realtimeOutlineMemory = memory;

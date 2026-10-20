@@ -173,7 +173,7 @@ export async function polishTranscript(plugin, transcript, mode, sessionMeta, or
   const sys = mode === "general" && sourceLanguage !== "zh"
     ? GENERAL_OTHER_LANGUAGE_PROMPTS.part
     : "你是一位专业的文字编辑助手，擅长整理访谈、会议与口述的录音转写。";
-  let userPrompt = applyStructureLevelInstruction(tpl, plugin.settings, repolishOptions && repolishOptions.structureLevel).replace("{{TRANSCRIPT}}", transcript);
+  let userPrompt = applyStructureLevelInstruction(tpl, plugin.settings, repolishOptions && repolishOptions.structureLevel).replace("{{TRANSCRIPT}}", () => transcript);
   userPrompt = applyRepolishPreferenceInstruction(userPrompt, repolishOptions, plugin.settings);
   if (mode !== "general") userPrompt = applyBriefingLanguageInstruction(userPrompt, plugin.settings);
   userPrompt = userPrompt.replace("{{STRUCTURE_INSTRUCTION}}", "");
@@ -940,7 +940,7 @@ async function mergeAndPolishInternal(plugin, segments, mode, sessionMeta, origi
   let sys = mode === "general" && sourceLanguage !== "zh"
     ? GENERAL_OTHER_LANGUAGE_PROMPTS.consolidation
     : "你是一位专业的文字编辑助手，擅长把分段录音转写合并为连续、干净、忠实原意、结构清晰的 Markdown 文档。";
-  let userPrompt = applyStructureLevelInstruction(tpl, plugin.settings, repolishOptions && repolishOptions.structureLevel).replace("{{TRANSCRIPT}}", joined);
+  let userPrompt = applyStructureLevelInstruction(tpl, plugin.settings, repolishOptions && repolishOptions.structureLevel).replace("{{TRANSCRIPT}}", () => joined);
   userPrompt = applyRepolishPreferenceInstruction(userPrompt, repolishOptions, plugin.settings);
   if (mode !== "general") userPrompt = applyBriefingLanguageInstruction(userPrompt, plugin.settings);
   userPrompt = userPrompt.replace("{{STRUCTURE_INSTRUCTION}}", "");

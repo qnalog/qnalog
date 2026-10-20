@@ -34,6 +34,13 @@ describe("speaker confirmation preparation", () => {
     expect(applySpeakerNamesForLlm(source, mappings)).toBe("[林女士] 我负责产品。\n[说话人2] 我负责预算。");
     expect(source).toContain("[说话人1]");
   });
+
+  it("writes speaker names containing $ patterns into the LLM copy byte-for-byte", () => {
+    const source = "[说话人1] 我负责产品。\n[说话人2] 我负责预算。";
+    const name = "王 $& $` $' $$";
+    const mappings = buildConfirmedSpeakerMappings(collectSpeakerCandidates(source), { "spk-1": name, "spk-2": "" });
+    expect(applySpeakerNamesForLlm(source, mappings)).toBe(`[${name}] 我负责产品。\n[说话人2] 我负责预算。`);
+  });
 });
 
 describe("diarization provider protocol", () => {

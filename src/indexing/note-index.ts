@@ -488,7 +488,8 @@ function foldSessionMetadata(markdown: string): { markdown: string; comments: st
   text = text.replace(SESSION_DATA_DETAILS_RE, (match, body: string) => {
     if (new RegExp(`<!--\\s*${nsRe("note-index")}\\s*-->`, "i").test(body)) {
       comments.push(...(body.match(FOLDABLE_SESSION_COMMENT_RE) || []));
-      return match.replace(body, body.replace(FOLDABLE_SESSION_COMMENT_RE, ""));
+      // 函数式替换：替换文本取自笔记正文，字符串形式会把其中的 $&、$` 等当作替换模式。
+      return match.replace(body, () => body.replace(FOLDABLE_SESSION_COMMENT_RE, ""));
     }
     comments.push(...(body.match(FOLDABLE_SESSION_COMMENT_RE) || []));
     return "";
@@ -522,7 +523,8 @@ function placeSessionMetadataInIndex(markdown: string, comments: readonly string
   const nextBody = markerIndex < 0
     ? `${body.trimEnd()}\n${additions.join("\n")}`
     : `${body.slice(0, markerIndex + QNALOG_NOTE_INDEX_END.length)}\n${additions.join("\n")}\n${suffix}`;
-  return markdown.slice(0, match.index) + match[0].replace(body, nextBody) + markdown.slice(match.index + match[0].length);
+  // 函数式替换：nextBody 含会话注释原文，字符串形式会让其中的 $ 序列被改写。
+  return markdown.slice(0, match.index) + match[0].replace(body, () => nextBody) + markdown.slice(match.index + match[0].length);
 }
 
 function placeIndexInRawMaterials(markdown: string): string {

@@ -215,6 +215,25 @@ describe("QnALog note index", () => {
     expect(upsertNoteIndex(output, index)).toBe(output);
   });
 
+  it("keeps literal $ replacement text byte-for-byte in the index JSON when a session comment is added", () => {
+    setActiveUiLanguage(resolveUiLanguage("zh", "zh"));
+    const literal = "First line costs $& and $' then $$ and 100% sure.";
+    const literalMinutes = minutes.replace("## 1. 从单次纪要走向项目记忆", () => `## ${literal}`);
+    const index = buildNoteIndex(literalMinutes, { noteTitle: "literal index", generatedAt: "2026-08-25T12:00:00.000Z" })!;
+    const indexed = upsertNoteIndex(literalMinutes, index);
+    const plainComment = "<!-- qnalog-session:literal-plain -->";
+    const literalComment = "<!-- qnalog-session:literal $& $` $' $$ -->";
+    const writeWithComment = (comment: string) => upsertNoteIndex(`${indexed}\n${comment}\n`, index);
+    const plain = writeWithComment(plainComment);
+    const output = writeWithComment(literalComment);
+    // 期望值由不含 $ 的注释推出；不用 String.replace 生成期望值，避免测试本身重蹈替换字符串的覆辙。
+    expect(output).toBe(plain.split(plainComment).join(literalComment));
+    expect(output.match(/<summary>索引数据<\/summary>/g)).toHaveLength(1);
+    const json = /```json\s*([\s\S]*?)\s*```/.exec(output)?.[1] ?? "";
+    expect(JSON.parse(json).topics.map((topic: { title: string }) => topic.title)).toContain(literal);
+    expect(upsertNoteIndex(output, index)).toBe(output);
+  });
+
   it("moves a legacy body index into raw materials and keeps exactly one block after rewrite", () => {
     setActiveUiLanguage(resolveUiLanguage("zh", "zh"));
     const index = buildNoteIndex(minutes, { noteTitle: "legacy", generatedAt: "2026-08-25T12:00:00.000Z" })!;

@@ -185,7 +185,7 @@ export function ensureTranscriptBlocks(
     const contextText = stringifyTranscriptValue(block.segment.text || "");
     const previousUnitText = current.utterances.map((unit) => unit.normalizedText).join("");
     const updatedText = previousUnitText && contextText.includes(previousUnitText)
-      ? contextText.replace(previousUnitText, editedText)
+      ? contextText.replace(previousUnitText, () => editedText)
       : editedText;
     next = replaceTranscriptBlock(next, block, { ...edited, text: updatedText }, block.visibleBlock);
   }
