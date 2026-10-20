@@ -648,12 +648,15 @@ export class LiveAsrPipelineService implements LiveAsrPipeline {
    *
    * 两种短录音结果共用：空白结果会丢弃音频，短文本会保留音频。纪要文件只有这一段内容时
    * 移到废纸篓，否则只摘掉这一段（续录目标笔记本来就存在，不会走到这里）。
+   * 保留音频时，母带写入或核验可能失败，因此保留分段缓存。
    */
   async discardShortRecordingNote(session) {
     await this.closeStreamingForDiscard(session);
-    for (const segment of session.segments || []) {
-      const path = String(segment && (segment.segmentAudioPath || segment.audioPath) || "").trim();
-      if (path) await this.maybeDeleteSegmentCacheFile(path, undefined, true, true);
+    if (session.shortRecordingTier === "discard") {
+      for (const segment of session.segments || []) {
+        const path = String(segment && (segment.segmentAudioPath || segment.audioPath) || "").trim();
+        if (path) await this.maybeDeleteSegmentCacheFile(path, undefined, true, true);
+      }
     }
     const file = this.host.vault.getAbstractFileByPath(session.mdPath);
     if (!(file instanceof obsidian.TFile)) return;

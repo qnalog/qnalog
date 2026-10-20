@@ -412,6 +412,8 @@ export const ZH: MessageTable = {
   "Almost no sound was detected in the whole session; please check the selected microphone / computer audio device (Settings → Advanced → Audio device check).": "整场几乎没检测到声音，请检查所选麦克风 / 电脑音频设备（设置 → 进阶 → 音频设备检测）。",
   "⏭ This recording was too short or had no valid audio; skipped": "⏭ 本次录音时长过短或无有效音频，已跳过",
   "Filtered out recordings shorter than one second": "已过滤不足一秒的录音",
+  "The full recording could not be saved or verified. Check the cached audio segments before closing Obsidian: {0}": "完整录音未能保存或通过核验。关闭 Obsidian 前，请检查缓存音频分段：{0}",
+  "The full recording could not be saved or verified. Keep Obsidian open; no cached audio segment path is available to check.": "完整录音未能保存或通过核验。请保持 Obsidian 打开；当前没有可供检查的缓存音频分段路径。",
   "Short recording was not made into a note; audio was kept. Recognized: {0}": "录音较短，未建笔记，已保留音频。识别到：{0}",
   "No text was recognized, but sound was detected; the audio was kept in the recording folder and no note was created. Import it manually to retry.": "未识别出文字，但录到了声音；已保留音频到录音文件夹，未建笔记。可手动导入重试。",
   "Short recording transcription result was anomalous (text volume far exceeded recording duration); audio was kept and no note was created. You can manually import it later to retry.": "短录音的识别结果异常（文字量远超录音时长），已保留音频，未建笔记。可稍后手动导入重试。",

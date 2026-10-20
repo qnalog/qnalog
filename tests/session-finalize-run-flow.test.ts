@@ -86,9 +86,40 @@ describe("session finalization flow consumer contract", () => {
     const fixture = setup();
     fixture.session.shortRecordingTier = "keep-audio";
     fixture.session.shortRecordingText = "好的";
+    fixture.session.masterAudioPath = "QnALog/录音/master.webm";
     await runSessionFinalization(fixture.port, fixture.session);
     expect(fixture.port.discardShortRecordingAudio).not.toHaveBeenCalled();
     expect(notices.some(([message]) => message.includes("Recognized: 好的"))).toBe(true);
+  });
+
+  it("asks the user to inspect cached audio when a short recording has no verified master", async () => {
+    const fixture = setup();
+    fixture.session.shortRecordingTier = "keep-audio";
+    fixture.session.shortRecordingText = "好的";
+    fixture.session.segments = [
+      { index: 0, startOffsetMs: 0, endOffsetMs: 2_000, text: "好的", segmentAudioPath: "QnALog/.cache/segments/segment-1.webm" },
+      { index: 1, startOffsetMs: 2_000, endOffsetMs: 4_000, text: "对", segmentAudioPath: "QnALog/.cache/segments/segment-2.webm" },
+    ];
+
+    await runSessionFinalization(fixture.port, fixture.session);
+
+    expect(notices.at(-1)?.[0]).toContain("The full recording could not be saved or verified");
+    expect(notices.at(-1)?.[0]).toContain("QnALog/.cache/segments/segment-1.webm");
+    expect(notices.at(-1)?.[0]).toContain("QnALog/.cache/segments/segment-2.webm");
+    expect(notices.at(-1)?.[0]).not.toContain("Recognized: 好的");
+  });
+
+  it("asks the user to keep Obsidian open when no verified master or cache path exists", async () => {
+    const fixture = setup();
+    fixture.session.shortRecordingTier = "keep-audio";
+    fixture.session.shortRecordingText = "好的";
+    fixture.session.segments = [];
+
+    await runSessionFinalization(fixture.port, fixture.session);
+
+    expect(notices.at(-1)?.[0]).toContain("Keep Obsidian open");
+    expect(notices.at(-1)?.[0]).toContain("no cached audio segment path is available");
+    expect(notices.at(-1)?.[0]).not.toContain("Recognized: 好的");
   });
 
   it("preserves non-retryable configuration failures as blocked tasks and writes the failure marker", async () => {

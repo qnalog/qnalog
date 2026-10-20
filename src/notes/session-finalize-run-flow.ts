@@ -61,6 +61,14 @@ export async function finishShortRecordingFlow(port: SessionShortRecordingPort, 
       ? t("Filtered out recordings shorter than one second")
       : t("No speech was detected; this recording was discarded.");
     new obsidian.Notice(notice);
+  } else if (!String(session.masterAudioPath || "").trim()) {
+    const cachedAudioPaths = [...new Set((Array.isArray(session.segments) ? session.segments : [])
+      .map((segment) => String(segment && (segment.segmentAudioPath || segment.audioPath) || "").trim())
+      .filter(Boolean))];
+    const notice = cachedAudioPaths.length
+      ? t("The full recording could not be saved or verified. Check the cached audio segments before closing Obsidian: {0}").replace("{0}", cachedAudioPaths.join(", "))
+      : t("The full recording could not be saved or verified. Keep Obsidian open; no cached audio segment path is available to check.");
+    new obsidian.Notice(notice, 8000);
   } else if (session.shortRecordingBlank) {
     new obsidian.Notice(t("No text was recognized, but sound was detected; the audio was kept in the recording folder and no note was created. Import it manually to retry."), 8000);
   } else if (session.shortRecordingText) {
