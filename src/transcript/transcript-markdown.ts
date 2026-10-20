@@ -556,13 +556,20 @@ function headingForSegment(segment: Segment, inner: string, textStartIndex: numb
   // In the 1.6.4 grouped layout each transcript-start precedes its own heading.
   // Links in `legacyPrefix` belong to this segment; links before the marker belong to earlier segments.
   const links = legacyLinks.length ? legacyLinks : [...segmentMaterial.matchAll(/\[\[[^\]]+\]\]/g)].map(([link]) => link);
+  const generatedAudioLinks = [...segmentMaterial.matchAll(/<a\b[^>]*\bclass="internal-link qnalog-time-link"[^>]*>[^<]*<\/a>/g)]
+    .map(([anchor]) => {
+      const dataHref = anchor.match(/(?:^|\s)data-href="([^"]+)"/)?.[1];
+      const href = anchor.match(/(?:^|\s)href="([^"]+)"/)?.[1];
+      return dataHref && dataHref === href ? anchor : "";
+    })
+    .filter(Boolean);
   const label = `${labelText("segment", segment.index + 1)} (${formatElapsed(segment.startOffsetMs)}–${formatElapsed(segment.endOffsetMs)})`;
   const audioName = segment.audioName || segment.segmentAudioName || "";
   const audioAt = Number.isFinite(segment.audioStartOffsetMs) ? Number(segment.audioStartOffsetMs) : segment.startOffsetMs;
   const dataLink = segment.sourcePath
     ? `[[${segment.sourcePath}|${segment.sourceName || segment.sourcePath.split("/").pop() || segment.sourcePath}]]`
     : audioName ? `[[${audioName}|${formatElapsed(audioAt)}]]` : "";
-  const material = [...new Set([...links, ...(dataLink ? [dataLink] : [])])];
+  const material = [...new Set([...links, ...generatedAudioLinks, ...(dataLink && !generatedAudioLinks.length ? [dataLink] : [])])];
   const nonHeadingLines = legacyPrefix.replace(/<!--[^>]*-->/g, "").split(/\r?\n/)
     .map((line) => line.trim()).filter((line) => line && !/^#{1,6}\s+/.test(line));
   return [`### ${label}`, ...material, ...nonHeadingLines, ...comments].join("\n");

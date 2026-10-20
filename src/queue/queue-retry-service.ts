@@ -42,6 +42,7 @@ import type { TaskActivityService } from "../tasks/task-activity-service";
 import {
   readTaskAudioBlob,
   readVaultAudioBlob as readVaultAudioBlobFromPort,
+  readVerifiedTaskAudioSource,
   type TranscribeAudioSourcePort,
 } from "./transcribe-audio-source";
 import { migrateQueueTasksAfterRename as migrateQueueTasksAfterRenameFlow, removeQueueTasksForDeletedMarkdown as removeQueueTasksForDeletedMarkdownFlow, type QueueTaskPathPort } from "./queue-task-paths";
@@ -152,6 +153,7 @@ export class QueueRetryService {
       getVault: () => this.host.app.vault,
       runOnTarget: (target, operation) => this.host.continuations.runOnTarget(target, operation),
       readTaskAudio: (task) => readTaskAudioBlob(this.audioSourcePort(), task),
+      readAudioSource: (path, fallbackName) => readVerifiedTaskAudioSource(this.audioSourcePort(), path, fallbackName),
       describeSegmentRetryUnavailable: () => describeSegmentRetryUnavailable(this.host),
       getAudioChannelMode: () => this.host.settings.audioChannelMode,
       transcribeSegment: (blob, mime) => transcribeAudio(this.host, blob, mime),

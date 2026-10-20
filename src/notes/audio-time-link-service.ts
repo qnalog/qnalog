@@ -11,6 +11,8 @@ import { getAudioExtFromLinkPath, getAudioLinkCandidates } from "../notes/audio-
 import { buildNoteAudioTimeline, mapAudioTimeToNote } from "./note-audio-timeline";
 import { readTranscriptBlocks } from "../transcript/transcript-markdown";
 import { isTimeLabel } from "../notes/note-markdown";
+import { decodeAudioTimeLinkPath, isSegmentCacheAudioTimePath, resolveSegmentCacheAudioTimeSource, type AdapterAudioTimeSource } from "./audio-time-source";
+import { DEFAULT_SETTINGS } from "../shared/defaults";
 
 import { t } from "../shared/i18n";
 /** AudioTimeLinkService 需要宿主提供的能力；运行时由 src/main.ts 的插件实例实现。 */
@@ -87,8 +89,21 @@ export class AudioTimeLinkService {
   }
 
   async resolveAudioTimeLinkContext(linkPath, label, sourcePath) {
-    const file = this.resolveAudioLinkFile(linkPath, sourcePath);
-    if (!(file instanceof obsidian.TFile)) return null;
+    const exactLinkPath = decodeAudioTimeLinkPath(linkPath);
+    if (!exactLinkPath) return null;
+    const cacheFolder = this.host.settings.segmentCacheFolder || DEFAULT_SETTINGS.segmentCacheFolder;
+    const exactSegmentCachePath = isSegmentCacheAudioTimePath(exactLinkPath, cacheFolder);
+    const exactSegmentCacheFile = exactSegmentCachePath
+      ? this.host.app.vault.getAbstractFileByPath(exactLinkPath)
+      : null;
+    const file = exactSegmentCachePath
+      ? exactSegmentCacheFile instanceof obsidian.TFile && AUDIO_EXT.has((exactSegmentCacheFile.extension || "").toLowerCase()) ? exactSegmentCacheFile : null
+      : this.resolveAudioLinkFile(linkPath, sourcePath);
+    const adapterSource: AdapterAudioTimeSource | null = file instanceof obsidian.TFile || !exactSegmentCachePath
+      ? null
+      : await resolveSegmentCacheAudioTimeSource(this.host.app.vault, exactLinkPath, cacheFolder);
+    if (!(file instanceof obsidian.TFile) && !adapterSource) return null;
+    const resolvedPath = file instanceof obsidian.TFile ? file.path : adapterSource.path;
 
     // Wiki labels are audio-local by contract. The note ledger is the only
     // authority for converting that position to the cumulative note clock.
@@ -104,13 +119,13 @@ export class AudioTimeLinkService {
             audioPath: obsidian.normalizePath(String(block.segment.audioPath || block.segment.sourcePath || "")),
           }));
           const timeline = buildNoteAudioTimeline(segments);
-          globalMs = mapAudioTimeToNote(timeline, obsidian.normalizePath(file.path), localMs);
+          globalMs = mapAudioTimeToNote(timeline, obsidian.normalizePath(resolvedPath), localMs);
         } catch (e) {
           console.warn("[QnALog] read source note audio ledger failed", e);
         }
       }
     }
-    return { file, localMs, globalMs, label, linkPath, sourcePath };
+    return { file: file instanceof obsidian.TFile ? file : null, playbackSource: file instanceof obsidian.TFile ? { kind: "file" as const, file } : adapterSource, localMs, globalMs, label, linkPath, sourcePath };
   }
 
   async openAudioTimeLink(linkPath, label, sourcePath, opts) {
@@ -121,15 +136,15 @@ export class AudioTimeLinkService {
       new obsidian.Notice(t("QnALog: the corresponding audio file was not found; it may have been moved or deleted."), 6000);
       return;
     }
-    if (opts && typeof opts.onTimeLink === "function") {
+    if (payload.file instanceof obsidian.TFile && opts && typeof opts.onTimeLink === "function") {
       try {
         if (opts.onTimeLink(payload) === true) return;
       } catch (e) {
         console.warn("[QnALog] inline time link handler failed", e);
       }
     }
-    if (this.seekOutlineInlineAudio(payload)) return;
-    new AudioTimeModal(this.host.app, payload.file, payload.localMs, label).open();
+    if (payload.file instanceof obsidian.TFile && this.seekOutlineInlineAudio(payload)) return;
+    new AudioTimeModal(this.host.app, payload.playbackSource, payload.localMs, label).open();
   }
 
   seekOutlineInlineAudio(payload) {

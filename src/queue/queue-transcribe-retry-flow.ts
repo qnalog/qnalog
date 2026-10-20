@@ -4,7 +4,6 @@ import type { AudioChannelMode, Segment, TranscribeQueueTaskPayload } from "../s
 import { MAX_SPEAKER_CHANNELS, initialAudioChannelRuntimeMode, normalizeAudioChannelMode } from "../audio/channel-speakers";
 import { diagnosticError } from "../shared/util-key-diag";
 import { escapeRegExp, formatElapsed } from "../shared/util-common";
-import { getAudioTimeLink } from "../notes/audio-reference-text";
 import { ensureTranscriptBlocks } from "../notes/note-transcript-ledger";
 import { getSourceIdFromMarkdown } from "../notes/note-source-metadata";
 import { findNoteMarkerOffset } from "../notes/note-document";
@@ -15,15 +14,21 @@ import { t } from "../shared/i18n";
 import { attachTranscriptResult } from "../transcript/session-transcript";
 import { repairDuplicateTranscriptBlocksInNote } from "../transcript/repair-duplicate-transcript-blocks";
 import { readTranscriptBlocks, replaceTranscriptBlock, serializeTranscriptBlock } from "../transcript/transcript-markdown";
-import type { AudioBlobSource } from "./transcribe-audio-source";
+import type { AudioBlobSource, VerifiedAudioSource } from "./transcribe-audio-source";
 import { classifyLongRecordingAnomaly } from "../audio/long-recording-anomaly";
+import { encodeAudioTimeLinkPath } from "../notes/audio-time-source";
 
 export type TranscribeRetryTask = TranscribeQueueTaskPayload & { id?: string };
+
+function escapeHtmlAttribute(value: string): string {
+  return value.replace(/&/g, "&amp;").replace(/"/g, "&quot;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
+}
 
 export interface QueueTranscribeRetryPort {
   getVault(): Pick<obsidian.Vault, "getAbstractFileByPath" | "read" | "process">;
   runOnTarget<T>(target: obsidian.TFile, operation: () => Promise<T>): Promise<T>;
   readTaskAudio(task: TranscribeRetryTask): Promise<AudioBlobSource>;
+  readAudioSource?(path: string, fallbackName: string): Promise<VerifiedAudioSource | null>;
   describeSegmentRetryUnavailable(): string;
   getAudioChannelMode(): AudioChannelMode | undefined;
   transcribeSegment(blob: Blob, mime: string): Promise<AsrTranscriptResult>;
@@ -155,22 +160,43 @@ async function retryTranscribeTaskImpl(port: QueueTranscribeRetryPort, task: Tra
   const segmentIndex = sourceSegmentIndex;
   const startOffsetMs = Math.max(0, Number(task.startOffsetMs) || 0);
   const endOffsetMs = Math.max(startOffsetMs, Number(task.endOffsetMs) || startOffsetMs);
-  const sourceAudioName = String(task.masterAudioName || task.sourceAudioName || task.audioName || "");
-  const masterAudioPath = String(task.masterAudioPath || task.sourceAudioPath || "");
   const discardClipPath = !!task.ephemeralAudio || !!audio.recovered;
+  const segmentAudioPath = discardClipPath ? "" : audio.sourcePath;
+  let selectedAudioPath = task.ephemeralAudio ? "" : audio.sourcePath;
+  let selectedAudioName = task.ephemeralAudio ? "" : audio.sourceName;
+  let selectedAudioOffsetMs = audio.recovered ? Math.max(0, Number(task.audioStartOffsetMs) || 0) : 0;
+  if (!task.wholeFileImport && !audio.recovered && !task.ephemeralAudio && port.readAudioSource) {
+    const candidates = [task.masterAudioPath, task.sourceAudioPath, existingTranscriptBlock?.segment.audioPath]
+      .map(value => String(value || "").trim())
+      .filter((path, index, all) => path && obsidian.normalizePath(path) !== obsidian.normalizePath(audio.sourcePath)
+        && all.findIndex(candidate => obsidian.normalizePath(candidate) === obsidian.normalizePath(path)) === index);
+    for (const candidatePath of candidates) {
+      const candidateName = String(candidatePath.split(/[\\/]/).pop() || "");
+      let verifiedSource: VerifiedAudioSource | null;
+      try {
+        verifiedSource = await port.readAudioSource(candidatePath, candidateName);
+      } catch {
+        continue;
+      }
+      if (!verifiedSource) continue;
+      selectedAudioPath = verifiedSource.sourcePath;
+      selectedAudioName = verifiedSource.sourceName;
+      selectedAudioOffsetMs = Math.max(0, Number(task.audioStartOffsetMs) || 0);
+      break;
+    }
+  }
+  const hasIndependentAudioSource = !!selectedAudioPath && selectedAudioPath !== audio.sourcePath;
   let replaced = false;
   let alreadyCommitted = false;
   let writtenSegment: Segment | null = null;
   const makeUpdatedSegment = (base: Segment | null): Segment => {
-    const retainedBaseAudio = base?.audioPath && base.audioPath !== task.audioPath ? base.audioPath : "";
-    const audioPath = masterAudioPath || retainedBaseAudio || (discardClipPath ? "" : base?.audioPath || task.audioPath || "");
-    const segmentAudioPath = discardClipPath ? "" : base?.segmentAudioPath || task.audioPath || "";
+    const audioPath = selectedAudioPath;
     const segment: Segment = {
       ...(base || {}), index: base?.index ?? segmentIndex, startOffsetMs, endOffsetMs,
-      audioStartOffsetMs: base?.audioStartOffsetMs ?? task.audioStartOffsetMs,
-      audioEndOffsetMs: base?.audioEndOffsetMs ?? task.audioEndOffsetMs,
-      audioName: audioPath ? (base?.audioName || sourceAudioName || task.audioName || "") : "", audioPath,
-      segmentAudioName: segmentAudioPath ? (base?.segmentAudioName || task.audioName || "") : "", segmentAudioPath,
+      audioStartOffsetMs: selectedAudioOffsetMs,
+      audioEndOffsetMs: selectedAudioOffsetMs + Math.max(0, endOffsetMs - startOffsetMs),
+      audioName: audioPath ? selectedAudioName : "", audioPath,
+      segmentAudioName: segmentAudioPath ? audio.sourceName : "", segmentAudioPath,
       text, error: null, isFinal: task.isFinal ?? base?.isFinal, source: base?.source || task.source || "recording", queueTaskId: task.id || base?.queueTaskId,
     };
     return attachTranscriptResult(segment, sourceId, transcriptionResult, "asr");
@@ -178,8 +204,12 @@ async function retryTranscribeTaskImpl(port: QueueTranscribeRetryPort, task: Tra
   // 段落正文：有文字用文字，静音空白段用与实时路径相同的「无内容」文字。
   const blockVisibleText = String(text || "").trim() ? text : labelText("noContentSegment");
   const makeTranscriptBlock = (segment: Segment): string => {
-    const linkOffsetMs = masterAudioPath ? Math.max(0, Number(task.audioStartOffsetMs) || 0) : 0;
-    const heading = [`### ${labelText("segment", segmentNumber)} (${formatElapsed(startOffsetMs)}–${formatElapsed(endOffsetMs)}) ${getAudioTimeLink(sourceAudioName, linkOffsetMs)}`, taskMarker].filter(Boolean).join("\n\n");
+    const linkOffsetMs = hasIndependentAudioSource || audio.recovered ? selectedAudioOffsetMs : 0;
+    const linkPath = segment.audioPath ? encodeAudioTimeLinkPath(selectedAudioPath) : "";
+    const audioLink = linkPath
+      ? `<a class="internal-link qnalog-time-link" data-href="${escapeHtmlAttribute(linkPath)}" href="${escapeHtmlAttribute(linkPath)}">${formatElapsed(linkOffsetMs)}</a>`
+      : "";
+    const heading = [`### ${labelText("segment", segmentNumber)} (${formatElapsed(startOffsetMs)}–${formatElapsed(endOffsetMs)})`, audioLink, taskMarker].filter(Boolean).join("\n\n");
     return `\n${serializeTranscriptBlock(segment, heading, blockVisibleText)}\n`;
   };
   const findTarget = (blocks: ReturnType<typeof readTranscriptBlocks>) => {

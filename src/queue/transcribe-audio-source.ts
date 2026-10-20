@@ -6,6 +6,7 @@ import { NS_AUDIO_ALT } from "../shared/namespace";
 import type { AudioChannelMode, TranscribeQueueTaskPayload } from "../shared/types";
 import { mimeFromExt } from "../shared/util-audio";
 import { t } from "../shared/i18n";
+import { isSafeVaultAudioPath } from "../audio/vault-audio-path";
 
 function coercePath(value: unknown): string {
   // Keep path/fallback coercion identical to the former queue service boundary.
@@ -18,6 +19,11 @@ export interface AudioBlobSource {
   sourcePath: string;
   sourceName: string;
   recovered: boolean;
+}
+
+export interface VerifiedAudioSource {
+  sourcePath: string;
+  sourceName: string;
 }
 
 export interface TranscribeAudioVault {
@@ -62,6 +68,28 @@ export async function readVaultAudioBlob(port: TranscribeAudioSourcePort, path: 
     sourceName,
     recovered: false,
   };
+}
+
+/** Read an explicitly named library audio file for retry-source verification. */
+export async function readVerifiedTaskAudioSource(port: TranscribeAudioSourcePort, path: unknown, fallbackName: unknown): Promise<VerifiedAudioSource | null> {
+  const rawPath = coercePath(path).trim();
+  if (!isSafeVaultAudioPath(rawPath)) return null;
+  const normalizedPath = obsidian.normalizePath(rawPath);
+  const vault = port.getVault();
+  const file = vault.getAbstractFileByPath(normalizedPath);
+  let bytes: ArrayBuffer;
+  let sourcePath = normalizedPath;
+  let sourceName = coercePath(fallbackName || normalizedPath.split("/").pop() || "");
+  if (file instanceof obsidian.TFile) {
+    bytes = await vault.readBinary(file);
+    sourcePath = file.path;
+    sourceName = file.name;
+  } else {
+    const adapter = vault.adapter;
+    if (!adapter || !(await adapter.exists(normalizedPath))) return null;
+    bytes = await adapter.readBinary(normalizedPath);
+  }
+  return bytes.byteLength > 0 ? { sourcePath, sourceName } : null;
 }
 
 export function resolveRetrySourceFile(port: TranscribeAudioSourcePort, task: TranscribeQueueTaskPayload): obsidian.TFile | null {
