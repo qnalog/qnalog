@@ -16,9 +16,10 @@ export const SESSION_SILENCE_MAX_VOICED_SHARE = 0.02;
 
 /**
  * 有声与无声计数是否表明整场基本无声。
- * 计数不足（含 0 与 0）时返回 false：没有测量结果不构成无声的证据。
+ * 计数不足（含 0 与 0）或有采样帧未知时返回 false：这些状态不能证明整场无声。
  */
-export function isEssentiallySilentSession(voiced: number, silent: number): boolean {
+export function isEssentiallySilentSession(voiced: number, silent: number, evidenceUnknown = false): boolean {
+  if (evidenceUnknown) return false;
   const voicedTicks = Number.isFinite(Number(voiced)) ? Math.max(0, Math.floor(Number(voiced))) : 0;
   const silentTicks = Number.isFinite(Number(silent)) ? Math.max(0, Math.floor(Number(silent))) : 0;
   const total = voicedTicks + silentTicks;
