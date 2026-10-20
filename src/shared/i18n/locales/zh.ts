@@ -415,7 +415,7 @@ export const ZH: MessageTable = {
   "The full recording could not be saved or verified. Check the cached audio segments before closing Obsidian: {0}": "完整录音未能保存或通过核验。关闭 Obsidian 前，请检查缓存音频分段：{0}",
   "The full recording could not be saved or verified. Keep Obsidian open; no cached audio segment path is available to check.": "完整录音未能保存或通过核验。请保持 Obsidian 打开；当前没有可供检查的缓存音频分段路径。",
   "Short recording was not made into a note; audio was kept. Recognized: {0}": "录音较短，未建笔记，已保留音频。识别到：{0}",
-  "No text was recognized, but sound was detected; the audio was kept in the recording folder and no note was created. Import it manually to retry.": "未识别出文字，但录到了声音；已保留音频到录音文件夹，未建笔记。可手动导入重试。",
+  "No text was recognized; the recording was kept without creating a note.": "未识别出文字；已保留录音，未创建笔记。",
   "Short recording transcription result was anomalous (text volume far exceeded recording duration); audio was kept and no note was created. You can manually import it later to retry.": "短录音的识别结果异常（文字量远超录音时长），已保留音频，未建笔记。可稍后手动导入重试。",
   "Short recording transcription failed; audio and a retry task were kept: {0}": "短录音转写失败，已保留音频并加入待处理重试：{0}",
   "The transcription result does not match the recording duration. The recording has been kept and can be retried.": "转写结果与录音时长不符，已保留录音，可重试转写",

@@ -323,6 +323,7 @@ export class SessionFinalizeService {
       readSilenceTicks: () => ({
         voiced: this.host.recorder ? (this.host.recorder._voicedTicks || 0) : 0,
         silent: this.host.recorder ? (this.host.recorder._silentTicks || 0) : 0,
+        evidenceUnknown: this.host.recorder ? this.host.recorder._silenceEvidenceUnknown === true : true,
       }),
       setProgress: (target, patch) => this.host.asrPipeline.setSessionWorkProgress(target, patch),
       cleanupSuccessfulSegmentAudio: (target) => this.host.asrPipeline.cleanupSuccessfulSegmentAudio(target),

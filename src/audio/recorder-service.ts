@@ -135,6 +135,8 @@ export class RecorderService {
   declare _voicedTicks: number;
   /** 静音的计时次数。 */
   declare _silentTicks: number;
+  /** 本场至少有一帧未能取得有效电平，不能据此证明整场无声。 */
+  declare _silenceEvidenceUnknown: boolean;
   // 其余实例字段同样只在构造函数或方法里赋值；TypeScript 不推断这类属性（§8），逐个显式声明。
   /** 浏览器录音器（分段录制）。 */
   declare recorder: MediaRecorder | null;
@@ -236,6 +238,7 @@ export class RecorderService {
     this.inputChannelMaxCount = 1;
     this.inputChannelLabel = "";
     this.inputChannelMode = "auto";
+    this._silenceEvidenceUnknown = false;
   }
   on(fn: (info: RecorderInfo) => void): () => boolean { this.listeners.add(fn); return () => this.listeners.delete(fn); }
   emit(): void { const info = this.getInfo(); for (const fn of this.listeners) fn(info); }
@@ -289,6 +292,7 @@ export class RecorderService {
     // 静音统计计数器：每场录音开始时清零（续录也走 start()，故不会跨场污染）。
     this._voicedTicks = 0;
     this._silentTicks = 0;
+    this._silenceEvidenceUnknown = false;
     this.startLevelMeter(stream);
     this.startMasterRecorder();
     this.startNewRecorder();
@@ -454,12 +458,19 @@ export class RecorderService {
     this.audioLevel = 0;
   }
   updateAudioLevel(): number {
-    if (!this.levelMeters || !this.levelMeters.length || this.state !== "recording") {
-      if (this.state !== "recording") this.audioLevel = 0;
+    if (this.state !== "recording") {
+      this.audioLevel = 0;
       return this.audioLevel || 0;
     }
+    const meters = this.levelMeters || [];
+    if (!meters.length) {
+      this.audioLevel = 0;
+      this._silenceEvidenceUnknown = true;
+      return 0;
+    }
     let maxLevel = 0;
-    for (const meter of this.levelMeters) {
+    let frameValid = true;
+    for (const meter of meters) {
       try {
         // 自愈：AudioContext 如果被浏览器挂起（autoplay 限制 / 长时间无交互），
         // 分析器读不到数据，电平条会假装"有输入"但每个频段全 0。这里每若干帧重试 resume。
@@ -468,6 +479,12 @@ export class RecorderService {
           if (meter._resumeAttempts <= 30 || meter._resumeAttempts % 60 === 0) {
             meter.context.resume().catch(() => { /* retry on the next meter tick */ });
           }
+        }
+        if (!meter.context || meter.context.state !== "running") {
+          frameValid = false;
+          meter.level = 0;
+          meter.bars = new Array<number>(12).fill(0);
+          continue;
         }
         meter.analyser.getByteTimeDomainData(meter.timeData);
         meter.analyser.getByteFrequencyData(meter.freqData);
@@ -500,16 +517,18 @@ export class RecorderService {
         meter.bars = nextBars;
         maxLevel = Math.max(maxLevel, meter.level);
       } catch {
+        frameValid = false;
         meter.level = 0;
         meter.bars = new Array<number>(12).fill(0);
       }
     }
     this.audioLevel = maxLevel;
     // 静音统计（供"整场几乎没声音"的兜底提示）。
-    // 排除 AudioContext 仍 suspended 的假 0 帧（此时分析器读不到数据，电平天然为 0，不能当静音算）。
+    // 任一路不可测量时，整帧都不能作为有声或无声证据。
     if (this.state === "recording") {
-      const anySuspended = (this.levelMeters || []).some((m) => m && m.context && m.context.state === "suspended");
-      if (!anySuspended) {
+      if (!frameValid) {
+        this._silenceEvidenceUnknown = true;
+      } else {
         if (maxLevel >= 0.012) this._voicedTicks = (this._voicedTicks || 0) + 1;
         else this._silentTicks = (this._silentTicks || 0) + 1;
       }

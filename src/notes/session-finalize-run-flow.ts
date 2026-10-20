@@ -70,7 +70,7 @@ export async function finishShortRecordingFlow(port: SessionShortRecordingPort, 
       : t("The full recording could not be saved or verified. Keep Obsidian open; no cached audio segment path is available to check.");
     new obsidian.Notice(notice, 8000);
   } else if (session.shortRecordingBlank) {
-    new obsidian.Notice(t("No text was recognized, but sound was detected; the audio was kept in the recording folder and no note was created. Import it manually to retry."), 8000);
+    new obsidian.Notice(t("No text was recognized; the recording was kept without creating a note."), 8000);
   } else if (session.shortRecordingText) {
     const text = session.shortRecordingText.length > 40 ? `${session.shortRecordingText.slice(0, 39)}…` : session.shortRecordingText;
     new obsidian.Notice(t("Short recording was not made into a note; audio was kept. Recognized: {0}").replace("{0}", text), 8000);
@@ -106,7 +106,7 @@ export interface SessionFinalizeRunPort extends SessionShortRecordingPort {
   getLlmConfigIssue(): string | null | undefined;
   getVault(): Pick<obsidian.Vault, "getAbstractFileByPath" | "read">;
   openFile(file: obsidian.TFile): Promise<unknown>;
-  readSilenceTicks(): { voiced: number; silent: number };
+  readSilenceTicks(): { voiced: number; silent: number; evidenceUnknown?: boolean };
   setProgress(session: RecordingSession, patch: Partial<FinalizeProgress>): void;
   cleanupSuccessfulSegmentAudio(session: RecordingSession): Promise<unknown>;
   removeEmptySessionBlock(session: RecordingSession): Promise<unknown>;
@@ -149,7 +149,7 @@ export async function runSessionFinalization(port: SessionFinalizeRunPort, sessi
   const silence = port.readSilenceTicks();
   const _silVoiced = silence.voiced;
   const _silSilent = silence.silent;
-  const sessionEssentiallySilent = isEssentiallySilentSession(_silVoiced, _silSilent);
+  const sessionEssentiallySilent = isEssentiallySilentSession(_silVoiced, _silSilent, silence.evidenceUnknown === true);
   if (session.shortRecordingTier) {
     keepBlankShortRecordingWhenSoundDetected(session, sessionEssentiallySilent);
     await finishShortRecordingFlow(port, session);
@@ -163,7 +163,7 @@ export async function runSessionFinalization(port: SessionFinalizeRunPort, sessi
     return;
   }
   const _silTotal = _silVoiced + _silSilent;
-  if (!session.source && _silTotal >= 30 && (_silVoiced / _silTotal) < 0.02 && !session._silenceNotified) {
+  if (!silence.evidenceUnknown && !session.source && _silTotal >= 30 && (_silVoiced / _silTotal) < 0.02 && !session._silenceNotified) {
     session._silenceNotified = true;
     new obsidian.Notice(t("Almost no sound was detected in the whole session; please check the selected microphone / computer audio device (Settings → Advanced → Audio device check)."), 9000);
   }

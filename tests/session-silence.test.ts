@@ -25,6 +25,11 @@ describe("整场是否基本无声", () => {
     expect(isEssentiallySilentSession(1, 6)).toBe(false);
   });
 
+  it("存在未知采样帧时不判定为无声", () => {
+    expect(isEssentiallySilentSession(0, 10, true)).toBe(false);
+    expect(isEssentiallySilentSession(0, 10, false)).toBe(true);
+  });
+
   it("无效或负数计数按 0 处理", () => {
     expect(isEssentiallySilentSession(Number.NaN, 10)).toBe(true);
     expect(isEssentiallySilentSession(-3, 10)).toBe(true);

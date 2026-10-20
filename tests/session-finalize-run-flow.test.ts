@@ -92,6 +92,19 @@ describe("session finalization flow consumer contract", () => {
     expect(notices.some(([message]) => message.includes("Recognized: 好的"))).toBe(true);
   });
 
+  it("0/0 silence statistics keep a blank short recording and use a neutral notice", async () => {
+    const fixture = setup();
+    fixture.session.shortRecordingTier = "discard";
+    fixture.session.shortRecordingBlank = true;
+    fixture.session.masterAudioPath = "QnALog/录音/master.webm";
+
+    await runSessionFinalization(fixture.port, fixture.session);
+
+    expect(fixture.session.shortRecordingTier).toBe("keep-audio");
+    expect(fixture.port.discardShortRecordingAudio).not.toHaveBeenCalled();
+    expect(notices).toEqual([[t("No text was recognized; the recording was kept without creating a note."), 8000]]);
+  });
+
   it("asks the user to inspect cached audio when a short recording has no verified master", async () => {
     const fixture = setup();
     fixture.session.shortRecordingTier = "keep-audio";
