@@ -28,6 +28,10 @@ function fail(prefix: string, payload: unknown): Error {
   const message = str(output.message) || str(root.message) || str(output.code) || str(root.code);
   return new Error(message ? t("{0}: {1}").replace("{0}", prefix).replace("{1}", message) : prefix);
 }
+/** True when the failed task's own code or message is the Bailian no-words error. */
+function reportsNoWords(output: Rec, task: Rec): boolean {
+  return [output.code, output.message, task.code, task.message].some((value) => str(value).includes("ASR_RESPONSE_HAVE_NO_WORDS"));
+}
 function responseJson(response: { status: number; text?: string }, phase: string): Rec {
   const status = Number(response?.status) || 0, raw = typeof response?.text === "string" ? response.text.trim() : "";
   const payload = raw ? parse(raw) : null;
@@ -157,6 +161,8 @@ export async function transcribeDashScopeFile(
   while (Date.now() < deadline) {
     notify?.({ phase: "waiting", label: t("Sending the full audio to the cloud for recognition"), detail: t("Audio duration {0} · estimated to finish in about {1}").replace("{0}", duration).replace("{1}", estimateText), taskId });
     const task = responseJson(await requestUrl({ url: queryUrl, method: "GET", headers: { Authorization: `Bearer ${provider.apiKey}` }, throw: false }), t("Failed to query the Alibaba Cloud transcription task.")), output = rec(task.output), status = str(output.task_status).toUpperCase();
+    // 百炼把「无语音」报为 FAILED 任务；按 MAINTAINING §12 视为成功的空白结果，而不是失败。
+    if (status === "FAILED" && reportsNoWords(output, task)) return { text: "", rawText: null, providerId: provider.id, units: [], taskId, sentenceCount: 0, noSpeech: true };
     if (["FAILED", "CANCELED", "UNKNOWN"].includes(status)) throw fail(t("Alibaba Cloud long-audio transcription failed."), task);
     if (status === "SUCCEEDED") { const results = arr(output.results).map(rec), result = results.find((v) => str(v.subtask_status).toUpperCase() === "SUCCEEDED") || rec(results[0]); resultUrl = str(result.transcription_url); if (!resultUrl) throw fail(t("Alibaba Cloud transcription finished but returned no result URL."), result); break; }
     await delayMs(poll);

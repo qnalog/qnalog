@@ -5,6 +5,7 @@ vi.mock("obsidian", () => ({
 }));
 
 import { requestUrl } from "obsidian";
+import { transcribeDashScopeFile } from "../src/asr/dashscope-filetrans-asr";
 import {
   composeDashScopeTranscript,
   estimateCloudTranscriptionDuration,
@@ -182,4 +183,69 @@ describe("long audio transcription", () => {
     });
 
   });
+
+  it("returns a successful blank result when the whole-file task fails with ASR_RESPONSE_HAVE_NO_WORDS", async () => {
+    const provider = {
+      id: "dashscope-filetrans",
+      endpoint: "https://dashscope.aliyuncs.com/api/v1/services/audio/asr/transcription",
+      apiKey: "test-key",
+      model: "qwen-audio-3.1-asr-flash-filetrans",
+      language: "",
+      protocol: "dashscope-filetrans",
+    };
+    mockFiletransPayloads([
+      { data: { upload_host: "https://oss.example", upload_dir: "audio", oss_access_key_id: "id", policy: "p", signature: "s" } },
+      { output: { task_id: "task-silent" } },
+      { output: { task_status: "FAILED", code: "ASR_RESPONSE_HAVE_NO_WORDS", message: "ASR_RESPONSE_HAVE_NO_WORDS" } },
+    ]);
+    vi.stubGlobal("window", { fetch: vi.fn(async () => new Response(null, { status: 200 })) });
+
+    const result = await transcribeDashScopeFile(provider, new Blob([new Uint8Array([1, 2, 3])], { type: "audio/wav" }), { fileName: "silent.wav" });
+
+    expect(result).toMatchObject({ text: "", rawText: null, units: [], taskId: "task-silent", sentenceCount: 0, noSpeech: true });
+    expect(vi.mocked(requestUrl)).toHaveBeenCalledTimes(3);
+  });
+
+  it("keeps throwing for other failed filetrans outcomes", async () => {
+    const provider = {
+      id: "dashscope-filetrans",
+      endpoint: "https://dashscope.aliyuncs.com/api/v1/services/audio/asr/transcription",
+      apiKey: "test-key",
+      model: "qwen-audio-3.1-asr-flash-filetrans",
+      language: "",
+      protocol: "dashscope-filetrans",
+    };
+    const outcomes = [
+      { output: { task_status: "FAILED", code: "InvalidFile.Format", message: "unsupported audio format" } },
+      { output: { task_status: "CANCELED", code: "ASR_RESPONSE_HAVE_NO_WORDS", message: "ASR_RESPONSE_HAVE_NO_WORDS" } },
+    ];
+    for (const outcome of outcomes) {
+      vi.mocked(requestUrl).mockReset();
+      mockFiletransPayloads([
+        { data: { upload_host: "https://oss.example", upload_dir: "audio", oss_access_key_id: "id", policy: "p", signature: "s" } },
+        { output: { task_id: "task-other" } },
+        outcome,
+      ]);
+      vi.stubGlobal("window", { fetch: vi.fn(async () => new Response(null, { status: 200 })) });
+
+      await expect(transcribeDashScopeFile(provider, new Blob([new Uint8Array([1, 2, 3])], { type: "audio/wav" }), { fileName: "clip.wav" }))
+        .rejects.toThrow("Alibaba Cloud long-audio transcription failed.");
+      vi.unstubAllGlobals();
+    }
+  });
 });
+
+/** Answers each requestUrl call in order with the given JSON payloads. */
+function mockFiletransPayloads(payloads: unknown[]): void {
+  vi.mocked(requestUrl).mockReset();
+  let index = 0;
+  vi.mocked(requestUrl).mockImplementation(() => {
+    const text = JSON.stringify(payloads[index++]);
+    const buffer = new ArrayBuffer(0);
+    return Object.assign(Promise.resolve({ status: 200, headers: {}, arrayBuffer: buffer, json: JSON.parse(text), text }), {
+      arrayBuffer: Promise.resolve(buffer),
+      json: Promise.resolve(JSON.parse(text)),
+      text: Promise.resolve(text),
+    }) as never;
+  });
+}

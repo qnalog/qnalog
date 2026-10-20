@@ -340,6 +340,17 @@ describe("session finalization flow consumer contract", () => {
     expect(fixture.port.autoExtractSediment).toHaveBeenCalledWith(fixture.session.mdPath);
   });
 
+  it("writes the no-speech note for an all-blank whole-file import and never queues a retry", async () => {
+    const fixture = setup({ source: "import", segments: [{ index: 0, startOffsetMs: 0, endOffsetMs: 20_000, text: "" }] });
+    await runSessionFinalization(fixture.port, fixture.session);
+    expect(fixture.port.appendPolishBlock).toHaveBeenCalledWith(fixture.session, t("No speech detected"), null, false);
+    expect(fixture.port.setProgress).toHaveBeenCalledWith(fixture.session, expect.objectContaining({ stage: "transcript-empty" }));
+    expect(fixture.port.discardShortRecordingAudio).not.toHaveBeenCalled();
+    expect(fixture.port.mergeAndPolish).not.toHaveBeenCalled();
+    expect(fixture.queue).toEqual([]);
+    expect(fixture.port.endSession).toHaveBeenCalledWith(fixture.session);
+  });
+
   it("uses raw imported text for fallback title and synchronizes renamed paths", async () => {
     const fixture = setup({ source: "import" });
     const renamed = new obsidian.TFile("Notes/renamed.md");

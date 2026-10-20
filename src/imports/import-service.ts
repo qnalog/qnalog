@@ -582,7 +582,8 @@ export class ImportService {
     });
     await this.host.sessionFinalize.finalizeSession(session);
     const finalizationError = String(session.finalizationError || "").trim()
-      || (session.workProgress && session.workProgress.stage === "transcript-empty"
+      // 全部段落成功且为空时，收尾已写入「未检测到语音」并保留音频，不作为转写失败显示。
+      || (session.workProgress && session.workProgress.stage === "transcript-empty" && !allSegmentsSuccessfullyBlank
         ? t("No valid transcript text was obtained for organizing.")
         : "");
     if (finalizationError) {
