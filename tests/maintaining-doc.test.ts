@@ -35,7 +35,7 @@ describe("MAINTAINING.md 写入约束", () => {
   });
 
   it("§6.1 编号条目带状态词", () => {
-    const body = sectionBetween("### 6.1 当前推进", "### 已完成");
+    const body = sectionBetween("### 6.1 当前推进", "### 6.2 ");
     const items = body.split(/\n(?=\d+\. )/).filter((b) => /^\d+\. /.test(b));
     expect(items.length).toBeGreaterThan(0);
     for (const item of items) {
