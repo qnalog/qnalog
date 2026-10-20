@@ -19,19 +19,19 @@ import { DEFAULT_SETTINGS } from "../src/shared/defaults";
 import { attachTextTranscript } from "../src/transcript/session-transcript";
 import { serializeTranscriptBlock } from "../src/transcript/transcript-markdown";
 
-afterEach(() => vi.clearAllMocks());
+afterEach(() => { vi.unstubAllGlobals(); vi.clearAllMocks(); });
 
 const CACHE_PATH = "QnALog/.cache/segments/clip.wav";
 const AUDIO_BYTES = new Uint8Array([82, 73, 70, 70, 1, 2, 3, 4, 5, 6]);
 const noteFile = () => Object.assign(new obsidian.TFile(), { path: "Notes/retry.md", name: "retry.md", basename: "retry", extension: "md" });
 const cacheFile = () => Object.assign(new obsidian.TFile(), { path: CACHE_PATH, name: "clip.wav", basename: "clip", extension: "wav" });
 
-function makeRetentionScenario(route: "adapter" | "indexed", markdown: string, options: { masterAudioPath?: string; raceCommit?: boolean; keepSegmentAudioFiles?: boolean } = {}) {
+function makeRetentionScenario(route: "adapter" | "indexed", markdown: string, options: { masterAudioPath?: string; masterExists?: boolean; raceCommit?: boolean; keepSegmentAudioFiles?: boolean } = {}) {
   const note = noteFile();
   const cache = cacheFile();
   const files = new Map([[note.path, note], ...(route === "indexed" ? [[CACHE_PATH, cache] as const] : [])]);
   const bytes = new Map([[CACHE_PATH, AUDIO_BYTES.slice()]]);
-  if (options.masterAudioPath) {
+  if (options.masterAudioPath && options.masterExists !== false) {
     const masterName = options.masterAudioPath.split("/").pop() || "recording.wav";
     files.set(options.masterAudioPath, Object.assign(new obsidian.TFile(), { path: options.masterAudioPath, name: masterName, basename: masterName.replace(/\.[^.]+$/, ""), extension: "wav" }));
     bytes.set(options.masterAudioPath, new Uint8Array([1, 2, 3]));
@@ -107,7 +107,7 @@ describe.each(["adapter", "indexed"] as const)("ordinary segment retry retains c
     ["existing transcript idempotency", `Original note.\n\n${serializeTranscriptBlock(attachTextTranscript({ index: 0, startOffsetMs: 0, endOffsetMs: 1000, text: "already saved" }, "session-1", "asr"), "### Segment 1 (00:00–00:01)", "already saved")}\n`, {}, "already saved", 0],
     ["legacy task marker", "### Segment 1 (00:00–00:01)\n\n<!-- qnalog-transcribe-task:retry-1 -->\nRecognized legacy text\n", {}, "Recognized legacy text", 0],
     ["commit race after ASR", "Original note.", { raceCommit: true }, "already committed", 1],
-    ["stale master path", "Original note.", { masterAudioPath: "QnALog/Audio/missing.wav" }, "recognized words", 1],
+    ["stale master path", "Original note.", { masterAudioPath: "QnALog/Audio/missing.wav", masterExists: false }, "recognized words", 1],
     ["existing but unverified master path", "Original note.", { masterAudioPath: "QnALog/Audio/recording.wav" }, "recognized words", 1],
   ] as const)("preserves audio after %s", async (_label, markdown, options, expectedNoteText, expectedAsrCalls) => {
     const fixture = makeRetentionScenario(route, markdown, options);
@@ -119,6 +119,14 @@ describe.each(["adapter", "indexed"] as const)("ordinary segment retry retains c
     expect(fixture.contents()).toContain(expectedNoteText);
     expect(fixture.vault.adapter.remove).not.toHaveBeenCalled();
     expect(asr.transcribe).toHaveBeenCalledTimes(expectedAsrCalls);
+    if (_label === "stale master path") {
+      expect(fixture.vault.getAbstractFileByPath("QnALog/Audio/missing.wav")).toBeNull();
+      if (route === "adapter") expect(fixture.vault.adapter.readBinary).toHaveBeenCalledWith(CACHE_PATH);
+      else expect(fixture.vault.readBinary).toHaveBeenCalledWith(expect.objectContaining({ path: CACHE_PATH }));
+    }
+    if (_label === "existing but unverified master path") {
+      expect(fixture.vault.getAbstractFileByPath("QnALog/Audio/recording.wav")).not.toBeNull();
+    }
   });
 
   it("keeps an ordinary recording cache when the user enabled segment retention", async () => {
