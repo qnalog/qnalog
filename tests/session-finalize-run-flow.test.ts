@@ -18,6 +18,7 @@ import { t } from "../src/shared/i18n";
 import { resolveUiLanguage, setActiveUiLanguage } from "../src/shared/i18n";
 import { TaskActivityService } from "../src/tasks/task-activity-service";
 import { TaskActivityStore } from "../src/shared/task-activity";
+import { NoteMarkdownConflictError } from "../src/notes/note-write-conflict";
 
 afterEach(() => {
   notices.length = 0;
@@ -39,6 +40,8 @@ function setup(options: { layout?: boolean; configIssue?: string; segments?: Seg
   };
   const events: string[] = [];
   const queue: unknown[] = [];
+  let noteBody = "A note body";
+  const readMarkdown = vi.fn(async () => noteBody);
   const settings = { autoOpenNoteAfterFinish: false, sedimentAutoExtract: false, llmEndpoint: "", llmModel: "", consolidatedLayout: options.layout ?? true };
   const port: SessionFinalizeRunPort = {
     hasQueue: () => true,
@@ -48,7 +51,7 @@ function setup(options: { layout?: boolean; configIssue?: string; segments?: Seg
     endSession: vi.fn(() => { events.push("end"); }), requestOutlineRefresh: vi.fn(() => { events.push("refresh-outline"); }),
     getSettings: () => settings,
     getLlmConfigIssue: () => options.configIssue ?? "",
-    getVault: () => ({ getAbstractFileByPath: vi.fn(() => file), read: vi.fn(async () => "A note body") }),
+    getVault: () => ({ getAbstractFileByPath: vi.fn(() => file), read: readMarkdown }),
     openFile: vi.fn(async () => undefined), readSilenceTicks: () => ({ voiced: 0, silent: 0 }),
     setProgress: vi.fn((_session, patch) => { events.push(`stage:${patch.stage}`); }),
     cleanupSuccessfulSegmentAudio: vi.fn(async () => { events.push("cleanup"); }), removeEmptySessionBlock: vi.fn(async () => { events.push("remove-empty"); }),
@@ -61,7 +64,7 @@ function setup(options: { layout?: boolean; configIssue?: string; segments?: Seg
     beginTaskMeter: vi.fn(() => null), endTaskMeter: vi.fn(() => null), logCompletedWork: vi.fn(() => { events.push("completed-log"); }),
     saveVersion: vi.fn(async () => undefined), formatNow: (format) => `M:${format}`, buildTitleSource: () => "Fallback title",
   };
-  return { port, session, events, queue, settings, file };
+  return { port, session, events, queue, settings, file, readMarkdown, setNoteBody: (value: string) => { noteBody = value; } };
 }
 
 describe("session finalization flow consumer contract", () => {
@@ -151,7 +154,7 @@ describe("session finalization flow consumer contract", () => {
     const fixture = setup();
     await runSessionFinalization(fixture.port, fixture.session);
     expect(fixture.events).toContain("merge");
-    expect(fixture.port.rewriteConsolidated).toHaveBeenCalledWith(fixture.session, "Polished note");
+    expect(fixture.port.rewriteConsolidated).toHaveBeenCalledWith(fixture.session, "Polished note", "A note body");
     expect(fixture.port.cleanupSuccessfulSegmentAudio).toHaveBeenCalledWith(fixture.session);
     expect(fixture.events.indexOf("rewrite")).toBeLessThan(fixture.events.indexOf("end"));
     expect(fixture.events.indexOf("stage:naming")).toBeLessThan(fixture.events.indexOf("rename"));
@@ -306,14 +309,48 @@ describe("session finalization flow consumer contract", () => {
     await runSessionFinalization(fixture.port, fixture.session);
     expect(fixture.port.saveVersion).toHaveBeenCalledWith(fixture.file, "A note body", expect.any(Array), expect.objectContaining({ kind: "pre-polish", activate: false, body: "A note body" }));
     expect(fixture.events.indexOf("snapshot")).toBeLessThan(fixture.events.indexOf("rewrite"));
-    expect(fixture.port.rewriteConsolidated).toHaveBeenCalledWith(fixture.session, "Polished note");
+    expect(fixture.port.rewriteConsolidated).toHaveBeenCalledWith(fixture.session, "Polished note", "A note body");
+  });
+
+  it("captures the pre-model Markdown and keeps a conflict retry manual-only", async () => {
+    const fixture = setup();
+    const conflict = new NoteMarkdownConflictError(t("The note changed while organizing. Your edit was kept; review the note, then retry this task individually from the queue."));
+    vi.mocked(fixture.port.mergeAndPolish).mockImplementation(async () => {
+      fixture.setNoteBody("# User edit during organizing");
+      return "Polished note";
+    });
+    vi.mocked(fixture.port.rewriteConsolidated).mockRejectedValueOnce(conflict);
+
+    await runSessionFinalization(fixture.port, fixture.session);
+
+    expect(fixture.port.rewriteConsolidated).toHaveBeenCalledWith(fixture.session, "Polished note", "A note body");
+    expect(fixture.queue[0]).toMatchObject({ type: "merge", status: "blocked", manualRetryRequired: true, segments: fixture.session.segments });
+    expect(fixture.port.requestTaskQueueRetry).not.toHaveBeenCalled();
+    expect(fixture.port.cleanupSuccessfulSegmentAudio).not.toHaveBeenCalled();
+    expect(fixture.port.clearCommittedBriefingCheckpoint).not.toHaveBeenCalled();
+    expect(fixture.port.setProgress).toHaveBeenCalledWith(fixture.session, expect.objectContaining({
+      label: t("Review the note before retrying"), detail: conflict.message,
+    }));
+    expect(notices.at(-1)?.[0]).toBe(conflict.message);
+  });
+
+  it("does not organize or write when the pre-model Markdown read fails", async () => {
+    const fixture = setup();
+    fixture.readMarkdown.mockRejectedValueOnce(new Error("vault read failed"));
+
+    await runSessionFinalization(fixture.port, fixture.session);
+
+    expect(fixture.port.mergeAndPolish).not.toHaveBeenCalled();
+    expect(fixture.port.rewriteConsolidated).not.toHaveBeenCalled();
+    expect(fixture.queue).toHaveLength(1);
+    expect(fixture.port.requestTaskQueueRetry).toHaveBeenCalledWith(1500, "briefing-finalization-failure");
   });
 
   it("still rewrites the note and finishes when the pre-polish snapshot fails", async () => {
     const fixture = setup({ layout: true });
     vi.mocked(fixture.port.saveVersion).mockRejectedValue(new Error("disk full"));
     await runSessionFinalization(fixture.port, fixture.session);
-    expect(fixture.port.rewriteConsolidated).toHaveBeenCalledWith(fixture.session, "Polished note");
+    expect(fixture.port.rewriteConsolidated).toHaveBeenCalledWith(fixture.session, "Polished note", "A note body");
     expect(fixture.events).toContain("diag:session.pre_polish_archive_failed");
     expect(fixture.events).not.toContain("diag:briefing.commit_failed");
     expect(fixture.events.indexOf("rewrite")).toBeLessThan(fixture.events.indexOf("end"));

@@ -10,6 +10,21 @@ import { TaskActivityService } from "../src/tasks/task-activity-service";
 import { TaskActivityStore } from "../src/shared/task-activity";
 
 describe("persisted queue activity recovery", () => {
+  it("shows note review guidance for a manual-only Markdown conflict", () => {
+    const task = {
+      id: "merge-conflict", type: "merge", status: "blocked", manualRetryRequired: true,
+      retries: 0, createdAt: new Date().toISOString(), updatedAt: new Date().toISOString(),
+      lastError: "The note changed while organizing.", mdPath: "Notes/session.md", mode: "synthesis",
+    };
+    const service = Object.create(TaskActivityService.prototype) as TaskActivityService;
+    service.host = { queue: { tasks: [task] }, settings: { maxRetries: 3 } } as never;
+    service.taskActivityStore = new TaskActivityStore();
+
+    const activity = service.syncQueueTaskActivity(task as never);
+
+    expect(activity).toMatchObject({ stageLabel: "Review the note before retrying", status: "failed" });
+  });
+
   it("restores failed attempts, resets on retry, and preserves model progress across queue updates", () => {
     const time = Date.now();
     const queueTask = {

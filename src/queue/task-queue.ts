@@ -208,6 +208,7 @@ export class TaskQueue {
         && t.status !== LIVE_ASR_TASK_STATUS
         && t.status !== "missing"
         && t.status !== "blocked"
+        && !(t.type === "merge" && t.manualRetryRequired)
         && !this.hasUnresolvedDependencies(t)
         && isRetryDue(t)
         && (t.retries < maxRetries || (t.type === "transcribe" && isAsrTransportError(t.lastError || ""))));
@@ -302,6 +303,7 @@ export class TaskQueue {
         await this.update(task.id, {
           status: deferred.status || "pending",
           lastError: deferred.reason,
+          ...(deferred.manualRetryRequired ? { manualRetryRequired: true } : {}),
           lastEventAt: new Date().toISOString(),
         });
         return;

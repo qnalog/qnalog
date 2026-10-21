@@ -41,6 +41,7 @@ async function retryMergeTaskImpl(port: QueueMergeRetryPort, task: MergeRetryTas
   const sessionMeta = Object.assign({}, task.sessionMeta || {}, {
     _previousKnowledge: readSessionKnowledge(currentMarkdown),
   }) as Record<string, unknown>;
+  if (task.manualRetryRequired) sessionMeta._freshBriefing = true;
   const polished = await port.mergeAndPolish(task.segments || [], task.mode, sessionMeta, task.speakerFrontmatter || null);
   if (!polished) throw new Error(t("Merge returned an empty result"));
   const retryStartedAt = (sessionMeta && sessionMeta.startedAt) || task.createdAt || new Date().toISOString();

@@ -34,6 +34,60 @@ function makeQueueHost(overrides: Partial<TaskQueueHost> = {}): TaskQueueHost {
 }
 
 describe("continuation queue lifecycle", () => {
+  it("keeps manual-only merge conflicts out of automatic processing while allowing a single-task retry", async () => {
+    const retryMergeTask = vi.fn(async () => undefined);
+    const queue = new TaskQueue(makeQueueHost({ retryMergeTask }));
+    const task = await queue.add({
+      type: "merge", sessionId: "session-conflict", mdPath: "Notes/conflict.md", mode: "synthesis",
+      segments: [{ index: 0, startOffsetMs: 0, endOffsetMs: 1000, text: "Transcript." }], manualRetryRequired: true,
+    });
+
+    await queue.processAll();
+    expect(retryMergeTask).not.toHaveBeenCalled();
+    expect(queue.tasks).toContain(task);
+
+    await queue.processOne(task);
+    expect(retryMergeTask).toHaveBeenCalledOnce();
+  });
+
+  it("persists a manual-only marker returned by a merge handler and restores it", async () => {
+    let saved: unknown[] = [];
+    const retryMergeTask = vi.fn().mockResolvedValue({
+      deferred: true,
+      status: "blocked",
+      reason: "The note changed while organizing.",
+      manualRetryRequired: true,
+    });
+    const host = makeQueueHost({
+      persistQueue: async () => { saved = JSON.parse(JSON.stringify(queue.persistedSnapshot())); },
+      retryMergeTask,
+    });
+    const queue = new TaskQueue(host);
+    const task = await queue.add({
+      type: "merge", sessionId: "session-conflict", mdPath: "Notes/conflict.md", mode: "synthesis",
+      segments: [{ index: 0, startOffsetMs: 0, endOffsetMs: 1000, text: "Transcript." }],
+    });
+
+    await queue.processOne(task);
+
+    expect(task.status).toBe("blocked");
+    expect(task.manualRetryRequired).toBe(true);
+    expect(task.lastError).toBe("The note changed while organizing.");
+    expect(saved).toContainEqual(expect.objectContaining({
+      id: task.id, status: "blocked", manualRetryRequired: true,
+    }));
+
+    const restoredRetry = vi.fn();
+    const restoredQueue = new TaskQueue(makeQueueHost({ retryMergeTask: restoredRetry }));
+    restoredQueue.load(saved);
+    expect(restoredQueue.tasks).toContainEqual(expect.objectContaining({
+      id: task.id, status: "blocked", manualRetryRequired: true,
+    }));
+
+    await restoredQueue.processAll();
+    expect(restoredRetry).not.toHaveBeenCalled();
+  });
+
   it("coalesces normalized transcription paths while retaining the first queue identity", async () => {
     const persisted: unknown[][] = [];
     const queue = new TaskQueue(makeQueueHost({
