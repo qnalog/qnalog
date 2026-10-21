@@ -49,7 +49,7 @@ export function applySpeakerNamesForLlm(
     const channel = Number(mapping && mapping.channel) || Number(String(mapping && mapping.id || "").replace(/^spk-/, ""));
     if (!name || !channel) continue;
     text = text
-      .replace(new RegExp(`\\[\\s*说话人\\s*${channel}\\s*\\]`, "gi"), `[${name}]`)
+      .replace(new RegExp(`\\[\\s*说话人\\s*${channel}\\s*\\]`, "gi"), () => `[${name}]`)
       .replace(new RegExp(`(\\*{0,2})\\s*说话人\\s*${channel}\\s*[：:]\\s*(\\*{0,2})`, "gi"), (_match, open, close) => `${open}${name}：${close}`);
   }
   return text;

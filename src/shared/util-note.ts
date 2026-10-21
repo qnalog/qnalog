@@ -87,7 +87,7 @@ export async function ensureTodayDailyNoteFile(app) {
         initial = String(tplBody || "")
           .replace(/\{\{\s*date\s*(?::([^}]+))?\}\}/g, (_, fmt) => moment().format(fmt || "YYYY-MM-DD"))
           .replace(/\{\{\s*time\s*(?::([^}]+))?\}\}/g, (_, fmt) => moment().format(fmt || "HH:mm"))
-          .replace(/\{\{\s*title\s*\}\}/g, info.path.split("/").pop().replace(/\.md$/, ""));
+          .replace(/\{\{\s*title\s*\}\}/g, () => info.path.split("/").pop().replace(/\.md$/, ""));
       } catch { /* intentionally empty */ }
     }
   }

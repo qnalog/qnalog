@@ -132,6 +132,24 @@ describe("transcript ledger helper contracts", () => {
       expect(caught).toBe(failure);
     }
   });
+
+  it("writes edited transcript text containing $ patterns back byte-for-byte during reconciliation", () => {
+    const edited = "alpha $& $` $' $$ beta";
+    const segment = attachTextTranscript({
+      index: 0, startOffsetMs: 1000, endOffsetMs: 2000,
+      text: "PREFIX alpha beta SUFFIX", rawText: "alpha beta",
+    }, "ledger-literal", "text-import");
+    const originalBlock = serializeTranscriptBlock(segment, "### Segment 1 (00:01–00:02)", "alpha beta");
+    // 测试内生成编辑块也用函数式替换，避免替换字符串本身带入 $ 序列。
+    const editedBlock = originalBlock.replace("\nalpha beta\n", () => `\n${edited}\n`);
+    const fixture = "<details><summary>Segmented raw transcript</summary>\n" + editedBlock + "\n</details>\nAFTER";
+    const upgraded = ensureTranscriptBlocks(fixture, "ledger-literal");
+    const [first] = readTranscriptBlocks(upgraded);
+    expect(first.visibleBlock).toBe(edited);
+    expect(first.segment.text).toBe("PREFIX alpha $& $` $' $$ beta SUFFIX");
+    expect(first.drifted).toBe(false);
+    expect(ensureTranscriptBlocks(upgraded, "ledger-literal")).toBe(upgraded);
+  });
 });
 
 describe("iterateNoteHeadingBlocks", () => {
@@ -499,6 +517,32 @@ describe("版本块构建与替换", () => {
       expect(note.match(/^---$/gm)).toHaveLength(1);
       expect(note.indexOf('data-qnalog="active-version-end"')).toBeLessThan(note.indexOf("\n---\n"));
       expect(note.slice(note.indexOf('data-qnalog="active-version-start"'), note.indexOf('data-qnalog="active-version-end"'))).not.toContain("## 原始材料");
+    }
+  });
+});
+
+describe("active version index restoration literal text", () => {
+  it("restores a session comment containing $ patterns into the index block without rewriting them", () => {
+    const originalLanguage = getActiveUiLanguage();
+    try {
+      setActiveUiLanguage(resolveUiLanguage("zh", "zh"));
+      // 旧式版本块把原始材料区包含在活动范围内：会话注释随活动块被替换，需要回填进索引块。
+      const note = (marker: string) => [
+        "---", "mode: monologue", "---", "", "# T", "",
+        "<!-- qnalog-active-version-start -->", "> [!info]- 旧标签", marker, "> 旧内容", "",
+        "---", "", "## 原始材料", "", "<details>", "<summary>索引数据</summary>", "", "旧索引正文", "</details>", "",
+        "<!-- qnalog-active-version-end -->", "", "## 原始材料", "", "<details>", "<summary>录音信息</summary>", "x", "</details>", "",
+      ].join("\n");
+      const plainMarker = "<!-- " + NS_TAG + "-session:" + NS_TAG + "-plain-marker -->";
+      const literalMarker = "<!-- " + NS_TAG + "-session:" + NS_TAG + "-literal $& $` $' $$ -->";
+      const plain = replaceActiveVersionBlock(note(plainMarker), META, "显示正文");
+      const output = replaceActiveVersionBlock(note(literalMarker), META, "显示正文");
+      expect(plain).toContain(plainMarker);
+      // 期望值由不含 $ 的注释推出；不用 String.replace 生成期望值。
+      expect(output).toBe(plain.split(plainMarker).join(literalMarker));
+      expect(count(output, literalMarker)).toBe(1);
+    } finally {
+      setActiveUiLanguage(originalLanguage);
     }
   });
 });

@@ -24,7 +24,7 @@ import * as obsidian from "obsidian";
 import { reorganizeNoteInPlace, type ReorganizeInPlacePort } from "../src/notes/reorganize-in-place-flow";
 import { buildReorganizedNote } from "../src/notes/reorganize-in-place-flow";
 import { extractTranscriptSegments } from "../src/notes/note-transcript-ledger";
-import { buildNoteIndex } from "../src/indexing/note-index";
+import { buildNoteIndex, upsertNoteIndex } from "../src/indexing/note-index";
 
 afterEach(() => { notices.length = 0; vi.restoreAllMocks(); });
 
@@ -348,5 +348,32 @@ describe("reorganize in place: stale AI failure block", () => {
     expect(next).not.toContain("AI 整理失败");
     expect(next).toContain("New organized body");
     expect(next).toContain("qnalog-transcript-start:seg:x:0:fragment:1");
+  });
+});
+
+describe("in-place reorganization index writer literal text", () => {
+  it("writes a re-organized note whose index JSON parses and keeps $ patterns from the model output", async () => {
+    const literal = "First line costs $& and $' then $$ and 100% sure.";
+    const literalBody = `## ${literal}\n\n说明正文。`;
+    const indexed = upsertNoteIndex(original, buildNoteIndex(original, { noteTitle: "e2e", generatedAt: "2026-10-13T10:00:00.000Z" })!);
+    let contents = new Map<string, string>();
+    const refresh = vi.fn(async (...args: unknown[]) => {
+      const target = args[0] as obsidian.TFile;
+      const markdown = contents.get(target.path) || "";
+      const index = buildNoteIndex(markdown, { noteTitle: "e2e", generatedAt: "2026-10-13T10:00:00.000Z" })!;
+      contents.set(target.path, upsertNoteIndex(markdown, index));
+    });
+    const built = fixture({
+      mergeAndPolish: vi.fn(async () => literalBody),
+      refreshNoteIndex: refresh,
+    });
+    contents = built.contents;
+    contents.set(built.file.path, indexed);
+    await reorganizeNoteInPlace(built.port, built.file);
+    const output = contents.get(built.file.path) || "";
+    const json = /```json\s*([\s\S]*?)\s*```/.exec(output)?.[1] ?? "";
+    expect(output).toContain(`## ${literal}`);
+    expect(JSON.parse(json).topics.map((topic: { title: string }) => topic.title)).toContain(literal);
+    expect(output.split("<!-- qnalog-note-index -->").length - 1).toBe(1);
   });
 });

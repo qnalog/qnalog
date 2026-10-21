@@ -138,7 +138,8 @@ function preserveSessionMetadata(previous: string, next: string): string {
     const additions = missing.filter((marker) => !indexBlock[1].includes(marker));
     if (!additions.length) return next;
     const body = `${indexBlock[1].trimEnd()}\n${additions.join("\n")}`;
-    return next.slice(0, indexBlock.index) + indexBlock[0].replace(indexBlock[1], body) + next.slice(indexBlock.index + indexBlock[0].length);
+    // 函数式替换：body 含会话注释原文，字符串形式会让其中的 $ 序列被改写。
+    return next.slice(0, indexBlock.index) + indexBlock[0].replace(indexBlock[1], () => body) + next.slice(indexBlock.index + indexBlock[0].length);
   }
   const rawHeadingRe = /^##\s+(?:原始材料|Original material)\s*$/m;
   const tail = `<details>\n<summary>${labelText("indexData")}</summary>\n${missing.join("\n")}\n</details>`;

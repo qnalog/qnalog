@@ -112,7 +112,7 @@ export function applyVocabularyCorrections(text, groups) {
   for (const pair of pairs) {
     if (!pair || !pair.from || !pair.to || pair.from === pair.to) continue;
     const flags = /[A-Za-z]/.test(pair.from) ? "gi" : "g";
-    output = output.replace(new RegExp(escapeRegExp(pair.from), flags), pair.to);
+    output = output.replace(new RegExp(escapeRegExp(pair.from), flags), () => pair.to);
   }
   return output;
 }
