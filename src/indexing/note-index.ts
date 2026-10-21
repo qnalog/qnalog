@@ -544,7 +544,18 @@ function placeIndexInRawMaterials(markdown: string): string {
 }
 
 export function upsertNoteIndex(markdown: unknown, index: QnALogNoteIndexCard): string {
-  const activeKnowledge = protectActiveSessionKnowledge(textValue(markdown));
+  const original = textValue(markdown);
+  const originalIndex = readNoteIndex(original, { includeFuture: true });
+  if (originalIndex && "status" in originalIndex) return original;
+  // An active wrapper can contain both knowledge and a cached index. Keep its
+  // knowledge in place while rebuilding the index in the raw-material section.
+  const active = findActiveVersionBlock(original);
+  const prepared = active
+    ? original.slice(0, active.bodyStart)
+      + active.body.replace(NOTE_INDEX_FENCED_PATTERN, (block) => (block.match(FOLDABLE_SESSION_COMMENT_RE) || []).join("\n"))
+      + original.slice(active.bodyEnd)
+    : original;
+  const activeKnowledge = protectActiveSessionKnowledge(prepared);
   const restoreActiveKnowledge = (value: string) => activeKnowledge.restore(value);
   const folded = foldSessionMetadata(activeKnowledge.markdown);
   const text = folded.markdown;

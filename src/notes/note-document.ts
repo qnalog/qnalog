@@ -228,7 +228,7 @@ export function protectActiveSessionKnowledge(markdown: string): ActiveSessionKn
   let masked = source;
   for (let index = replacements.length - 1; index >= 0; index--) {
     const replacement = replacements[index];
-    let token = `\uE000qnalog-active-session-knowledge-${index}\uE001`;
+    let token = `\uE000${NS_TAG}-active-session-knowledge-${index}\uE001`;
     while (source.includes(token)) token += "x";
     replacement.token = token;
     masked = `${masked.slice(0, replacement.start)}${token}${masked.slice(replacement.end)}`;

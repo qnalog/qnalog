@@ -12,7 +12,7 @@ import {
 import { NS_FM } from "../src/shared/namespace";
 import { attachTextTranscript, getCurrentTranscript, getTranscriptSourceRevision } from "../src/transcript/session-transcript";
 import { serializeTranscriptBlock } from "../src/transcript/transcript-markdown";
-import { serializeSessionKnowledge, type SessionKnowledge } from "../src/briefing/session-knowledge";
+import { readSelectedSessionKnowledge, serializeSessionKnowledge, type SessionKnowledge } from "../src/briefing/session-knowledge";
 
 // 语言是模块级全局状态：每个用例从英文默认开始，需要锁中文标签的用例显式切 zh。
 afterEach(() => setActiveUiLanguage(resolveUiLanguage("en", "en")));
@@ -422,6 +422,29 @@ describe("QnALog note index", () => {
     expect(readNoteIndex(markdown, { includeFuture: true })).toEqual({ status: "future-schema", schemaVersion: 3 });
     expect(buildNoteIndex(markdown)).toBeNull();
     expect(upsertNoteIndex(markdown, current)).toBe(markdown);
+  });
+
+  it.each([2, 3])("preserves knowledge beside an active index with schema %s", (schemaVersion) => {
+    const current = buildNoteIndex(minutes)!;
+    const knowledge: SessionKnowledge = {
+      schemaVersion: 2, id: "knowledge:shared-wrapper", sourceRevision: "fixture-revision",
+      sources: [], status: "unavailable", issues: [], topics: [], decisions: [],
+      actions: [], questions: [], projections: [],
+    };
+    const block = serializeNoteIndex(current)
+      .replace(/("schemaVersion"\s*:\s*)2/, (_match, prefix: string) => `${prefix}${schemaVersion}`)
+      .replace("</details>", `${serializeSessionKnowledge(knowledge)}\n</details>`);
+    const markdown = `<!-- qnalog-active-version-start -->\n## Active body\n${block}\n<!-- qnalog-active-version-end -->`;
+    const result = upsertNoteIndex(markdown, current);
+    expect(readSelectedSessionKnowledge(result)?.id).toBe(knowledge.id);
+    expect(result.match(/<!-- qnalog-note-index -->/g)).toHaveLength(1);
+    if (schemaVersion === 3) {
+      expect(result).toBe(markdown);
+      expect(readNoteIndex(result, { includeFuture: true })).toEqual({ status: "future-schema", schemaVersion: 3 });
+    } else {
+      expect(readNoteIndex(result)?.sourceRevision).toBe(current.sourceRevision);
+      expect(upsertNoteIndex(result, current)).toBe(result);
+    }
   });
 
   it("treats an empty complete active block as selected and prefers the first complete block", () => {
