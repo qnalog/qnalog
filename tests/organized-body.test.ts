@@ -43,4 +43,34 @@ describe("hasOrganizedBody", () => {
   it("is true when the organized body sits before the raw section without a heading", () => {
     expect(hasOrganizedBody(`# T\n\n正文段落。\n\n---\n\n${RAW}`)).toBe(true);
   });
+
+  it("is false for a Chinese audio import draft whose import info callout has several lines", () => {
+    const draft = `# 2026-10-20 23:49 · 工作纪要（导入处理中…）\n\n> [!info] 导入信息\n> 文件数：1 · 模式：工作纪要 · 转写：整文件\n> 模型：stub-model → qwen3.8-max-0902\n\n---\n\n${RAW}`;
+    expect(hasOrganizedBody(draft)).toBe(false);
+  });
+
+  it("is false for an English audio import draft whose import info callout has several lines", () => {
+    const draft = `# 2026-10-20 23:49 · Minutes (importing…)\n\n> [!info] Import info\n> Files: 1 · Mode: Minutes · Transcription: Whole file\n> Model: stub-model → qwen3.8-max-0902\n\n---\n\n${RAW}`;
+    expect(hasOrganizedBody(draft)).toBe(false);
+  });
+
+  it("is false for a text import draft whose text import info callout has several lines", () => {
+    const draft = `# 2026-10-20 23:49 · 工作纪要（文本导入处理中…）\n\n> [!info] 文本导入信息\n> 来源文件：2 · 模式：工作纪要 · 模型：stub-model\n\n---\n\n${RAW}`;
+    expect(hasOrganizedBody(draft)).toBe(false);
+  });
+
+  it("is true when an import draft also holds a real organized section with bullets", () => {
+    const note = `# T\n\n> [!info] 导入信息\n> 文件数：1 · 模式：工作纪要 · 转写：整文件\n> 模型：stub-model → qwen3.8-max-0902\n\n## ✨ 整合版（工作纪要）\n\n## 结论\n\n- 确认了下一步计划\n- 下周复盘\n\n---\n\n${RAW}`;
+    expect(hasOrganizedBody(note)).toBe(true);
+  });
+
+  it("is true when plain text follows the import info callout directly after its block", () => {
+    const note = `# T\n\n> [!info] 导入信息\n> 文件数：1\n\n正文段落。\n\n---\n\n${RAW}`;
+    expect(hasOrganizedBody(note)).toBe(true);
+  });
+
+  it("is true when a different callout carries content, since only import info callouts are ignored", () => {
+    const note = `# T\n\n> [!tip] 模式建议\n> 先确认预算再排期。\n\n---\n\n${RAW}`;
+    expect(hasOrganizedBody(note)).toBe(true);
+  });
 });

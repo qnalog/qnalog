@@ -13,6 +13,12 @@ import { NS_FM } from "../shared/namespace";
 import { normalizeSessionKnowledgeMarkers } from "../briefing/session-knowledge";
 import type { ErrataRules } from "../errata/errata-apply";
 import { buildAbsentSessionFrontmatter, readSessionFieldsFromNote, type SessionModeOption } from "./first-organizing-session";
+import { labelPattern } from "../shared/note-labels";
+
+// 导入草稿标题末尾的「导入处理中」后缀，整理完成后应去掉（与正常导入的标题一致）。
+const DRAFT_IMPORT_TITLE_SUFFIX_RE = new RegExp(
+  `\\s*(?:${labelPattern("importing").source}|${labelPattern("textImporting").source})\\s*$`,
+);
 
 /**
  * `firstOrganizing`：笔记首次整理（转写补齐后的自动整理）。为 true 时补齐会话 frontmatter 并按标题改名，
@@ -137,7 +143,7 @@ export function buildReorganizedNote(
   const current = splitLeadingFrontmatter(snapshot);
   const generatedParts = splitLeadingFrontmatter(stripModeSuggestions(generated || buildEmptyLlmOutputFallback()).trim());
   const boundary = findOriginalMaterialBoundary(current.body);
-  const retainedTitle = current.body.match(/^\s*(#\s+[^\r\n]+)(?:\r?\n|$)/)?.[1] || "";
+  const retainedTitle = (current.body.match(/^\s*(#\s+[^\r\n]+)(?:\r?\n|$)/)?.[1] || "").replace(DRAFT_IMPORT_TITLE_SUFFIX_RE, "");
   const rewrittenBody = [retainedTitle, generatedParts.body.trim() || buildEmptyLlmOutputFallback()]
     .filter(Boolean).join("\n\n");
   const frontmatter = mergeFrontmatter(current.frontmatter, generatedParts.frontmatter, leadingFrontmatter);

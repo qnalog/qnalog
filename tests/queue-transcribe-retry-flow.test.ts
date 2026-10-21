@@ -260,6 +260,15 @@ describe("automatic re-organization after backfilling the last failed segment", 
     expect(fixture.contents.get(fixture.file.path)).toContain("recognized words");
   });
 
+  it("re-organizes an audio import draft in place rather than creating a derived note", async () => {
+    const importDraft = `# 2026-10-20 23:49 · 工作纪要（导入处理中…）\n\n> [!info] ${labelText("importInfo")}\n> 文件数：1 · 模式：工作纪要 · 转写：整文件\n> 模型：stub-model → qwen3.8-max-0902\n\n---\n\n## 原始材料\n\n### ${placeholderFor("retry-1")}\n`;
+    const fixture = setup(importDraft);
+    await expect(fixture.service.retryTranscribeTask(fixture.task as never)).resolves.toBeUndefined();
+    await vi.waitFor(() => expect(fixture.host.repolish.reorganizeNoteInPlace).toHaveBeenCalledTimes(1));
+    expect(fixture.host.repolish.repolishMarkdownFile).not.toHaveBeenCalled();
+    expect(fixture.contents.get(fixture.file.path)).toContain("recognized words");
+  });
+
   it("keeps the derived re-organization when the original note already has an organized body", async () => {
     const fixture = setup(`## ✨ 整合版（meeting）\n\n真实整理正文。\n\n---\n\n## 原始材料\n\n### ${placeholderFor("retry-1")}\n`);
     await expect(fixture.service.retryTranscribeTask(fixture.task as never)).resolves.toBeUndefined();
