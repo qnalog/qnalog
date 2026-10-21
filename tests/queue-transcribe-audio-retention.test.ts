@@ -1,6 +1,6 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 
-const asr = vi.hoisted(() => ({ transcribe: vi.fn(), channels: vi.fn(), whole: vi.fn() }));
+const asr = vi.hoisted(() => ({ transcribe: vi.fn(), channels: vi.fn(), whole: vi.fn(), decode: vi.fn(), slice: vi.fn() }));
 vi.mock("obsidian", () => ({
   TFile: class TFile {}, TFolder: class TFolder {}, Notice: class Notice {},
   normalizePath: (path: string) => String(path || "").replace(/\\/g, "/"),
@@ -9,8 +9,8 @@ vi.mock("obsidian", () => ({
 vi.mock("../src/asr/transcribe", async (importOriginal) => ({
   ...(await importOriginal<typeof import("../src/asr/transcribe")>()),
   transcribeAudio: asr.transcribe,
-  decodeAudioBlob: vi.fn(async () => ({} as AudioBuffer)),
-  renderAudioBufferSliceToWav: vi.fn(async () => new Blob([new Uint8Array([1, 2, 3])], { type: "audio/wav" })),
+  decodeAudioBlob: asr.decode,
+  renderAudioBufferSliceToWav: asr.slice,
 }));
 vi.mock("../src/asr/channel-transcription", async (importOriginal) => ({ ...(await importOriginal<typeof import("../src/asr/channel-transcription")>()), transcribeAudioByChannels: asr.channels }));
 vi.mock("../src/asr/long-audio-transcription", async (importOriginal) => ({ ...(await importOriginal<typeof import("../src/asr/long-audio-transcription")>()), transcribeImportedAudio: asr.whole }));
@@ -34,12 +34,12 @@ const cacheFile = (path = CACHE_PATH) => {
   return Object.assign(new obsidian.TFile(), { path, name, basename: name.replace(/\.[^.]+$/, ""), extension: name.split(".").pop() || "wav" });
 };
 
-function makeRetentionScenario(route: "adapter" | "indexed", markdown: string, options: { cachePath?: string; segmentCacheFolder?: string; masterAudioPath?: string; masterAudioName?: string; masterExists?: boolean; masterReadFails?: boolean; masterZeroBytes?: boolean; raceCommit?: boolean; keepSegmentAudioFiles?: boolean } = {}) {
+function makeRetentionScenario(route: "adapter" | "indexed", markdown: string, options: { cachePath?: string; segmentCacheFolder?: string; masterAudioPath?: string; masterAudioName?: string; masterExists?: boolean; masterReadFails?: boolean; masterZeroBytes?: boolean; cacheZeroBytes?: boolean; raceCommit?: boolean; keepSegmentAudioFiles?: boolean } = {}) {
   const cachePath = options.cachePath || CACHE_PATH;
   const note = noteFile();
   const cache = cacheFile(cachePath);
   const files = new Map([[note.path, note], ...(route === "indexed" ? [[cachePath, cache] as const] : [])]);
-  const bytes = new Map([[cachePath, AUDIO_BYTES.slice()]]);
+  const bytes = new Map([[cachePath, options.cacheZeroBytes ? new Uint8Array() : AUDIO_BYTES.slice()]]);
   if (options.masterAudioPath && options.masterExists !== false) {
     const masterName = options.masterAudioPath.split("/").pop() || "recording.wav";
     files.set(options.masterAudioPath, Object.assign(new obsidian.TFile(), { path: options.masterAudioPath, name: masterName, basename: masterName.replace(/\.[^.]+$/, ""), extension: "wav" }));
@@ -72,6 +72,8 @@ function makeRetentionScenario(route: "adapter" | "indexed", markdown: string, o
     },
   };
   const settings = { ...DEFAULT_SETTINGS, segmentCacheFolder: options.segmentCacheFolder || "QnALog/.cache/segments", keepSegmentAudioFiles: options.keepSegmentAudioFiles === true, audioFolder: "QnALog/Audio", audioChannelMode: "mono" };
+  asr.decode.mockReset().mockResolvedValue({} as AudioBuffer);
+  asr.slice.mockReset().mockResolvedValue(new Blob([new Uint8Array([1, 2, 3])], { type: "audio/wav" }));
   const pipeline = new LiveAsrPipelineService({
     getSettings: () => settings, vault,
     fileManager: { trashFile: vi.fn(async (file: { path: string }) => { bytes.delete(file.path); }) },
@@ -162,6 +164,10 @@ describe.each(["adapter", "indexed"] as const)("ordinary segment retry retains c
       audioStartOffsetMs: 60000,
       audioEndOffsetMs: 65000,
     });
+    asr.transcribe.mockResolvedValueOnce({
+      text: "recognized words", rawText: "recognized words", providerId: "mock",
+      units: [{ rawText: "recognized", normalizedText: "recognized", speakerId: null, speakerName: null, startMs: 1000, endMs: 2000, timing: "provider" }],
+    });
     const queued = await fixture.queue.add(fixture.task);
     await fixture.queue.processOne(queued);
 
@@ -171,6 +177,76 @@ describe.each(["adapter", "indexed"] as const)("ordinary segment retry retains c
     expect(fixture.contents()).not.toContain("stale-master.wav");
     expect(block?.heading).toContain(recoveredAudioLink);
     expect(block?.segment).toMatchObject({ audioPath: sourcePath, segmentAudioPath: "", audioStartOffsetMs: 60000 });
+  });
+
+  it("retries an indexed or adapter zero-byte segment from the master and stores master audio references", async () => {
+    const masterPath = "QnALog/Audio/qnalog-20261020-010101.m4a";
+    const fixture = makeRetentionScenario(route, "Original note.", {
+      masterAudioPath: masterPath, cacheZeroBytes: true,
+    });
+    Object.assign(fixture.task, {
+      audioName: "qnalog-20261020-010101-seg1.wav",
+      sourceAudioPath: masterPath,
+      masterAudioPath: masterPath,
+      startOffsetMs: 60000,
+      endOffsetMs: 65000,
+      audioStartOffsetMs: 60000,
+      audioEndOffsetMs: 65000,
+    });
+    asr.transcribe.mockResolvedValueOnce({
+      text: "recognized words", rawText: "recognized words", providerId: "mock",
+      units: [{ rawText: "recognized", normalizedText: "recognized", speakerId: null, speakerName: null, startMs: 1000, endMs: 2000, timing: "provider" }],
+    });
+    const queued = await fixture.queue.add(fixture.task);
+    await fixture.queue.processOne(queued);
+
+    expect(asr.transcribe).toHaveBeenCalled();
+    expect(asr.transcribe.mock.calls.at(-1)?.[1].size).toBeGreaterThan(0);
+    const block = readTranscriptBlocks(fixture.contents()).find(item => item.segment.text === "recognized words");
+    const recoveredAudioLink = `<a class="internal-link qnalog-time-link" data-href="${masterPath}" href="${masterPath}">01:00</a>`;
+    expect(fixture.contents()).toContain(recoveredAudioLink);
+    expect(block?.segment).toMatchObject({ audioPath: masterPath, segmentAudioPath: "", audioStartOffsetMs: 60000 });
+    expect(block?.segment.transcript?.revisions.at(-1)?.utterances[0]?.audioRef).toMatchObject({ path: masterPath, startMs: 61000 });
+    expect(fixture.bytes.get(CACHE_PATH)).toEqual(new Uint8Array());
+    expect(fixture.bytes.get(masterPath)).toEqual(new Uint8Array([1, 2, 3]));
+  });
+
+  it("keeps a failed retry and both audio files when the only master is empty", async () => {
+    const masterPath = "QnALog/Audio/qnalog-20261020-010101.m4a";
+    const fixture = makeRetentionScenario(route, "Original note.", {
+      masterAudioPath: masterPath, masterZeroBytes: true, cacheZeroBytes: true,
+    });
+    Object.assign(fixture.task, {
+      audioName: "qnalog-20261020-010101-seg1.wav",
+      sourceAudioPath: masterPath,
+      masterAudioPath: masterPath,
+    });
+    const queued = await fixture.queue.add(fixture.task);
+    await expect(fixture.queue.processOne(queued)).rejects.toThrow("Audio missing:");
+
+    expect(asr.transcribe).not.toHaveBeenCalled();
+    expect(fixture.queue.snapshot()).toContainEqual(expect.objectContaining({ id: queued.id, lastError: expect.any(String) }));
+    expect(fixture.contents()).toBe("Original note.");
+    expect(fixture.bytes.get(CACHE_PATH)).toEqual(new Uint8Array());
+    expect(fixture.bytes.get(masterPath)).toEqual(new Uint8Array());
+    expect(fixture.vault.adapter.remove).not.toHaveBeenCalled();
+  });
+
+  it("keeps a failed retry and both audio files when re-slicing the master returns empty audio", async () => {
+    const masterPath = "QnALog/Audio/qnalog-20261020-010101.m4a";
+    const fixture = makeRetentionScenario(route, "Original note.", { masterAudioPath: masterPath, cacheZeroBytes: true });
+    Object.assign(fixture.task, {
+      audioName: "qnalog-20261020-010101-seg1.wav", sourceAudioPath: masterPath, masterAudioPath: masterPath,
+    });
+    asr.slice.mockResolvedValueOnce(new Blob([]));
+    const queued = await fixture.queue.add(fixture.task);
+    await expect(fixture.queue.processOne(queued)).rejects.toThrow("Audio missing:");
+
+    expect(asr.transcribe).not.toHaveBeenCalled();
+    expect(fixture.queue.snapshot()).toContainEqual(expect.objectContaining({ id: queued.id, lastError: expect.any(String) }));
+    expect(fixture.bytes.get(CACHE_PATH)).toEqual(new Uint8Array());
+    expect(fixture.bytes.get(masterPath)).toEqual(new Uint8Array([1, 2, 3]));
+    expect(fixture.vault.adapter.remove).not.toHaveBeenCalled();
   });
 
   it("encodes special characters in a full cache path while retaining the exact audio reference", async () => {

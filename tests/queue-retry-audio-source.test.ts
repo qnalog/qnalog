@@ -163,6 +163,9 @@ describe("queue retry audio source", () => {
     const clip = add("Audio/clip.wav", "wav");
     const direct = await readTaskAudioBlob(port, { type: "transcribe", audioPath: clip.path, audioName: clip.name } as never);
     expect(direct).toMatchObject({ sourcePath: clip.path, recovered: false });
+    expect(audioMocks.decode).not.toHaveBeenCalled();
+    expect(audioMocks.mono).not.toHaveBeenCalled();
+    expect(audioMocks.multichannel).not.toHaveBeenCalled();
     expect(diagnostics.logDiagnostic).not.toHaveBeenCalled();
 
     add("Audio/qnalog-20261001-123456.m4a", "m4a");
@@ -179,6 +182,65 @@ describe("queue retry audio source", () => {
     const emptyVault = { ...vault, getAbstractFileByPath: () => null, getFiles: () => [] } as unknown as TranscribeAudioVault;
     replaceVault(emptyVault);
     await expect(readTaskAudioBlob(port, { type: "transcribe", audioPath: "missing.wav", audioName: "missing.wav" } as never)).rejects.toThrow("Audio missing: missing.wav");
+  });
+
+  it("recovers an empty indexed retry clip from the full recording and keeps the requested offset", async () => {
+    const { port, vault, add, diagnostics } = setup();
+    const emptySegment = add("Audio/qnalog-20261001-123456-seg1.wav", "wav");
+    const master = add("Audio/qnalog-20261001-123456.m4a", "m4a");
+    vault.readBinary.mockImplementation(async (file: TestAudioFile) => new ArrayBuffer(file === emptySegment ? 0 : 16));
+    const task = {
+      type: "transcribe", audioPath: emptySegment.path, audioName: emptySegment.name,
+      startOffsetMs: 30000, endOffsetMs: 65000, audioStartOffsetMs: 30000, audioEndOffsetMs: 65000,
+      sourceAudioPath: master.path, source: "",
+    };
+
+    const audio = await readTaskAudioBlob(port, task as never);
+
+    expect(audio.blob.size).toBeGreaterThan(0);
+    expect(audio).toMatchObject({ sourcePath: master.path, sourceName: master.name, recovered: true });
+    expect(audioMocks.mono).toHaveBeenCalledWith(expect.anything(), 30000, 65000);
+    expect(diagnostics.logDiagnostic).toHaveBeenCalledWith(
+      "warn", "queue.transcribe_audio_recovered",
+      t("Transcription retry recovered a temporary clip from the full recording"),
+      expect.objectContaining({ audioName: emptySegment.name, sourceAudioName: master.name }),
+    );
+  });
+
+  it("treats an empty adapter-only segment as unavailable and recovers its master recording", async () => {
+    const { port, vault, add } = setup();
+    const master = add("Audio/qnalog-20261001-123456.m4a", "m4a");
+    vault.adapter.exists.mockResolvedValue(true);
+    vault.adapter.readBinary.mockImplementation(async (path: string) => path === ".cache/qnalog-20261001-123456-seg1.wav" ? new ArrayBuffer(0) : new ArrayBuffer(16));
+    const audio = await readTaskAudioBlob(port, {
+      type: "transcribe", audioPath: ".cache/qnalog-20261001-123456-seg1.wav", audioName: "qnalog-20261001-123456-seg1.wav",
+      startOffsetMs: 0, endOffsetMs: 1000, sourceAudioPath: master.path, source: "",
+    } as never);
+
+    expect(audio.blob.size).toBeGreaterThan(0);
+    expect(audio).toMatchObject({ sourcePath: master.path, recovered: true });
+    expect(vault.adapter.exists).toHaveBeenCalledWith(".cache/qnalog-20261001-123456-seg1.wav");
+    expect(vault.adapter.readBinary).toHaveBeenCalledWith(".cache/qnalog-20261001-123456-seg1.wav");
+  });
+
+  it("refuses empty direct and re-sliced audio while preserving both recordings", async () => {
+    const { port, vault, add, files } = setup();
+    const emptySegment = add("Audio/qnalog-20261001-123456-seg1.wav", "wav");
+    const master = add("Audio/qnalog-20261001-123456.m4a", "m4a");
+    vault.readBinary.mockResolvedValue(new ArrayBuffer(0));
+    await expect(readTaskAudioBlob(port, {
+      type: "transcribe", audioPath: emptySegment.path, audioName: emptySegment.name,
+      startOffsetMs: 0, endOffsetMs: 1000, sourceAudioPath: master.path, source: "",
+    } as never)).rejects.toThrow("Audio missing: Audio/qnalog-20261001-123456-seg1.wav");
+    expect([...files.values()]).toEqual([emptySegment, master]);
+
+    vault.readBinary.mockImplementation(async (file: TestAudioFile) => new ArrayBuffer(file === emptySegment ? 0 : 16));
+    audioMocks.mono.mockResolvedValueOnce(new Blob([]));
+    await expect(readTaskAudioBlob(port, {
+      type: "transcribe", audioPath: emptySegment.path, audioName: emptySegment.name,
+      startOffsetMs: 0, endOffsetMs: 1000, sourceAudioPath: master.path, source: "",
+    } as never)).rejects.toThrow("Audio missing: Audio/qnalog-20261001-123456-seg1.wav");
+    expect([...files.values()]).toEqual([emptySegment, master]);
   });
 
   it("reads the current vault and settings on each call through the port and retained service entry", async () => {
