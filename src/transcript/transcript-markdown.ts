@@ -3,6 +3,7 @@ import type { Segment } from "../shared/types";
 import type { TranscriptSegmentRecord } from "./session-transcript";
 import { labelPattern, labelText } from "../shared/note-labels";
 import { formatElapsed } from "../shared/util-common";
+import { protectActiveSessionKnowledge } from "../notes/note-document";
 
 export interface ReadTranscriptBlock {
   segment: Segment;
@@ -256,7 +257,8 @@ function normalizeRealtimeOutlineDetails(markdown: string): string {
 }
 
 function normalizeIndexDataDetails(markdown: string): string {
-  const source = String(markdown || "");
+  const protectedActive = protectActiveSessionKnowledge(String(markdown || ""));
+  const source = protectedActive.markdown;
   const indexDetails = /<details>\s*<summary>[^<]*(?:索引数据|Index data|会话数据|QnALog session data)[^<]*<\/summary>([\s\S]*?)<\/details>/gi;
   const detailsMatches = [...source.matchAll(indexDetails)];
   const startMarker = new RegExp(`<!--\\s*${nsRe("note-index")}\\s*-->`, "i").exec(source);
@@ -274,7 +276,7 @@ function normalizeIndexDataDetails(markdown: string): string {
     ? markerBody.replace(new RegExp(`<!--\\s*(?:${nsRe("session-knowledge")}\\s+[\\s\\S]*?|${nsRe("session")}(?::|\\s)[^>]*|${nsRe("continuation-committed")}:[^>]*)-->`, "gi"), "").trim()
     : "";
   const indexBody = detailsBodies.find(Boolean) || markerPayload;
-  if (!detailsMatches.length && !startMarker && !endMarker) return source;
+  if (!detailsMatches.length && !startMarker && !endMarker) return protectedActive.restore(source);
   const machineCommentPattern = new RegExp(
     `<!--\\s*(?:${nsRe("note-index")}\\s*|${nsRe("note-index-end")}\\s*|${nsRe("session-knowledge")}\\s+[\\s\\S]*?|${nsRe("session")}(?::|\\s)[^>]*|${nsRe("continuation-committed")}:[^>]*)-->`,
     "gi",
@@ -282,12 +284,14 @@ function normalizeIndexDataDetails(markdown: string): string {
   const comments = [...source.matchAll(machineCommentPattern)].map(([comment]) => comment);
   const commentSet = [...new Set(comments)];
   const hasIndexDetails = detailsMatches.length > 0;
-  if (!hasIndexDetails && !commentSet.length) return source;
+  if (!hasIndexDetails && !commentSet.length) return protectedActive.restore(source);
 
   let text = source;
   text = text.replace(indexDetails, "");
   text = text.replace(machineCommentPattern, "");
-  if (!indexBody && !commentSet.length) return text.replace(/\n{3,}/g, "\n\n").trimEnd();
+  if (!indexBody && !commentSet.length) {
+    return protectedActive.restore(text.replace(/\n{3,}/g, "\n\n").trimEnd());
+  }
 
   const bodyLines = indexBody.split(/\r?\n/).filter((line) => line.trim());
   const noteIndexStart = new RegExp(`<!--\\s*${nsRe("note-index")}\\s*-->`, "i");
@@ -298,7 +302,9 @@ function normalizeIndexDataDetails(markdown: string): string {
   outputLines.push(...commentSet.filter((comment) => !new RegExp(`<!--\\s*${nsRe("note-index")}(?:-end)?\\s*-->`, "i").test(comment)));
   const rawHeading = /^##\s+(?:原始材料|Original material)\s*$/m;
   if (!rawHeading.test(text)) text = `${text.trimEnd()}\n\n---\n\n## ${labelText("originalMaterial")}`;
-  return `${text.replace(/\s+$/, "")}\n\n<details>\n<summary>${labelText("indexData")}</summary>\n${outputLines.join("\n")}\n</details>\n`;
+  return protectedActive.restore(
+    `${text.replace(/\s+$/, "")}\n\n<details>\n<summary>${labelText("indexData")}</summary>\n${outputLines.join("\n")}\n</details>\n`,
+  );
 }
 
 function placeLooseSegmentsMarkersInDetails(markdown: string): string {

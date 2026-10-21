@@ -195,6 +195,53 @@ export function findActiveVersionBlock(markdown: string): ActiveVersionBlockRang
   };
 }
 
+export interface ActiveSessionKnowledgeProtection {
+  markdown: string;
+  restore(markdown: string): string;
+}
+
+/** Temporarily mask active-version session knowledge so machine-data folding keeps its owner. */
+export function protectActiveSessionKnowledge(markdown: string): ActiveSessionKnowledgeProtection {
+  const source = String(markdown || "");
+  const active = findActiveVersionBlock(source);
+  if (!active) return { markdown: source, restore: (value) => value };
+
+  const knowledgePattern = new RegExp(`<!--\\s*${nsRe("session-knowledge")}\\s+[\\s\\S]*?-->`, "gi");
+  const protectedRanges = new Map<string, { start: number; end: number; original: string; token: string }>();
+  for (const match of active.body.matchAll(knowledgePattern)) {
+    const commentStart = active.bodyStart + (match.index || 0);
+    const commentEnd = commentStart + match[0].length;
+    const wrapper = [...iterateNoteDetailsBlocks(source)].find((details) =>
+      details.start >= active.bodyStart
+      && details.end <= active.bodyEnd
+      && commentStart >= details.bodyStart
+      && commentEnd <= details.bodyEnd
+      && /^(?:索引数据|Index data)$/i.test(source.slice(details.summaryStart, details.summaryEnd).trim()),
+    );
+    const start = wrapper?.start ?? commentStart;
+    const end = wrapper?.end ?? commentEnd;
+    protectedRanges.set(`${start}:${end}`, { start, end, original: source.slice(start, end), token: "" });
+  }
+  if (!protectedRanges.size) return { markdown: source, restore: (value) => value };
+
+  const replacements = [...protectedRanges.values()].sort((left, right) => left.start - right.start);
+  let masked = source;
+  for (let index = replacements.length - 1; index >= 0; index--) {
+    const replacement = replacements[index];
+    let token = `\uE000qnalog-active-session-knowledge-${index}\uE001`;
+    while (source.includes(token)) token += "x";
+    replacement.token = token;
+    masked = `${masked.slice(0, replacement.start)}${token}${masked.slice(replacement.end)}`;
+  }
+  return {
+    markdown: masked,
+    restore: (value) => replacements.reduce(
+      (current, replacement) => current.replace(replacement.token, () => replacement.original),
+      value,
+    ),
+  };
+}
+
 export function stripUtilityDetailsBlocks(markdown: string): string {
   return String(markdown || "").replace(UTILITY_DETAILS_BLOCK_RE, "\n");
 }
