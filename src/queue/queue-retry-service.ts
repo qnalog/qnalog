@@ -47,6 +47,7 @@ import {
 } from "./transcribe-audio-source";
 import { migrateQueueTasksAfterRename as migrateQueueTasksAfterRenameFlow, removeQueueTasksForDeletedMarkdown as removeQueueTasksForDeletedMarkdownFlow, type QueueTaskPathPort } from "./queue-task-paths";
 import { QueueRetryControl } from "./queue-retry-control";
+import { NoteMarkdownConflictError } from "../notes/note-write-conflict";
 import { runAppendTask as runAppendTaskFlow, type AppendTask, type QueueAppendTaskPort } from "./queue-append-task-flow";
 import { retryTranscribeTask as retryTranscribeTaskFlow, type QueueTranscribeRetryPort } from "./queue-transcribe-retry-flow";
 import { retryMergeTask as retryMergeTaskFlow, type QueueMergeRetryPort } from "./queue-merge-retry-flow";
@@ -266,7 +267,12 @@ export class QueueRetryService {
     };
   }
   retryMergeTask(task) {
-    return retryMergeTaskFlow(this.mergeRetryPort(), task);
+    return retryMergeTaskFlow(this.mergeRetryPort(), task).catch((error) => {
+      if (error instanceof NoteMarkdownConflictError) {
+        return { deferred: true, status: "blocked", reason: error.message, manualRetryRequired: true } as const;
+      }
+      throw error;
+    });
   }
   runGeneratePromptTask(task) {
     return runGeneratePromptTaskFlow(this.promptTaskPort(), task);

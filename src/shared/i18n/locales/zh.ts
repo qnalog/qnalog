@@ -2318,6 +2318,8 @@ export const ZH: MessageTable = {
   "recording note completed": "录音笔记整理完成",
   "AI organizing failed: {0}": "AI 整理失败：{0}",
   "The note body has been generated but writing failed; queued for retry.": "笔记正文已生成，写入失败，已加入重试队列",
+  "The note changed while organizing. Your edit was kept; review the note, then retry this task individually from the queue.": "整理期间笔记内容发生变化，您的编辑已保留。请检查笔记后，在队列中单独重试此任务。",
+  "Review the note before retrying": "请检查笔记后再重试",
   "{0}, queued for precise retry": "{0}，已加入精确重试",
   "AI organizing did not finish; queued for retry.": "AI 整理未完成，已加入重试队列",
   "Append session completed: {0} segments this time, {1} segments after merging (the previous draft was saved to the version cache).": "续录完成：本次 {0} 段，合并后共 {1} 段（旧稿已存入版本缓存）",

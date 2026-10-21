@@ -102,7 +102,7 @@ export class QueueRetryControl {
         : t("Queue is empty"));
       return;
     }
-    const blockedMergeTasks = queue.tasks.filter((task) => task && task.type === "merge" && task.status === "blocked");
+    const blockedMergeTasks = queue.tasks.filter((task) => task && task.type === "merge" && task.status === "blocked" && !task.manualRetryRequired);
     if (blockedMergeTasks.length) {
       const llmIssue = this.port.getLlmConfigIssue();
       if (llmIssue) {
@@ -123,6 +123,7 @@ export class QueueRetryControl {
     const maxRetries = this.port.getMaxRetries() || 3;
     const runnable = queue.tasks.filter((task) => task
       && task.status !== "blocked" && task.status !== "missing" && task.status !== "running" && task.status !== LIVE_ASR_TASK_STATUS
+      && !(task.type === "merge" && task.manualRetryRequired)
       && ((Number(task.retries) || 0) < maxRetries || (task.type === "transcribe" && isAsrTransportError(task.lastError || ""))));
     if (!runnable.length) {
       const missingCount = queue.tasks.filter((task) => task && task.status === "missing").length;

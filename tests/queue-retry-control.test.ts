@@ -16,7 +16,7 @@ import { formatLlmConfigIssue } from "../src/llm/failure-presentation";
 
 interface TestTask {
   type?: string; status?: string; retries?: number; lastError?: unknown; mdPath?: string;
-  nextRetryAt?: number; updatedAt?: string; id?: string;
+  nextRetryAt?: number; updatedAt?: string; id?: string; manualRetryRequired?: boolean;
 }
 function fixture() {
   const queue = {
@@ -145,6 +145,17 @@ describe("QueueRetryService retry all", () => {
     await f.service.retryQueue();
     expect(task).toMatchObject({ status: "pending", lastError: "" }); expect(task.updatedAt).not.toBe("old");
     expect(f.saveAll).toHaveBeenCalledOnce(); expect(notices[0].message).toBe(t("Restored {0} paused organizing tasks; retrying the LLM service").replace("{0}", "1"));
+  });
+
+  it("does not unblock or retry a manual-only conflict task in Retry all", async () => {
+    const f = fixture();
+    const task: TestTask = { type: "merge", status: "blocked", manualRetryRequired: true, lastError: "note changed" };
+    f.queue.tasks.push(task);
+    await f.service.retryQueue();
+    expect(task.status).toBe("blocked");
+    expect(f.saveAll).not.toHaveBeenCalled();
+    expect(f.queue.processAll).not.toHaveBeenCalled();
+    expect(notices.at(-1)?.message).toBe(t("No tasks can be retried automatically"));
   });
 
   it("filters non-runnable tasks, preserves transport failures beyond max retries, and clears only runnable ASR deadlines", async () => {

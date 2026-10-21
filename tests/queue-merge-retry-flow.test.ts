@@ -66,7 +66,7 @@ function setup(options: { text?: string; layout?: boolean; task?: Record<string,
     }) },
     noteWriter: {
       rewriteConsolidated: rewritten,
-      rewriteConsolidatedIfUnchanged: (session: unknown, polished: string) => rewritten(session, polished),
+      rewriteConsolidatedIfUnchanged: (session: unknown, polished: string, expectedMarkdown: string) => rewritten(session, polished, expectedMarkdown),
       renameMarkdownWithGeneratedTitle: renamed,
     },
     noteIndex: { refreshNoteIndexSafely: refresh },
@@ -161,11 +161,23 @@ describe("merge queue retry consumer contract", () => {
     } as never);
     host.noteWriter = noteWriter as never;
 
-    await expect(service.retryMergeTask(task as never)).rejects.toThrow(
-      "The note changed while the merge was running. The generated result was not written; review the note and retry.",
-    );
+    await expect(service.retryMergeTask(task as never)).resolves.toMatchObject({ deferred: true, status: "blocked", manualRetryRequired: true });
     expect(contents.get(String(note.path))).toBe(userEdit);
     expect(clearCheckpointMock).not.toHaveBeenCalled();
+  });
+
+  it("starts a fresh organization after a manual conflict retry and compares against the reviewed note", async () => {
+    const reviewedMarkdown = "Original note.\n\nReviewed edit.";
+    const { service, task, host, contents, note, rewritten } = setup({
+      layout: true, text: reviewedMarkdown, task: { manualRetryRequired: true, sessionMeta: { _briefingCheckpointId: "old-checkpoint" } },
+    });
+
+    await service.retryMergeTask(task as never);
+
+    const sessionMeta = mergeAndPolishMock.mock.calls[0]?.[3] as Record<string, unknown>;
+    expect(sessionMeta).toMatchObject({ _freshBriefing: true });
+    expect(rewritten).toHaveBeenCalledWith(expect.anything(), expect.any(String), reviewedMarkdown);
+    expect(contents.get(String(note.path))).toBe(reviewedMarkdown);
   });
 
   it("saves a hidden pre-polish snapshot of the note before the consolidated rewrite", async () => {
@@ -200,7 +212,7 @@ describe("merge queue retry consumer contract", () => {
       noteIndex: host.noteIndex,
     } as never) as never;
 
-    await expect(service.retryMergeTask(task as never)).rejects.toThrow("The note changed while the merge was running");
+    await expect(service.retryMergeTask(task as never)).resolves.toMatchObject({ deferred: true, status: "blocked", manualRetryRequired: true });
     expect(saveVersion).toHaveBeenCalledWith(note, original, [], expect.objectContaining({ kind: "pre-polish", body: original }));
     expect(contents.get(String(note.path))).toBe(userEdit);
   });

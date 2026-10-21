@@ -15,6 +15,7 @@ import { getSegmentsForFinalSession } from "./session-finalize-sources";
 import { classifyBlankRecording } from "../audio/blank-recording-policy";
 import { isEssentiallySilentSession } from "../audio/session-silence";
 import { getSegmentsDurationMs } from "./audio-refs";
+import { NoteMarkdownConflictError } from "./note-write-conflict";
 export type FinalizeProgress = Omit<SessionWorkProgress, "percent"> & { percent?: number | null };
 
 export interface SessionShortRecordingPort {
@@ -111,7 +112,7 @@ export interface SessionFinalizeRunPort extends SessionShortRecordingPort {
   cleanupSuccessfulSegmentAudio(session: RecordingSession): Promise<unknown>;
   removeEmptySessionBlock(session: RecordingSession): Promise<unknown>;
   appendPolishBlock(session: RecordingSession, polished: string, error: unknown, nonRetryable: boolean): Promise<unknown>;
-  rewriteConsolidated(session: RecordingSession, polished: string): Promise<unknown>;
+  rewriteConsolidated(session: RecordingSession, polished: string, expectedMarkdown: string): Promise<unknown>;
   renameWithGeneratedTitle(path: string, polished: string, mode: string): Promise<unknown>;
   refreshNoteIndex(path: string, options: { meetingDate: string; reason: string }): Promise<unknown>;
   autoExtractSediment(path: string): unknown;
@@ -251,6 +252,7 @@ export async function runSessionFinalization(port: SessionFinalizeRunPort, sessi
   let commitError = false;
   let taskMeter: unknown = null;
   let finalSessionMeta: SessionMetaForMerge | null = null;
+  let initialMarkdown = "";
   try {
     const llmConfigIssue = port.getLlmConfigIssue();
     if (llmConfigIssue) {
@@ -276,7 +278,8 @@ export async function runSessionFinalization(port: SessionFinalizeRunPort, sessi
       _utteranceProjections: speakerPreparation.utteranceProjections || [],
     };
     const noteFile = port.getVault().getAbstractFileByPath(session.mdPath);
-    if (noteFile instanceof obsidian.TFile) sessionMeta._previousKnowledge = readSessionKnowledge(await port.getVault().read(noteFile));
+    initialMarkdown = noteFile instanceof obsidian.TFile ? await port.getVault().read(noteFile) : "";
+    if (noteFile instanceof obsidian.TFile) sessionMeta._previousKnowledge = readSessionKnowledge(initialMarkdown);
     finalSessionMeta = sessionMeta;
     port.setProgress(session, { stage: "llm-merge", label: t("AI organizing"), percent: 62, detail: textImport ? t("Sending the imported text to the AI model for structured organizing") : t("Merging the segmented transcriptions into the final note") });
     taskMeter = port.beginTaskMeter();
@@ -361,7 +364,7 @@ export async function runSessionFinalization(port: SessionFinalizeRunPort, sessi
       }
     }
     try {
-      if (shouldRewriteConsolidatedNote(port.getSettings(), writeSession)) await port.rewriteConsolidated(writeSession, polished);
+      if (shouldRewriteConsolidatedNote(port.getSettings(), writeSession)) await port.rewriteConsolidated(writeSession, polished, initialMarkdown);
       else await port.appendPolishBlock(writeSession, polished, null, false);
     } catch (writeError) {
       commitError = true;
@@ -374,10 +377,15 @@ export async function runSessionFinalization(port: SessionFinalizeRunPort, sessi
         type: "merge", sessionId: session.id, mdPath: session.mdPath, mode: session.mode,
         segments: segmentsForLlm.map(segment => ({ ...segment })), source: session.source || "", sourceMeta: session.sourceMeta || null,
         externalAudioSource: session.externalAudioSource || null, textImportSources: session.textImportSources || [], speakerFrontmatter,
+        ...(writeError instanceof NoteMarkdownConflictError ? { status: "blocked", manualRetryRequired: true } : {}),
         sessionMeta: finalSessionMeta, lastError: t("Failed to write the notes: {0}").replace("{0}", getErrorMessage(writeError)),
       });
-      port.requestTaskQueueRetry(1500, "briefing-write-failure");
-      port.setProgress(session, { stage: "write-retrying", label: t("note write waiting to retry"), percent: null, detail: t("The AI result was saved; the model will not be called again and only the write will be retried later") });
+      if (!(writeError instanceof NoteMarkdownConflictError)) {
+        port.requestTaskQueueRetry(1500, "briefing-write-failure");
+        port.setProgress(session, { stage: "write-retrying", label: t("note write waiting to retry"), percent: null, detail: t("The AI result was saved; the model will not be called again and only the write will be retried later") });
+      } else {
+        port.setProgress(session, { stage: "write-retrying", label: t("Review the note before retrying"), percent: null, detail: writeError.message });
+      }
     }
   } else {
     await port.appendPolishBlock(writeSession, polished, mergeError, nonRetryableMergeError);
@@ -444,7 +452,9 @@ export async function runSessionFinalization(port: SessionFinalizeRunPort, sessi
   }
   new obsidian.Notice(mergeError
     ? (nonRetryableMergeError ? t("AI organizing failed: {0}").replace("{0}", formatLlmFailureIssue((mergeError as { message?: string }).message || mergeError))
-      : commitError ? t("The note body has been generated but writing failed; queued for retry.")
+      : commitError ? (mergeError instanceof NoteMarkdownConflictError
+        ? mergeError.message
+        : t("The note body has been generated but writing failed; queued for retry."))
         : mergeError instanceof BriefingPipelineIncompleteError ? t("{0}, queued for precise retry").replace("{0}", (mergeError as { message?: string }).message || "")
           : t("AI organizing did not finish; queued for retry."))
     : (session.continuation ? t("Continuation recording saved separately; it will be merged into \"{0}\" after its current processing finishes.").replace("{0}", session.continuation.targetPath.split("/").pop()?.replace(/\\.md$/i, "") || session.continuation.targetPath)

@@ -36,6 +36,12 @@ describe("restoreQueue", () => {
     expect(saved).toEqual(before);
   });
 
+  it("preserves the manual-only conflict flag across queue recovery", () => {
+    const result = restoreQueue([merge({ id: "manual", status: "blocked", manualRetryRequired: true })], options());
+    expect(result.retained).toEqual([]);
+    expect(result.tasks[0]).toMatchObject({ id: "manual", status: "blocked", manualRetryRequired: true });
+  });
+
   it("retains all duplicate IDs and generates IDs avoiding stored collisions", () => {
     const saved = [{ id: "same", type: "generate-prompt", mode: "x" }, { id: "same", type: "future" }, { type: "generate-prompt", mode: "y" }];
     const result = restoreQueue(saved, options(["same", "available"]));

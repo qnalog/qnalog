@@ -313,7 +313,8 @@ export class TaskActivityService {
     const queueStatus = String(task.status || "pending");
     const isPartialBriefing = type === "merge" && /纪要整理部分完成|The minutes are partially complete/.test(String(task.lastError || ""));
     const stageLabel = queueStatus === "running" || queueStatus === LIVE_ASR_TASK_STATUS ? t("Currently processing")
-      : queueStatus === "blocked" ? t("Waiting for configuration fix")
+      : queueStatus === "blocked" && task.type === "merge" && task.manualRetryRequired ? t("Review the note before retrying")
+        : queueStatus === "blocked" ? t("Waiting for configuration fix")
         : queueStatus === "missing" ? t("Source file missing")
           : queueStatus === "failed" ? (isPartialBriefing ? t("Partially completed · waiting to retry") : t("This run failed")) : t("Waiting to process");
     const status = queueStatus === "running" || queueStatus === LIVE_ASR_TASK_STATUS || queueStatus === "processing"
@@ -341,6 +342,7 @@ export class TaskActivityService {
       title,
       subject: String(task.mdPath || (task.type === "transcribe" ? task.audioPath : "")),
       status,
+      stageLabel: status === "running" && existing && !newAttempt ? existing.stageLabel : stageLabel,
       stage: (status === "running" || status === "failed") && existing && !newAttempt ? existing.stage
         : String(queueStatus === "failed" && task.type === "merge" ? "organize" : queueStatus),
       detail: status === "failed" ? String(task.lastError || t("Task did not succeed"))

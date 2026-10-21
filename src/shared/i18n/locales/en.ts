@@ -31,6 +31,8 @@ export const EN: MessageTable = {
   "Paused recovery entries": "Paused recovery entries",
   "Queue entry {0}": "Queue entry {0}",
   "The note changed while the merge was running. The generated result was not written; review the note and retry.": "The note changed while the merge was running. The generated result was not written; review the note and retry.",
+  "The note changed while organizing. Your edit was kept; review the note, then retry this task individually from the queue.": "The note changed while organizing. Your edit was kept; review the note, then retry this task individually from the queue.",
+  "Review the note before retrying": "Review the note before retrying",
   "Invalid queue entry": "Invalid queue entry",
   "Unsupported task type": "Unsupported task type",
   "Invalid task field: {0}": "Invalid task field: {0}",

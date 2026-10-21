@@ -329,7 +329,7 @@ export class SessionFinalizeService {
       cleanupSuccessfulSegmentAudio: (target) => this.host.asrPipeline.cleanupSuccessfulSegmentAudio(target),
       removeEmptySessionBlock: (target) => this.host.noteWriter.removeEmptySessionBlock(target),
       appendPolishBlock: (target, polished, error, nonRetryable) => this.host.noteWriter.appendPolishBlock(target, polished, error, nonRetryable),
-      rewriteConsolidated: (target, polished) => this.host.noteWriter.rewriteConsolidated(target, polished),
+      rewriteConsolidated: (target, polished, expectedMarkdown) => this.host.noteWriter.rewriteConsolidatedIfUnchanged(target, polished, expectedMarkdown),
       renameWithGeneratedTitle: (path, polished, mode) => this.host.noteWriter.renameMarkdownWithGeneratedTitle(path, polished, mode),
       refreshNoteIndex: (path, options) => this.host.noteIndex.refreshNoteIndexSafely(path, options),
       autoExtractSediment: (path) => this.host.noteIndex.autoExtractSedimentAfterFinalize(path),

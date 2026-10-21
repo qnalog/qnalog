@@ -359,6 +359,7 @@ export interface QueueTaskDeferred {
   deferred: true;
   reason: string;
   status?: "pending" | "missing" | "blocked";
+  manualRetryRequired?: boolean;
 }
 
 export interface RealtimeOutlineSourceCoverage {
@@ -431,6 +432,8 @@ export interface MergeQueueTaskPayload {
   temporarySourcePath?: string;
   continuation?: ContinuationContext;
   continuationDisposition?: "discard";
+  /** A Markdown write conflict requires a user-reviewed, single-task retry. */
+  manualRetryRequired?: boolean;
 }
 
 export interface GeneratePromptQueueTaskPayload {

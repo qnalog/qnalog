@@ -103,6 +103,7 @@ function payloadIssue(r: Row, type: string): string | undefined {
     if (!optional(r, "speakerFrontmatter", (v) => v === null || isRecord(v))) return "speakerFrontmatter";
     if (!optional(r, "continuation", isRecord)) return "continuation";
     if (!optional(r, "continuationDisposition", (v) => v === "discard")) return "continuationDisposition";
+    if (!optional(r, "manualRetryRequired", (v) => typeof v === "boolean")) return "manualRetryRequired";
   }
   return undefined;
 }

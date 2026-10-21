@@ -2,6 +2,7 @@ import * as obsidian from "obsidian";
 import type { RecordingSession, Segment } from "../shared/types";
 import { labelText } from "../shared/note-labels";
 import { t } from "../shared/i18n";
+import { NoteMarkdownConflictError } from "./note-write-conflict";
 import { isTextImportSession } from "../briefing/note-layout-policy";
 import {
   assembleRealtimeOutlineDetails,
@@ -149,7 +150,7 @@ export async function rewriteConsolidatedFlow(
     }
     return content;
   });
-  if (changed) throw new Error(t("The note changed while the merge was running. The generated result was not written; review the note and retry."));
+  if (changed) throw new NoteMarkdownConflictError(t("The note changed while organizing. Your edit was kept; review the note, then retry this task individually from the queue."));
 }
 
 export async function appendPolishBlockFlow(
