@@ -2654,5 +2654,21 @@ describe("clean transcript storage", () => {
       topics: [{ title: "Confirmed fixture topic" }],
       decisions: [activeKnowledge.decisions[0].id],
     });
+
+    const derived = await versions.createDerivedNote(sourceFile, afterWrapped, {
+      body: `## Derived fixture body\n\n${serializeSessionKnowledge(activeKnowledge)}`,
+      meta: { sourceId: getSourceIdFromMarkdown(afterWrapped, sourceFile), kind: "minutes" },
+    }, "Knowledge fixture", "meeting");
+    if (!derived) throw new Error("Derived knowledge fixture was not written");
+    expect(readSelectedSessionKnowledge(await vault.read(derived))?.id).toBe(activeKnowledge.id);
+    await versions.switchVersion(derived, sourceFile.path);
+    const afterDerived = await vault.read(sourceFile);
+    expect(readSelectedSessionKnowledge(afterDerived)?.id).toBe(activeKnowledge.id);
+    expect(readNoteIndex(afterDerived)?.knowledge).toMatchObject({
+      status: "complete", snapshotId: activeKnowledge.id,
+      topics: [{ title: "Confirmed fixture topic" }], decisions: [activeKnowledge.decisions[0].id],
+    });
+    expect(readTranscriptBlocks(afterDerived).map(({ segment }) => [segment.transcript, segment.audioPath, segment.audioName]))
+      .toEqual(beforeTranscript.map(({ segment }) => [segment.transcript, segment.audioPath, segment.audioName]));
   });
 });
