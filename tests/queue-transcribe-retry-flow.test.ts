@@ -20,6 +20,7 @@ import { MAX_SPEAKER_CHANNELS } from "../src/audio/channel-speakers";
 import { labelText } from "../src/shared/note-labels";
 import { nsMarker } from "../src/shared/namespace";
 import { readTranscriptBlocks } from "../src/transcript/transcript-markdown";
+import { buildEmptyLlmOutputFallback } from "../src/notes/note-write-content";
 
 afterEach(() => { vi.unstubAllGlobals(); vi.clearAllMocks(); });
 
@@ -258,6 +259,27 @@ describe("automatic re-organization after backfilling the last failed segment", 
     expect(fixture.host.repolish.reorganizeNoteInPlace).toHaveBeenCalledWith(fixture.file, { firstOrganizing: true });
     expect(fixture.host.repolish.repolishMarkdownFile).not.toHaveBeenCalled();
     expect(fixture.contents.get(fixture.file.path)).toContain("recognized words");
+  });
+
+  it("re-organizes the original note in place when the generated empty-output fallback is present", async () => {
+    const note = `## 整合版（meeting）\n\n${buildEmptyLlmOutputFallback()}\n\n---\n\n## 原始材料\n\n### ${placeholderFor("retry-1")}\n`;
+    const fixture = setup(note);
+    await expect(fixture.service.retryTranscribeTask(fixture.task as never)).resolves.toBeUndefined();
+    await vi.waitFor(() => expect(fixture.host.repolish.reorganizeNoteInPlace).toHaveBeenCalledTimes(1));
+    expect(fixture.host.repolish.reorganizeNoteInPlace).toHaveBeenCalledWith(fixture.file, { firstOrganizing: true });
+    expect(fixture.host.repolish.repolishMarkdownFile).not.toHaveBeenCalled();
+    expect(fixture.contents.get(fixture.file.path)).toContain("recognized words");
+  });
+
+  it("keeps a backfilled transcript when in-place organization fails after the fallback is removed", async () => {
+    const note = `## 整合版（meeting）\n\n${buildEmptyLlmOutputFallback()}\n\n---\n\n## 原始材料\n\n### ${placeholderFor("retry-1")}\n`;
+    const fixture = setup(note);
+    fixture.host.repolish.reorganizeNoteInPlace.mockRejectedValueOnce(new Error("organize failed"));
+
+    await expect(fixture.service.retryTranscribeTask(fixture.task as never)).resolves.toBeUndefined();
+    await vi.waitFor(() => expect(fixture.diagnostics.logDiagnostic).toHaveBeenCalledWith("error", "queue.auto_repolish_failed", expect.any(String), expect.objectContaining({ mdPath: fixture.file.path })));
+    expect(fixture.contents.get(fixture.file.path)).toContain("recognized words");
+    expect(fixture.host.repolish.repolishMarkdownFile).not.toHaveBeenCalled();
   });
 
   it("re-organizes an audio import draft in place rather than creating a derived note", async () => {

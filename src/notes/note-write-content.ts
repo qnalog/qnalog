@@ -6,8 +6,18 @@ import { splitOutSedimentBlock } from "../sediment/text-blocks";
 import { normalizeTranscriptDataPlacement } from "../transcript/transcript-markdown";
 import { wrapSessionTranscriptBlocks } from "./note-transcript-materials";
 
+export const EMPTY_LLM_OUTPUT_FALLBACK = "> [!warning] AI 整理未完成\n> 未获得可用的整理正文；原始转写仍保留在当前笔记中，可以稍后从处理进度中重试。";
+function escapeRegExp(value: string): string {
+  return value.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+}
+
+export const EMPTY_LLM_OUTPUT_FALLBACK_RE = new RegExp(
+  `^${escapeRegExp(EMPTY_LLM_OUTPUT_FALLBACK)}$`,
+  "gm",
+);
+
 export function buildEmptyLlmOutputFallback(): string {
-  return "> [!warning] AI 整理未完成\n> 未获得可用的整理正文；原始转写仍保留在当前笔记中，可以稍后从处理进度中重试。";
+  return EMPTY_LLM_OUTPUT_FALLBACK;
 }
 
 export interface NotePolishParts {
