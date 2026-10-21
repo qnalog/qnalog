@@ -12,6 +12,8 @@ import {
 } from "../src/versions/version-content";
 import { replaceExistingActiveVersionBlock, replaceLeadingFrontmatter, splitLeadingFrontmatter } from "../src/notes/note-document";
 
+import { readSelectedSessionKnowledge, serializeSessionKnowledge, type SessionKnowledge } from "../src/briefing/session-knowledge";
+
 const generatedDocument = [
   "---",
   "mode: seminar",
@@ -26,6 +28,21 @@ const generatedDocument = [
 ].join("\n");
 
 describe("QnALog version content", () => {
+  it("carries only the selected knowledge past the raw-material boundary", () => {
+    const knowledge: SessionKnowledge = {
+      schemaVersion: 2, id: "knowledge:derived-unavailable", sourceRevision: "fixture-revision",
+      sources: [], status: "unavailable", issues: [], topics: [], decisions: [],
+      actions: [], questions: [], projections: [],
+    };
+    const body = `Derived body.\n\n---\n\n## Original material\nPrivate raw fixture.\n${serializeSessionKnowledge(knowledge)}`;
+    const sanitized = sanitizeActiveVersionBody(body);
+    expect(readSelectedSessionKnowledge(sanitized)).toEqual(knowledge);
+    expect(sanitized).not.toContain("Private raw fixture.");
+    const emptyActive = `<!-- qnalog-active-version-start -->\nNo selected knowledge.\n<!-- qnalog-active-version-end -->\n\n---\n\n## Original material\n${serializeSessionKnowledge(knowledge)}`;
+    expect(readSelectedSessionKnowledge(sanitizeActiveVersionBody(emptyActive))).toBeNull();
+    expect(sanitizeActiveVersionBody(emptyActive)).not.toContain(knowledge.id);
+  });
+
   it("separates generated YAML from the display body", () => {
     const parts = splitVersionPayload(generatedDocument);
     expect(parts.frontmatter).toContain("mode: seminar");

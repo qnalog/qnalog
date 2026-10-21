@@ -1,6 +1,7 @@
 import { NS_FM, NS_SEGMENTS_BLOCK_RE, NS_TAG, nsRe } from "../shared/namespace";
 import { findActiveVersionBlock, findRawMaterialInsertionOffset, splitLeadingFrontmatter, getFrontmatterYaml, wrapFrontmatterYaml } from "../notes/note-document";
 import { labelText } from "../shared/note-labels";
+import { readSelectedSessionKnowledge, serializeSessionKnowledge } from "../briefing/session-knowledge";
 
 export function parseVersionFrontmatter(
   frontmatter: string,
@@ -60,7 +61,15 @@ const SELF_BACKLINK_LINE_RE = /^>\s*\[!(?:info|note)\]\s*(?:基于原始转写�
 export function sanitizeActiveVersionBody(body: string): string {
   let text = splitVersionPayload(body).body;
   const rawBoundary = text.search(/\n\s*---\s*\n+##\s+(?:原始材料|Original material)\s*\n/i);
-  if (rawBoundary >= 0) text = text.slice(0, rawBoundary);
+  if (rawBoundary >= 0) {
+    // Derived-note indexing folds the selected snapshot below this boundary.
+    // Carry that snapshot with its version while leaving raw transcripts out.
+    const knowledge = readSelectedSessionKnowledge(text);
+    text = text.slice(0, rawBoundary);
+    if (knowledge && !readSelectedSessionKnowledge(text)) {
+      text = `${text.trimEnd()}\n\n${serializeSessionKnowledge(knowledge)}`;
+    }
+  }
   for (let guard = 0; guard < 8; guard++) {
     const before = text;
     text = text.replace(/^\s*#\s+[^\n]*(?:\n+|$)/, "").replace(SELF_BACKLINK_LINE_RE, "");

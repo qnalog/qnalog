@@ -4,10 +4,12 @@ import { buildSegmentStatusList, getVersionStoreFolder, normalizeVersionId } fro
 import { replaceActiveVersionBlock } from "../src/versions/active-version-block";
 import { ensureTranscriptBlocks } from "../src/notes/note-transcript-ledger";
 import { readTranscriptBlocks } from "../src/transcript/transcript-markdown";
-import { attachTextTranscript } from "../src/transcript/session-transcript";
+import { attachTextTranscript, getCurrentTranscript, getTranscriptSourceRevision } from "../src/transcript/session-transcript";
 import { getSourceIdFromMarkdown } from "../src/notes/note-source-metadata";
 import { getSegmentsHash } from "../src/notes/audio-refs";
-import { buildNoteIndex, upsertNoteIndex } from "../src/indexing/note-index";
+import { buildNoteIndex, readNoteIndex, upsertNoteIndex } from "../src/indexing/note-index";
+import { parseSessionKnowledgeResponse, readSelectedSessionKnowledge, serializeSessionKnowledge, upsertSelectedSessionKnowledge } from "../src/briefing/session-knowledge";
+import { normalizeTranscriptLayout, serializeTranscriptBlock } from "../src/transcript/transcript-markdown";
 
 const { cleanTranscriptMock, mergeAndPolishMock, notices } = vi.hoisted(() => ({
   cleanTranscriptMock: vi.fn(),
@@ -2513,5 +2515,160 @@ describe("clean transcript storage", () => {
       expect([...files.values()].map((file) => [file.path, file.data])).toEqual(before);
       expect(indexCalls).toBe(0);
     });
+  });
+
+  it("keeps the complete active knowledge snapshot selected through activation and index refresh", async () => {
+    const { files, vault } = createMemoryVault();
+    const segment = attachTextTranscript({
+      index: 0,
+      startOffsetMs: 0,
+      endOffsetMs: 1000,
+      text: "The fixture confirms the active-version knowledge path.",
+      audioPath: "QnALogValidation/active-knowledge-audio.wav",
+      audioName: "active-knowledge-audio.wav",
+    }, "active-knowledge-fixture", "text-import");
+    const current = getCurrentTranscript(segment.transcript!);
+    const sources = [{
+      segmentId: segment.transcript!.id,
+      revision: current.revision,
+      normalizationRevision: current.normalizationRevision,
+    }];
+    const makeKnowledge = (title: string, decision: string) => parseSessionKnowledgeResponse(
+      `Fixture result.\n<!-- qnalog-session-knowledge ${JSON.stringify({
+        schemaVersion: 2,
+        topics: [{ key: "fixture-topic", title, summary: `${title} summary.`, evidence: [current.utterances[0].id] }],
+        decisions: [{ text: decision, topics: ["fixture-topic"], evidence: [current.utterances[0].id] }],
+        actions: [],
+        questions: [],
+      })} -->`,
+      { allowed: current.utterances, part: 1, sources, sourceRevision: getTranscriptSourceRevision([segment]) },
+    ).knowledge;
+    const oldKnowledge = makeKnowledge("Archived fixture topic", "Keep the archived fixture decision.");
+    const activeKnowledge = makeKnowledge("Confirmed fixture topic", "Keep the active fixture decision.");
+    expect(oldKnowledge.status).toBe("complete");
+    expect(activeKnowledge.status).toBe("complete");
+    expect(activeKnowledge.id).not.toBe(oldKnowledge.id);
+    expect(activeKnowledge.topics[0].evidence).toEqual([current.utterances[0].id]);
+    const transcriptBlock = serializeTranscriptBlock(segment, "Segment 1 (00:00–00:01)", segment.text);
+    const sourceBeforeIndex = [
+      "---", "qnalog_mode: meeting", "qnalog_time: 2026-10-21T00:00:00.000Z", "---",
+      "", "# Active knowledge fixture", "", "Original fixture body.", "", "## 原始材料", "", transcriptBlock,
+      "", serializeSessionKnowledge(oldKnowledge),
+    ].join("\n");
+    const emptyActive = [
+      sourceBeforeIndex,
+      "<!-- qnalog-active-version-start -->",
+      "## Empty active fixture body",
+      "Archived knowledge must not be selected.",
+      "<!-- qnalog-active-version-end -->",
+    ].join("\n\n");
+    const normalizedEmptyActive = normalizeTranscriptLayout(emptyActive);
+    const emptyActiveIndex = buildNoteIndex(normalizedEmptyActive, { noteTitle: "empty-active-fixture" });
+    if (!emptyActiveIndex) throw new Error("Empty active fixture index was not built");
+    const indexedEmptyActive = upsertNoteIndex(normalizedEmptyActive, emptyActiveIndex);
+    expect(readSelectedSessionKnowledge(indexedEmptyActive)).toBeNull();
+    expect(readNoteIndex(indexedEmptyActive)?.knowledge).toMatchObject({
+      status: "unavailable",
+      snapshotId: null,
+      sourceRevision: null,
+    });
+    expect(normalizeTranscriptLayout(normalizedEmptyActive)).toBe(normalizedEmptyActive);
+
+    const initialIndex = buildNoteIndex(sourceBeforeIndex, { noteTitle: "active-knowledge-fixture", generatedAt: "2026-10-21T00:00:00.000Z" });
+    if (!initialIndex) throw new Error("Initial fixture index was not built");
+    const sourceContent = upsertNoteIndex(sourceBeforeIndex, initialIndex);
+    const sourceFile = new obsidian.TFile("QnALog/notes/active-knowledge-fixture.md", sourceContent);
+    files.set(sourceFile.path, sourceFile);
+    const settings = { mdFolder: "QnALog/notes", promptTemplates: {} };
+    const app = {
+      vault,
+      metadataCache: { getFileCache: () => ({ frontmatter: { qnalog_mode: "meeting", qnalog_time: "2026-10-21T00:00:00.000Z" } }) },
+      workspace: { getLeaf: () => ({ openFile: vi.fn(async () => undefined) }) },
+    };
+    const refreshIndex = async (file: MemoryFile) => {
+      const markdown = await vault.read(file);
+      const index = buildNoteIndex(markdown, { noteTitle: file.basename, generatedAt: "2026-10-21T00:00:01.000Z" });
+      if (index) await vault.modify(file, upsertNoteIndex(markdown, index));
+    };
+    const versions = new VersionStore(makeVersionHost(app, () => settings, refreshIndex));
+    const before = await vault.read(sourceFile);
+    expect(readSelectedSessionKnowledge(before)?.id).toBe(oldKnowledge.id);
+    expect(readNoteIndex(before)?.knowledge.snapshotId).toBe(oldKnowledge.id);
+    const saved = await versions.saveVersion(sourceFile, before, [segment], {
+      kind: "minutes",
+      idLabel: "active-knowledge-complete",
+      label: "Complete knowledge fixture",
+      mode: "meeting",
+      body: `## Active fixture body\n\n${serializeSessionKnowledge(activeKnowledge)}`,
+      activate: false,
+    });
+    const cached = files.get(`${saved.folder}/${saved.meta.fileName}`);
+    if (!cached) throw new Error("Complete active-knowledge version cache was not written");
+    await versions.switchVersion(cached, sourceFile.path);
+
+    const after = await vault.read(sourceFile);
+    const selected = readSelectedSessionKnowledge(after);
+    const savedIndex = readNoteIndex(after);
+    expect(selected?.id).toBe(activeKnowledge.id);
+    expect(selected?.topics[0]?.title).toBe("Confirmed fixture topic");
+    expect(selected?.decisions[0]?.text).toBe("Keep the active fixture decision.");
+    expect(savedIndex?.knowledge).toMatchObject({
+      status: "complete",
+      snapshotId: activeKnowledge.id,
+      sourceRevision: activeKnowledge.sourceRevision,
+      topics: [{ title: "Confirmed fixture topic" }],
+      decisions: [activeKnowledge.decisions[0].id],
+    });
+    expect(savedIndex?.knowledge.topics).not.toContainEqual(expect.objectContaining({ title: "Archived fixture topic" }));
+    const normalizedAfter = normalizeTranscriptLayout(after);
+    expect(normalizeTranscriptLayout(normalizedAfter)).toBe(normalizedAfter);
+    expect(readSelectedSessionKnowledge(normalizedAfter)?.id).toBe(activeKnowledge.id);
+    const beforeTranscript = readTranscriptBlocks(before);
+    const afterTranscript = readTranscriptBlocks(after);
+    expect(afterTranscript.map(({ segment }) => segment.transcript)).toEqual(beforeTranscript.map(({ segment }) => segment.transcript));
+    expect(afterTranscript.map(({ segment }) => [segment.audioPath, segment.audioName])).toEqual(
+      beforeTranscript.map(({ segment }) => [segment.audioPath, segment.audioName]),
+    );
+
+    const wrappedBody = upsertSelectedSessionKnowledge(
+      "## Active fixture body with existing index-data wrapper\n\nWrapped complete fixture body.",
+      activeKnowledge,
+    );
+    expect(wrappedBody).toMatch(/<details><summary>(?:索引数据|Index data)<\/summary>[\s\S]*qnalog-session-knowledge/);
+    const wrappedVersion = await versions.saveVersion(sourceFile, after, [segment], {
+      kind: "minutes",
+      idLabel: "active-knowledge-wrapped",
+      label: "Wrapped complete knowledge fixture",
+      mode: "meeting",
+      body: wrappedBody,
+      activate: false,
+    });
+    const wrappedCache = files.get(`${wrappedVersion.folder}/${wrappedVersion.meta.fileName}`);
+    if (!wrappedCache) throw new Error("Wrapped complete active-knowledge cache was not written");
+    await versions.switchVersion(wrappedCache, sourceFile.path);
+    const afterWrapped = await vault.read(sourceFile);
+    expect(readSelectedSessionKnowledge(afterWrapped)?.id).toBe(activeKnowledge.id);
+    expect(readNoteIndex(afterWrapped)?.knowledge).toMatchObject({
+      status: "complete",
+      snapshotId: activeKnowledge.id,
+      topics: [{ title: "Confirmed fixture topic" }],
+      decisions: [activeKnowledge.decisions[0].id],
+    });
+
+    const derived = await versions.createDerivedNote(sourceFile, afterWrapped, {
+      body: `## Derived fixture body\n\n${serializeSessionKnowledge(activeKnowledge)}`,
+      meta: { sourceId: getSourceIdFromMarkdown(afterWrapped, sourceFile), kind: "minutes" },
+    }, "Knowledge fixture", "meeting");
+    if (!derived) throw new Error("Derived knowledge fixture was not written");
+    expect(readSelectedSessionKnowledge(await vault.read(derived))?.id).toBe(activeKnowledge.id);
+    await versions.switchVersion(derived, sourceFile.path);
+    const afterDerived = await vault.read(sourceFile);
+    expect(readSelectedSessionKnowledge(afterDerived)?.id).toBe(activeKnowledge.id);
+    expect(readNoteIndex(afterDerived)?.knowledge).toMatchObject({
+      status: "complete", snapshotId: activeKnowledge.id,
+      topics: [{ title: "Confirmed fixture topic" }], decisions: [activeKnowledge.decisions[0].id],
+    });
+    expect(readTranscriptBlocks(afterDerived).map(({ segment }) => [segment.transcript, segment.audioPath, segment.audioName]))
+      .toEqual(beforeTranscript.map(({ segment }) => [segment.transcript, segment.audioPath, segment.audioName]));
   });
 });

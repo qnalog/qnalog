@@ -6,7 +6,7 @@ import { readTranscriptBlocks } from "../transcript/transcript-markdown";
 import { stableHash } from "../shared/stable-hash";
 import { NS_FM, NS_TAG, nsRe } from "../shared/namespace";
 import { labelPattern, labelText, UTILITY_HEADING_RE } from "../shared/note-labels";
-import { findActiveVersionBlock, findFirstNoteBoundary, stripUtilityDetailsBlocks } from "../notes/note-document";
+import { findActiveVersionBlock, findFirstNoteBoundary, protectActiveSessionKnowledge, stripUtilityDetailsBlocks } from "../notes/note-document";
 // 写入时把索引标记和 JSON 放入折叠壳；读取仍兼容历史格式。
 export const QNALOG_NOTE_INDEX_START = `<!-- ${NS_TAG}-note-index -->`;
 export const QNALOG_NOTE_INDEX_END = `<!-- ${NS_TAG}-note-index-end -->`;
@@ -544,19 +544,32 @@ function placeIndexInRawMaterials(markdown: string): string {
 }
 
 export function upsertNoteIndex(markdown: unknown, index: QnALogNoteIndexCard): string {
-  const folded = foldSessionMetadata(textValue(markdown));
+  const original = textValue(markdown);
+  const originalIndex = readNoteIndex(original, { includeFuture: true });
+  if (originalIndex && "status" in originalIndex) return original;
+  // An active wrapper can contain both knowledge and a cached index. Keep its
+  // knowledge in place while rebuilding the index in the raw-material section.
+  const active = findActiveVersionBlock(original);
+  const prepared = active
+    ? original.slice(0, active.bodyStart)
+      + active.body.replace(NOTE_INDEX_FENCED_PATTERN, (block) => (block.match(FOLDABLE_SESSION_COMMENT_RE) || []).join("\n"))
+      + original.slice(active.bodyEnd)
+    : original;
+  const activeKnowledge = protectActiveSessionKnowledge(prepared);
+  const restoreActiveKnowledge = (value: string) => activeKnowledge.restore(value);
+  const folded = foldSessionMetadata(activeKnowledge.markdown);
   const text = folded.markdown;
   const existing = readNoteIndex(text, { includeFuture: true });
-  if (existing && "status" in existing) return placeIndexInRawMaterials(placeSessionMetadataInIndex(text, folded.comments));
+  if (existing && "status" in existing) return restoreActiveKnowledge(placeIndexInRawMaterials(placeSessionMetadataInIndex(text, folded.comments)));
   const existingCard = existing && !("status" in existing) ? existing : null;
   const block = serializeNoteIndex(index);
   const hasFenced = NOTE_INDEX_FENCED_PATTERN.test(text);
   // Contents unchanged and already fenced means no write; legacy blocks upgrade naturally.
-  if (existingCard && !LEGACY_INDEX_CARDS.has(existingCard) && existingCard.sourceRevision === index.sourceRevision && hasFenced) return placeIndexInRawMaterials(placeSessionMetadataInIndex(text, folded.comments));
-  if (hasFenced) return placeIndexInRawMaterials(placeSessionMetadataInIndex(text.replace(NOTE_INDEX_FENCED_PATTERN, () => block), folded.comments));
-  if (NOTE_INDEX_PREVIOUS_FENCED_PATTERN.test(text)) return placeIndexInRawMaterials(placeSessionMetadataInIndex(text.replace(NOTE_INDEX_PREVIOUS_FENCED_PATTERN, () => block), folded.comments));
-  if (NOTE_INDEX_LEGACY_PATTERN.test(text)) return placeIndexInRawMaterials(placeSessionMetadataInIndex(text.replace(NOTE_INDEX_LEGACY_PATTERN, () => block), folded.comments));
-  return placeIndexInRawMaterials(placeSessionMetadataInIndex(`${text.trimEnd()}\n\n${block}\n`, folded.comments));
+  if (existingCard && !LEGACY_INDEX_CARDS.has(existingCard) && existingCard.sourceRevision === index.sourceRevision && hasFenced) return restoreActiveKnowledge(placeIndexInRawMaterials(placeSessionMetadataInIndex(text, folded.comments)));
+  if (hasFenced) return restoreActiveKnowledge(placeIndexInRawMaterials(placeSessionMetadataInIndex(text.replace(NOTE_INDEX_FENCED_PATTERN, () => block), folded.comments)));
+  if (NOTE_INDEX_PREVIOUS_FENCED_PATTERN.test(text)) return restoreActiveKnowledge(placeIndexInRawMaterials(placeSessionMetadataInIndex(text.replace(NOTE_INDEX_PREVIOUS_FENCED_PATTERN, () => block), folded.comments)));
+  if (NOTE_INDEX_LEGACY_PATTERN.test(text)) return restoreActiveKnowledge(placeIndexInRawMaterials(placeSessionMetadataInIndex(text.replace(NOTE_INDEX_LEGACY_PATTERN, () => block), folded.comments)));
+  return restoreActiveKnowledge(placeIndexInRawMaterials(placeSessionMetadataInIndex(`${text.trimEnd()}\n\n${block}\n`, folded.comments)));
 }
 
 export function resolveNoteIndex(
