@@ -169,7 +169,15 @@ export async function recoverTaskAudioBlob(port: TranscribeAudioSourcePort, task
 }
 
 export async function readTaskAudioBlob(port: TranscribeAudioSourcePort, task: TranscribeQueueTaskPayload): Promise<AudioBlobSource> {
-  const direct = await readVaultAudioBlob(port, task.audioPath, task.audioName);
+  let direct: AudioBlobSource | null = null;
+  let directReadFailed = false;
+  let directReadError: unknown;
+  try {
+    direct = await readVaultAudioBlob(port, task.audioPath, task.audioName);
+  } catch (error: unknown) {
+    directReadFailed = true;
+    directReadError = error;
+  }
   if (direct) return direct;
 
   const recovered = await recoverTaskAudioBlob(port, task);
@@ -183,5 +191,6 @@ export async function readTaskAudioBlob(port: TranscribeAudioSourcePort, task: T
     return recovered;
   }
 
+  if (directReadFailed) throw directReadError;
   throw new Error(t("Audio missing: {0}").replace("{0}", String(task.audioPath || task.audioName || t("Unknown audio"))));
 }
