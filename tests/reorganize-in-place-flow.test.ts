@@ -377,3 +377,39 @@ describe("in-place reorganization index writer literal text", () => {
     expect(output.split("<!-- qnalog-note-index -->").length - 1).toBe(1);
   });
 });
+
+describe("buildReorganizedNote draft title suffix", () => {
+  const body = "## 原始材料\n\n<details><summary>索引数据</summary></details>\n";
+  const rest = "\n\n---\n\nSomething else\n\n";
+  const identity = (text: string) => text;
+  const noteWithTitle = (title: string) => `---\nqnalog_time: 2026-10-21T08:36:00\n---\n${title}\n\n> [!info] 导入信息\n> 文件数：1\n\n---\n\n${body}${rest}`;
+  const organized = "## 结论\n\n确认了下一步计划。";
+
+  it("removes the Chinese importing suffix from the retained title and keeps the rest of the note", () => {
+    const draftTitle = "# 2026-10-21 08:36 · 工作纪要（导入处理中…）";
+    const next = buildReorganizedNote(noteWithTitle(draftTitle), organized, identity);
+    expect(next.split("\n").find((line) => line.startsWith("# "))).toBe("# 2026-10-21 08:36 · 工作纪要");
+    expect(next).toBe(buildReorganizedNote(noteWithTitle("# 2026-10-21 08:36 · 工作纪要"), organized, identity));
+  });
+
+  it("removes the English importing suffix", () => {
+    const next = buildReorganizedNote(noteWithTitle("# 2026-10-21 08:36 · Minutes (importing…)"), organized, identity);
+    expect(next.split("\n").find((line) => line.startsWith("# "))).toBe("# 2026-10-21 08:36 · Minutes");
+  });
+
+  it("removes the text import suffix", () => {
+    const next = buildReorganizedNote(noteWithTitle("# 2026-10-21 08:36 · 工作纪要（文本导入处理中…）"), organized, identity);
+    expect(next.split("\n").find((line) => line.startsWith("# "))).toBe("# 2026-10-21 08:36 · 工作纪要");
+  });
+
+  it("leaves a normal title unchanged", () => {
+    const next = buildReorganizedNote(noteWithTitle("# 2026-10-21 08:36 · 工作纪要"), organized, identity);
+    expect(next.split("\n").find((line) => line.startsWith("# "))).toBe("# 2026-10-21 08:36 · 工作纪要");
+  });
+
+  it("leaves a user-edited title that mentions importing in the middle unchanged", () => {
+    const title = "# 导入处理中…周会纪要";
+    const next = buildReorganizedNote(noteWithTitle(title), organized, identity);
+    expect(next.split("\n").find((line) => line.startsWith("# "))).toBe(title);
+  });
+});
