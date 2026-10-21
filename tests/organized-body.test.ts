@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { hasOrganizedBody } from "../src/notes/organized-body";
+import { buildConsolidatedNoteContent, buildEmptyLlmOutputFallback, buildPolishAppendBlock } from "../src/notes/note-write-content";
 
 const RAW = "## 📁 原始材料\n\n<details>\n<summary>分段原始转写</summary>\n\n原文\n\n</details>\n";
 
@@ -7,6 +8,38 @@ describe("hasOrganizedBody", () => {
   it("is false when the organized heading is followed only by the AI failure placeholder", () => {
     const note = `---\nqnalog_type: QnALog派生版本\n---\n\n# 2026-10-17 12:08 · 原始笔记\n\n> [!info]- 当前显示版本：原始笔记 <span data-qnalog="active-version-start"></span>\n\n## 整合版（qwen3.8-max · 通用）\n\n_[AI 整理失败：没有可用于整理的有效转写文本；录音和失败切片已保留]_\n<span data-qnalog="active-version-end"></span>\n\n---\n\n${RAW}`;
     expect(hasOrganizedBody(note)).toBe(false);
+  });
+
+  it("is false for the generated empty-output fallback in both note layouts", () => {
+    const fallback = buildEmptyLlmOutputFallback();
+    const materials = { recordingInfo: "", externalAudioSource: "", meetingWorkbench: "", realtimeOutline: "", textImportSource: "" };
+    const consolidated = buildConsolidatedNoteContent({
+      currentMarkdown: "", title: "# T", sessionId: "s1", continuationSessionId: "", totalMs: 1000,
+      segmentCount: 1, textImport: false, retainAudio: false, isContinuation: false, masterAudioBlock: "",
+      audioRow: "", priorAudioAppendix: "", rawBlocks: "", polish: { frontmatter: "", body: fallback, sedimentBlock: "" }, materials,
+    });
+    const appendBlock = buildPolishAppendBlock({
+      modelAndModeLabel: "meeting", textImport: false, masterAudioBlock: "", hasMergeError: false, failureText: "",
+      polish: { frontmatter: "", body: fallback, sedimentBlock: "" }, materials,
+    });
+    const appended = `# T\n\n${appendBlock}\n\n---\n\n## 原始材料\n`;
+    expect(hasOrganizedBody(consolidated)).toBe(false);
+    expect(hasOrganizedBody(appended)).toBe(false);
+  });
+
+  it("is false when the generated fallback is the active version body", () => {
+    const note = `> [!info]- 当前显示版本：原始笔记 <span data-qnalog="active-version-start"></span>\n\n## 整合版（meeting）\n\n${buildEmptyLlmOutputFallback()}\n<span data-qnalog="active-version-end"></span>\n\n---\n\n${RAW}`;
+    expect(hasOrganizedBody(note)).toBe(false);
+  });
+
+  it("keeps real organized text when the generated fallback is also present", () => {
+    const note = `## 整合版（meeting）\n\n## 决定\n\n下周确认预算。\n\n${buildEmptyLlmOutputFallback()}\n\n---\n\n${RAW}`;
+    expect(hasOrganizedBody(note)).toBe(true);
+  });
+
+  it("keeps other warning callouts and consecutive quoted user content as organized text", () => {
+    const note = `> [!warning] 需要复核\n> 第一行用户内容。\n> 第二行用户内容。\n\n---\n\n${RAW}`;
+    expect(hasOrganizedBody(note)).toBe(true);
   });
 
   it("is false for the ✨ heading with a merge-failure placeholder and no active version block", () => {

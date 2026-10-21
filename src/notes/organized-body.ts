@@ -1,5 +1,6 @@
 import { AI_FAILURE_PLACEHOLDER_RE, findActiveVersionBlock, stripFrontmatterSimple, stripUtilityDetailsBlocks } from "./note-document";
 import { labelPattern } from "../shared/note-labels";
+import { EMPTY_LLM_OUTPUT_FALLBACK_RE } from "./note-write-content";
 
 const ORGANIZED_HEADING_RE = /^##\s+(?:✨\s*)?(?:整合版|Merged version)[^\n]*$/gm;
 const RAW_MATERIAL_HEADING_RE = /^##\s+(?:📁\s*)?(?:原始材料|Original material)[^\n]*$/m;
@@ -24,6 +25,7 @@ export function hasOrganizedBody(markdown: string): boolean {
     .replace(/<!--[\s\S]*?-->/g, "")
     .replace(/<span\b[^>]*>\s*<\/span>/gi, "")
     .replace(FAILURE_PLACEHOLDER_RE, "")
+    .replace(EMPTY_LLM_OUTPUT_FALLBACK_RE, "")
     .replace(ORGANIZED_HEADING_RE, "")
     .replace(/^#\s[^\n]*$/gm, "")
     .replace(DRAFT_IMPORT_INFO_CALLOUT_RE, "")
