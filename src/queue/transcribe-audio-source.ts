@@ -62,8 +62,10 @@ export async function readVaultAudioBlob(port: TranscribeAudioSourcePort, path: 
     if (!adapter || !(await adapter.exists(norm))) return null;
     ab = await adapter.readBinary(norm);
   }
+  const blob = new Blob([ab], { type: mimeFromExt(ext) });
+  if (blob.size === 0) return null;
   return {
-    blob: new Blob([ab], { type: mimeFromExt(ext) }),
+    blob,
     sourcePath,
     sourceName,
     recovered: false,
@@ -152,6 +154,7 @@ export async function recoverTaskAudioBlob(port: TranscribeAudioSourcePort, task
     const sliceBlob = requestedChannelCount > 1
       ? port.renderMultichannelSlice(audioBuffer, start, end, requestedChannelCount)
       : await port.renderMonoSlice(audioBuffer, start, end);
+    if (sliceBlob.size === 0) return null;
     return {
       blob: sliceBlob,
       sourcePath: sourceFile.path,
