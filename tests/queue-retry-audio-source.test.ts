@@ -223,6 +223,63 @@ describe("queue retry audio source", () => {
     expect(vault.adapter.readBinary).toHaveBeenCalledWith(".cache/qnalog-20261001-123456-seg1.wav");
   });
 
+  it.each(["indexed", "adapter"] as const)("recovers from a direct %s cache read error", async (route) => {
+    const { port, vault, add } = setup();
+    const master = add("Audio/qnalog-20261001-123456.m4a", "m4a");
+    const directPath = route === "indexed" ? "Audio/qnalog-20261001-123456-seg1.wav" : ".cache/clip.wav";
+    if (route === "indexed") {
+      const segment = add(directPath, "wav");
+      vault.readBinary.mockRejectedValueOnce(new Error("cache read failed"));
+      const recovered = await readTaskAudioBlob(port, {
+        type: "transcribe", audioPath: segment.path, audioName: "qnalog-20261001-123456-seg1.wav",
+        startOffsetMs: 30000, endOffsetMs: 65000, audioStartOffsetMs: 30000, audioEndOffsetMs: 65000,
+        sourceAudioPath: master.path, source: "",
+      } as never);
+      expect(vault.readBinary.mock.calls.map(([file]) => file)).toEqual([segment, master]);
+      expect(recovered).toMatchObject({ sourcePath: master.path, recovered: true });
+      expect(recovered.blob.size).toBeGreaterThan(0);
+      expect(audioMocks.mono).toHaveBeenCalledWith(expect.anything(), 30000, 65000);
+    } else {
+      vault.adapter.exists.mockResolvedValue(true);
+      vault.adapter.readBinary.mockRejectedValueOnce(new Error("cache read failed"));
+      const recovered = await readTaskAudioBlob(port, {
+        type: "transcribe", audioPath: directPath, audioName: "qnalog-20261001-123456-seg1.wav",
+        startOffsetMs: 30000, endOffsetMs: 65000, audioStartOffsetMs: 30000, audioEndOffsetMs: 65000,
+        sourceAudioPath: master.path, source: "",
+      } as never);
+      expect(vault.adapter.readBinary).toHaveBeenCalledWith(directPath);
+      expect(vault.readBinary).toHaveBeenCalledWith(master);
+      expect(recovered).toMatchObject({ sourcePath: master.path, recovered: true });
+      expect(recovered.blob.size).toBeGreaterThan(0);
+      expect(audioMocks.mono).toHaveBeenCalledWith(expect.anything(), 30000, 65000);
+    }
+  });
+
+  it.each(["decode", "slice"] as const)("surfaces %s errors encountered while recovering an unreadable cache", async (stage) => {
+    const { port, vault, add } = setup();
+    const segment = add("Audio/qnalog-20261001-123456-seg1.wav", "wav");
+    const master = add("Audio/qnalog-20261001-123456.m4a", "m4a");
+    vault.readBinary.mockRejectedValueOnce(new Error("cache read failed"));
+    if (stage === "decode") audioMocks.decode.mockRejectedValueOnce(new Error("decode failed"));
+    else audioMocks.mono.mockRejectedValueOnce(new Error("slice failed"));
+
+    await expect(readTaskAudioBlob(port, {
+      type: "transcribe", audioPath: segment.path, audioName: segment.name,
+      startOffsetMs: 0, endOffsetMs: 1000, sourceAudioPath: master.path, source: "",
+    } as never)).rejects.toThrow(`cannot be re-sliced: ${stage === "decode" ? "decode failed" : "slice failed"}`);
+    expect(vault.readBinary).toHaveBeenCalledWith(master);
+  });
+
+  it("preserves even a falsy direct read rejection when no master source can be recovered", async () => {
+    const { port, vault, add } = setup();
+    const clip = add("Audio/clip.wav", "wav");
+    vault.readBinary.mockRejectedValueOnce(0);
+
+    await expect(readTaskAudioBlob(port, {
+      type: "transcribe", audioPath: clip.path, audioName: clip.name, startOffsetMs: 0, endOffsetMs: 1000, source: "",
+    } as never)).rejects.toBe(0);
+  });
+
   it("refuses empty direct and re-sliced audio while preserving both recordings", async () => {
     const { port, vault, add, files } = setup();
     const emptySegment = add("Audio/qnalog-20261001-123456-seg1.wav", "wav");

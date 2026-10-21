@@ -211,6 +211,62 @@ describe.each(["adapter", "indexed"] as const)("ordinary segment retry retains c
     expect(fixture.bytes.get(masterPath)).toEqual(new Uint8Array([1, 2, 3]));
   });
 
+  it("recovers an unreadable indexed or adapter cache and commits the master audio references", async () => {
+    const masterPath = "QnALog/Audio/qnalog-20261020-010101.m4a";
+    const fixture = makeRetentionScenario(route, "Original note.", { masterAudioPath: masterPath });
+    Object.assign(fixture.task, {
+      audioName: "qnalog-20261020-010101-seg1.wav",
+      sourceAudioPath: masterPath,
+      masterAudioPath: masterPath,
+      startOffsetMs: 60000,
+      endOffsetMs: 65000,
+      audioStartOffsetMs: 60000,
+      audioEndOffsetMs: 65000,
+    });
+    if (route === "indexed") {
+      fixture.vault.readBinary.mockImplementation(async (file: { path: string }) => {
+        if (file.path === CACHE_PATH) throw new Error("cache read failed");
+        return fixture.bytes.get(file.path)?.slice().buffer as ArrayBuffer;
+      });
+    } else {
+      fixture.vault.adapter.readBinary.mockImplementation(async (path: string) => {
+        if (path === CACHE_PATH) throw new Error("cache read failed");
+        return fixture.bytes.get(path)?.slice().buffer as ArrayBuffer;
+      });
+    }
+    asr.transcribe.mockResolvedValueOnce({
+      text: "recognized words", rawText: "recognized words", providerId: "mock",
+      units: [{ rawText: "recognized", normalizedText: "recognized", speakerId: null, speakerName: null, startMs: 1000, endMs: 2000, timing: "provider" }],
+    });
+    const queued = await fixture.queue.add(fixture.task);
+    await fixture.queue.processOne(queued);
+
+    expect(asr.transcribe.mock.calls.at(-1)?.[1].size).toBeGreaterThan(0);
+    const block = readTranscriptBlocks(fixture.contents()).find(item => item.segment.text === "recognized words");
+    const recoveredAudioLink = `<a class="internal-link qnalog-time-link" data-href="${masterPath}" href="${masterPath}">01:00</a>`;
+    expect(fixture.contents()).toContain(recoveredAudioLink);
+    expect(block?.segment).toMatchObject({ audioPath: masterPath, segmentAudioPath: "", audioStartOffsetMs: 60000 });
+    expect(block?.segment.transcript?.revisions.at(-1)?.utterances[0]?.audioRef).toMatchObject({ path: masterPath, startMs: 61000 });
+    expect(fixture.bytes.get(CACHE_PATH)).toEqual(AUDIO_BYTES);
+    expect(fixture.bytes.get(masterPath)).toEqual(new Uint8Array([1, 2, 3]));
+  });
+
+  it("keeps an unreadable cache failure and its bytes when no master can be recovered", async () => {
+    const fixture = makeRetentionScenario(route, "Original note.");
+    if (route === "indexed") {
+      fixture.vault.readBinary.mockRejectedValueOnce(new Error("cache read failed"));
+    } else {
+      fixture.vault.adapter.readBinary.mockRejectedValueOnce(new Error("cache read failed"));
+    }
+    const queued = await fixture.queue.add(fixture.task);
+    await expect(fixture.queue.processOne(queued)).rejects.toThrow("cache read failed");
+
+    expect(asr.transcribe).not.toHaveBeenCalled();
+    expect(fixture.queue.snapshot()).toContainEqual(expect.objectContaining({ id: queued.id, status: "failed", lastError: "cache read failed" }));
+    expect(fixture.bytes.get(CACHE_PATH)).toEqual(AUDIO_BYTES);
+    expect(fixture.vault.adapter.remove).not.toHaveBeenCalled();
+  });
+
   it("keeps a failed retry and both audio files when the only master is empty", async () => {
     const masterPath = "QnALog/Audio/qnalog-20261020-010101.m4a";
     const fixture = makeRetentionScenario(route, "Original note.", {
