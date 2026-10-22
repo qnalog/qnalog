@@ -93,7 +93,7 @@ The processing panel separates transcription, AI organization, and Markdown writ
 
 Knowledge extraction is user-initiated by default. Optional automatic extraction is off by default; when enabled, it automatically writes todo candidates only. People and glossary candidates still require review or maintenance.
 
-People can be kept, merged, or ignored. Confirmed todos become standalone cards; terms can be maintained in the glossary. The sidebar can assemble confirmed todos into a todo wall, and knowledge items retain source links. Candidate todos support inline edits to owner, due date, and subtasks.
+People can be kept, merged, or ignored. Confirmed todos are added as tasks under "To-do" in today's daily note, each with a link back to the source note; this requires the Daily notes core plugin. Terms can be maintained in the glossary, and knowledge items retain source links. Candidate todos support inline edits to owner, due date, and subtasks.
 
 ### Topic pages
 
@@ -122,7 +122,6 @@ These are default locations; folders and files are created as needed. The segmen
 | Transcribed notes | `QnALog/Transcribed notes` |
 | Meeting materials | `QnALog/Meeting materials` |
 | People | `QnALog/Library/People` |
-| Todo cards | `QnALog/Library/Todos` |
 | Views | `QnALog/Library/Views` |
 | Glossary | `QnALog/Library/Glossary.md` |
 | Errata | `QnALog/勘误表` |

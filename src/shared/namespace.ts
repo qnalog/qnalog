@@ -126,8 +126,6 @@ export const NS_PART_SUMMARY_STRIP_RE = new RegExp(`^\\s*>?\\s*${nsRe("part-summ
 export const NS_PART_SUMMARY_BLOCK_RE = new RegExp(`<!--\\s*${nsRe("part-summary")}\\s*:[\\s\\S]*?-->`, "gi");
 /** 分部末尾的人员/标签注释行。 */
 export const NS_PART_ENTITY_LINE_RE = new RegExp(`^\\s*>?\\s*${NS_TAG}-(?:people|tags)(?:\\s*:.*)?\\s*$`, "gim");
-/** 生成墙标记。 */
-export const NS_WALL_MARKER_RE = new RegExp(`<!--\\s*${nsRe("generated-wall")}\\s*-->`, "i");
 
 /** 标签前缀：`qnalog/`。 */
 export const NS_TAG_PREFIX = `${NS_TAG}/`;

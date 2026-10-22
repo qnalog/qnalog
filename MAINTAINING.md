@@ -421,7 +421,6 @@ QnALog 长期以 MIT 开源维护，可审计性是隐私承诺的依据。可�
 | `vocabularyFile` | 热词表文件路径 | `vocabulary.notePath` | — |
 | `peopleDirectoryFolder` | 人员资料文件夹 | `vocabulary.peopleFolder` | — |
 | `peopleBaseFile` | 人员库 .base 文件路径 | `vocabulary.peopleBasePath` | — |
-| `todoCardsFolder` | 待办卡片文件夹 | `vocabulary.todoCardsFolder` | — |
 | `sedimentAutoExtract` | 转写/整理完成后是否自动沉淀 | `noteNaming.sedimentAutoExtract` | — |
 | `basesFolder` | Base 视图文件夹 | `views.baseFolder` | — |
 | `peopleContextMode` | 人员资料是否随请求发送（隐私优先/人名热词/本地增强） | `vocabulary.peopleContextMode` | — |

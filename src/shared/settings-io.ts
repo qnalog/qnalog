@@ -335,7 +335,6 @@ export function normalizePluginSettings(savedData: unknown): PluginSettings {
   s.vocabularyFile = firstString(defaults.vocabularyFile, vocabulary.notePath, raw.vocabularyFile);
   s.peopleDirectoryFolder = obsidian.normalizePath(firstNonBlankString(defaults.peopleDirectoryFolder, vocabulary.peopleFolder, raw.peopleDirectoryFolder));
   s.peopleBaseFile = obsidian.normalizePath(firstNonBlankString(defaults.peopleBaseFile, vocabulary.peopleBasePath, raw.peopleBaseFile));
-  s.todoCardsFolder = obsidian.normalizePath(firstNonBlankString(defaults.todoCardsFolder, vocabulary.todoCardsFolder, raw.todoCardsFolder));
   s.peopleContextMode = normalizePeopleContextMode(firstDefined(vocabulary.peopleContextMode, raw.peopleContextMode, defaults.peopleContextMode));
   s.peopleHotwordsConsentAt = firstString(defaults.peopleHotwordsConsentAt, vocabulary.peopleHotwordsConsentAt, raw.peopleHotwordsConsentAt);
   s.peopleSuggestionIgnores = normalizePeopleSuggestionIgnores(firstDefined(vocabulary.peopleSuggestionIgnores, raw.peopleSuggestionIgnores, defaults.peopleSuggestionIgnores));
@@ -510,7 +509,6 @@ export function serializePluginSettings(s: PluginSettings): PersistedPluginSetti
       notePath: s.vocabularyFile || "",
       peopleFolder: s.peopleDirectoryFolder || DEFAULT_SETTINGS.peopleDirectoryFolder,
       peopleBasePath: s.peopleBaseFile || DEFAULT_SETTINGS.peopleBaseFile,
-      todoCardsFolder: s.todoCardsFolder || DEFAULT_SETTINGS.todoCardsFolder,
       peopleContextMode: normalizePeopleContextMode(s.peopleContextMode),
       peopleHotwordsConsentAt: s.peopleHotwordsConsentAt || "",
       peopleSuggestionIgnores: normalizePeopleSuggestionIgnores(s.peopleSuggestionIgnores),

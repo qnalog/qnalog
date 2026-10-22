@@ -661,7 +661,6 @@ class QnALogPlugin extends obsidian.Plugin {
     this.addCommand({ id: "retry-queue-all", name: t("Retry All Failed Tasks"), callback: () => this.queueRetry.retryQueue() });
     this.addCommand({ id: "copy-diagnostic-report", name: t("Copy Diagnostic Report"), callback: () => this.diagnostics.copyDiagnosticReport() });
     this.addCommand({ id: "suggest-people-directory-updates", name: t("AI: Scan Notes Library for People Suggestions"), callback: () => { void this.people.suggestPeopleDirectoryFromLibrary(); } });
-    this.addCommand({ id: "open-todo-wall", name: t("Open To-do Wall"), callback: () => { void this.library.openTodoWall(); } });
     this.addCommand({ id: "import-audio", name: t("Import Existing Audio File: Transcribe + Polish"), callback: () => new ImportAudioModal(this.app, this).open() });
     this.addCommand({ id: "check-updates", name: t("Check for Updates"), callback: () => this.checkForUpdates({ silent: false }) });
     this.addCommand({ id: "open-outline", name: t("Open Voice Notes Panel"), callback: () => this.shell.openOutlineView() });

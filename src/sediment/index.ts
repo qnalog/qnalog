@@ -4,16 +4,15 @@ import * as obsidian from "obsidian";
 import { VOCABULARY_SECTIONS } from '../shared/catalog-sediment';
 import { NS_SEDIMENT_ID_PREFIX } from '../shared/namespace';
 import { labelText } from "../shared/note-labels";
-import { sanitizeFilename, escapeRegExp } from '../shared/util-common';
+import { escapeRegExp } from '../shared/util-common';
 import { makeFileWikiLink } from '../shared/util-markdown';
 import { getPeopleSuggestionCacheKey, normalizePeopleSuggestionsModel, loadPeopleDirectory, isPeopleSuggestionIgnored, findMatchingPersonEntry } from '../people';
 import { callLlmWithContinuation } from '../llm/core';
 import { extractJsonObject } from '../shared/util-json';
 import { canOmitServiceApiKey } from '../shared/util-llm-endpoint';
-import { DEFAULT_SETTINGS } from '../shared/defaults';
 import { createVocabularyGroups } from '../vocabulary';
-import { TODO_CARD_TAG, upsertFrontmatterInMarkdown, upsertObjectNote, ensureTodayDailyNoteFile } from '../shared/util-note';
-import { NS_SEDIMENT_BEGIN, NS_SEDIMENT_END, NS_TAG, legacySedimentIdVariants, nsMarker } from "../shared/namespace";
+import { ensureTodayDailyNoteFile } from '../shared/util-note';
+import { NS_SEDIMENT_BEGIN, NS_SEDIMENT_END, legacySedimentIdVariants, nsMarker } from "../shared/namespace";
 import { t } from "../shared/i18n";
 import { getSedimentPreExtractionBlockPatterns, stripSedimentPreExtractionBlocks } from "./text-blocks";
 
@@ -118,13 +117,6 @@ export function normalizeSedimentTodoSubtasks(value) {
   return out;
 }
 
-export function getSedimentSourceDateLabel(sourceFile) {
-  const basename = String(sourceFile && sourceFile.basename || "");
-  const m = basename.match(/^(\d{4}-\d{2}-\d{2})(?:\s+(\d{2})(\d{2}))?/);
-  if (!m) return "";
-  return m[2] ? `${m[1]} ${m[2]}:${m[3]}` : m[1];
-}
-
 export function normalizeSedimentExtractionModel(model) {
   const raw = model && typeof model === "object" ? model : {};
   const out = {
@@ -157,15 +149,6 @@ export function normalizeSedimentExtractionModel(model) {
     });
   }
   return out;
-}
-
-export function buildObjectTags(baseTag, extraTags) {
-  const tags = [baseTag, NS_TAG];
-  for (const tag of normalizeSedimentTextList(extraTags || [], 28)) {
-    const clean = tag.replace(/^#/, "").replace(/\s+/g, "-");
-    if (clean && !tags.includes(clean)) tags.push(clean);
-  }
-  return tags;
 }
 
 export function buildSedimentPreExtractionInstruction() {
@@ -363,88 +346,37 @@ export async function generateSedimentObjects(plugin, file, markdown) {
   return objects;
 }
 
-export function formatSedimentTodoCardMarkdown(sourceFile, todo) {
-  const sourceLink = makeFileWikiLink(sourceFile);
-  const task = sanitizeSedimentText(todo && todo.task, 160) || "未命名待办";
-  const owner = sanitizeSedimentText(todo && todo.owner, 40) || "未指定";
-  const due = sanitizeSedimentText(todo && todo.due, 40) || "未指定";
-  const sourceTime = sanitizeSedimentText(todo && todo.sourceTime, 20);
-  const recordingDate = getSedimentSourceDateLabel(sourceFile);
-  const subtasks = normalizeSedimentTodoSubtasks(todo && (todo.subtasks || todo.children || todo.steps || todo.items));
-  const taskMeta = [
-    recordingDate ? `日期：${recordingDate}` : "",
-    `责任人：${owner}`,
-    sourceTime ? `时间：${sourceTime}` : "",
-    `事项：${task}`,
-    `截止：${due}`,
-  ].filter(Boolean).join(" ");
-  const taskLines = [`- [ ] ${taskMeta}`].concat(subtasks.map(item => `  - [ ] ${item}`));
-  const fm = {
-    type: "qnalog-todo-card",
-    "事项": task,
-    "责任人": owner,
-    "截止": due,
-    "状态": "待办",
-    "录音日期": recordingDate,
-    "来源笔记": sourceLink,
-    "来源时间": sourceTime || "",
-    "子任务数": subtasks.length,
-    tags: buildObjectTags(TODO_CARD_TAG, []),
-  };
-  const body = [
-    `# ${task}`,
-    "",
-    taskLines.join("\n"),
-    "",
-    todo.note ? `## 依据\n\n${todo.note}\n` : "",
-    "## 来源",
-    "",
-    sourceLink ? `- ${sourceLink}${sourceTime ? ` · ${sourceTime}` : ""}` : "",
-    "",
-  ].filter(Boolean).join("\n");
-  return upsertFrontmatterInMarkdown(body, fm);
-}
-
 export async function writeSedimentObjectCards(plugin, sourceFile, objects) {
   const result = { todos: 0, entries: [] };
-  const baseStem = sanitizeFilename(sourceFile && sourceFile.basename || "QnALog");
-  // 待办：优先写入当日日记的"## 待办"段（Tasks / Dataview 双兼容），不再每条建新 MD。
-  // 兜底：若 Daily Notes 插件未启用，回退到旧的卡片文件方式。
+  // 已确认的待办写入当日日记的「## 待办」段（Tasks / Dataview 双兼容），每条带来源回链。
+  // 原纪要里的待办清单不变；不再为每条待办另建卡片文件。
   const todos = objects.todos || [];
-  if (todos.length) {
-    const dailyFile = await ensureTodayDailyNoteFile(plugin.app);
-    if (dailyFile instanceof obsidian.TFile) {
-      let dailyContent = "";
-      try { dailyContent = await plugin.app.vault.read(dailyFile); } catch { /* intentionally empty */ }
-      for (const todo of todos) {
-        const todoId = getSedimentTodoId(todo);
-        const entry = buildSedimentTodoDailyEntry(todo, sourceFile, todoId);
-        const updated = upsertSedimentTodoInDailyNote(dailyContent, todoId, entry, plugin.settings);
-        const created = !dailyContent.includes(nsMarker("todo", todoId));
-        dailyContent = updated;
-        result.entries.push({
-          kind: "todo",
-          file: dailyFile,
-          path: dailyFile.path,
-          created,
-          previousContent: "",
-          todoId,
-          target: "daily",
-        });
-        result.todos++;
-      }
-      await plugin.app.vault.modify(dailyFile, dailyContent);
-    } else {
-      // 兜底：Daily Notes 插件未启用，回退到旧的卡片文件路径
-      const todoFolder = obsidian.normalizePath(plugin.settings.todoCardsFolder || DEFAULT_SETTINGS.todoCardsFolder);
-      for (const todo of todos) {
-        const name = `${baseStem}-${sanitizeFilename(todo.task) || "待办"}`;
-        const entry = await upsertObjectNote(plugin, todoFolder, name, formatSedimentTodoCardMarkdown(sourceFile, todo));
-        result.entries.push(Object.assign({ kind: "todo", target: "card" }, entry));
-        result.todos++;
-      }
-    }
+  if (!todos.length) return result;
+  const dailyFile = await ensureTodayDailyNoteFile(plugin.app);
+  if (!(dailyFile instanceof obsidian.TFile)) {
+    // 抛错让调用方保留待确认候选并提示原因，不静默丢弃用户的确认。
+    throw new Error(t("Turn on the Daily notes core plugin to add confirmed to-dos. The to-dos are still listed in the source note."));
   }
+  let dailyContent = "";
+  try { dailyContent = await plugin.app.vault.read(dailyFile); } catch { /* intentionally empty */ }
+  for (const todo of todos) {
+    const todoId = getSedimentTodoId(todo);
+    const entry = buildSedimentTodoDailyEntry(todo, sourceFile, todoId);
+    const updated = upsertSedimentTodoInDailyNote(dailyContent, todoId, entry, plugin.settings);
+    const created = !dailyContent.includes(nsMarker("todo", todoId));
+    dailyContent = updated;
+    result.entries.push({
+      kind: "todo",
+      file: dailyFile,
+      path: dailyFile.path,
+      created,
+      previousContent: "",
+      todoId,
+      target: "daily",
+    });
+    result.todos++;
+  }
+  await plugin.app.vault.modify(dailyFile, dailyContent);
   return result;
 }
 

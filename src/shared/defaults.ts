@@ -25,7 +25,6 @@ export interface DefaultFolderNames {
   people: string;
   views: string;
   peopleBase: string;
-  todos: string;
   archive: string;
   duplicatePeople: string;
   system: string;
@@ -43,7 +42,6 @@ const FOLDER_NAMES: Record<"zh" | "en", DefaultFolderNames> = {
     people: "人员",
     views: "视图",
     peopleBase: "人员库.base",
-    todos: "待办",
     archive: "归档",
     duplicatePeople: "重复人员",
     system: "系统",
@@ -59,7 +57,6 @@ const FOLDER_NAMES: Record<"zh" | "en", DefaultFolderNames> = {
     people: "People",
     views: "Views",
     peopleBase: "People.base",
-    todos: "Todos",
     archive: "Archive",
     duplicatePeople: "Duplicate people",
     system: "System",
@@ -76,7 +73,6 @@ export interface DefaultFolderPaths {
   vocabularyFile: string;
   peopleDirectoryFolder: string;
   peopleBaseFile: string;
-  todoCardsFolder: string;
   basesFolder: string;
   archiveFolder: string;
   duplicatePeopleArchiveFolder: string;
@@ -99,7 +95,6 @@ export function defaultFolderPaths(): DefaultFolderPaths {
     vocabularyFile: `${NS_ROOT}/${n.library}/${n.glossary}`,
     peopleDirectoryFolder: `${NS_ROOT}/${n.library}/${n.people}`,
     peopleBaseFile: `${NS_ROOT}/${n.library}/${n.views}/${n.peopleBase}`,
-    todoCardsFolder: `${NS_ROOT}/${n.library}/${n.todos}`,
     basesFolder: `${NS_ROOT}/${n.library}/${n.views}`,
     archiveFolder: `${NS_ROOT}/${n.library}/${n.archive}`,
     duplicatePeopleArchiveFolder: `${NS_ROOT}/${n.library}/${n.archive}/${n.duplicatePeople}`,
@@ -111,14 +106,13 @@ export function defaultFolderPaths(): DefaultFolderPaths {
 
 /** 资料库与诊断日志的默认路径；读取时按当前界面语言取值（键集合不变）。 */
 export type DefaultLibraryPathKey =
-  | "vocabularyFile" | "peopleDirectoryFolder" | "peopleBaseFile" | "todoCardsFolder"
+  | "vocabularyFile" | "peopleDirectoryFolder" | "peopleBaseFile"
   | "basesFolder" | "diagnosticsLogFolder" | "archiveFolder" | "duplicatePeopleArchiveFolder";
 
 export const DEFAULT_LIBRARY_PATHS: Record<DefaultLibraryPathKey, string> = {
   get vocabularyFile() { return defaultFolderPaths().vocabularyFile; },
   get peopleDirectoryFolder() { return defaultFolderPaths().peopleDirectoryFolder; },
   get peopleBaseFile() { return defaultFolderPaths().peopleBaseFile; },
-  get todoCardsFolder() { return defaultFolderPaths().todoCardsFolder; },
   get basesFolder() { return defaultFolderPaths().basesFolder; },
   get diagnosticsLogFolder() { return defaultFolderPaths().diagnosticsLogFolder; },
   get archiveFolder() { return defaultFolderPaths().archiveFolder; },
@@ -334,7 +328,6 @@ export const DEFAULT_SETTINGS: PluginSettings = {
   get vocabularyFile() { return defaultFolderPaths().vocabularyFile; },
   get peopleDirectoryFolder() { return defaultFolderPaths().peopleDirectoryFolder; },
   get peopleBaseFile() { return defaultFolderPaths().peopleBaseFile; },
-  get todoCardsFolder() { return defaultFolderPaths().todoCardsFolder; },
   sedimentAutoExtract: false,  // 默认关闭：转写完成不自动沉淀，手动点「沉淀」再扫描（省 token）；开启则转写完成后自动扫描并入库
 
   get basesFolder() { return defaultFolderPaths().basesFolder; },

@@ -156,7 +156,6 @@ export interface PluginSettings {
   vocabularyFile: string;
   peopleDirectoryFolder: string;
   peopleBaseFile: string;
-  todoCardsFolder: string;
   sedimentAutoExtract: boolean;
   basesFolder: string;
   peopleContextMode: PeopleContextMode;

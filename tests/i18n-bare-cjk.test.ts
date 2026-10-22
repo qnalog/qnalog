@@ -48,7 +48,6 @@ const CONTENT_FILES: Record<string, string> = {
   "src/shared/defaults.ts": "设置默认值——写入笔记的值不是界面文案（决策 A）",
   "src/shared/i18n.ts": "语言下拉 native name（日本語 按设计不译）",
   "src/diagnostics/diagnostics-service.ts": "诊断报告正文——生成的文档，收件人是开发者",
-  "src/views/wall-markdown.ts": "待办墙笔记正文（生成的文档）",
   "src/views/base-definitions.ts": "墙笔记 frontmatter/yaml 正文",
   "src/audio/channel-speakers.ts": "说话人身份数据（写笔记与 frontmatter，显示点单独包 t()）",
   "src/recent/recent-notes.ts": "最近主题词条数据（过滤 token）",

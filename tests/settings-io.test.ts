@@ -65,7 +65,6 @@ describe("settings-io round-trip（白名单防丢键兜底）", () => {
     expect(DEFAULT_SETTINGS.vocabularyFile).toBe("QnALog/资料库/词汇表.md");
     expect(DEFAULT_SETTINGS.peopleDirectoryFolder).toBe("QnALog/资料库/人员");
     expect(DEFAULT_SETTINGS.peopleBaseFile).toBe("QnALog/资料库/视图/人员库.base");
-    expect(DEFAULT_SETTINGS.todoCardsFolder).toBe("QnALog/资料库/待办");
     expect(DEFAULT_SETTINGS.basesFolder).toBe("QnALog/资料库/视图");
     expect(DEFAULT_SETTINGS.diagnosticsLogFolder).toBe("QnALog/系统/诊断日志");
     expect(DEFAULT_LIBRARY_PATHS.archiveFolder).toBe("QnALog/资料库/归档");
@@ -180,7 +179,6 @@ describe("settings-io round-trip（白名单防丢键兜底）", () => {
     a.vocabularyFile = "自定义/词汇表.md";
     a.peopleDirectoryFolder = "自定义/人员";
     a.peopleBaseFile = "自定义/视图/人员库.base";
-    a.todoCardsFolder = "自定义/待办";
     a.basesFolder = "自定义/视图";
     a.diagnosticsLogFolder = "自定义/诊断日志";
 
@@ -237,7 +235,6 @@ describe("settings-io round-trip（白名单防丢键兜底）", () => {
     expect(b.vocabularyFile).toBe("自定义/词汇表.md");
     expect(b.peopleDirectoryFolder).toBe("自定义/人员");
     expect(b.peopleBaseFile).toBe("自定义/视图/人员库.base");
-    expect(b.todoCardsFolder).toBe("自定义/待办");
     expect(b.basesFolder).toBe("自定义/视图");
     expect(b.diagnosticsLogFolder).toBe("自定义/诊断日志");
 
