@@ -2,8 +2,8 @@
 // 由 main.ts 抽出（模块化拆解，提升工程稳定性；纯搬迁、零行为改动）。
 import * as obsidian from "obsidian";
 import { VOCABULARY_SECTIONS } from '../shared/catalog-sediment';
-import { escapeRegExp } from '../shared/util-common';
 import { normalizeVocabularyCorrectionTerm } from './correction-normalization';
+import { replaceTerms } from '../shared/term-replacement';
 export { normalizeVocabularyCorrectionSide, normalizeVocabularyCorrectionTerm } from './correction-normalization';
 
 export type VocabularyGroups = Record<string, string[]>;
@@ -105,16 +105,7 @@ export function getVocabularyCorrectionPairs(groups) {
 }
 
 export function applyVocabularyCorrections(text, groups) {
-  let output = String(text || "");
-  if (!output) return output;
-  const pairs = getVocabularyCorrectionPairs(groups)
-    .sort((a, b) => b.from.length - a.from.length);
-  for (const pair of pairs) {
-    if (!pair || !pair.from || !pair.to || pair.from === pair.to) continue;
-    const flags = /[A-Za-z]/.test(pair.from) ? "gi" : "g";
-    output = output.replace(new RegExp(escapeRegExp(pair.from), flags), () => pair.to);
-  }
-  return output;
+  return replaceTerms(String(text || ""), getVocabularyCorrectionPairs(groups));
 }
 
 export function countVocabularyGroups(groups) {
