@@ -11,6 +11,7 @@ import { getAudioExtFromLinkPath, getAudioLinkCandidates } from "../notes/audio-
 import { buildNoteAudioTimeline, mapAudioTimeToNote } from "./note-audio-timeline";
 import { readTranscriptBlocks } from "../transcript/transcript-markdown";
 import { isTimeLabel } from "../notes/note-markdown";
+import { upgradeLiteralAudioTimeLinks } from "./literal-audio-links";
 import { decodeAudioTimeLinkPath, isSegmentCacheAudioTimePath, resolveSegmentCacheAudioTimeSource, type AdapterAudioTimeSource } from "./audio-time-source";
 import { DEFAULT_SETTINGS } from "../shared/defaults";
 
@@ -34,6 +35,8 @@ export class AudioTimeLinkService {
 
 
   enhanceAudioTimeLinks(el: HTMLElement, ctx: { sourcePath?: string; onTimeLink?: (payload: unknown) => void } = {}) {
+    // 原始转写 <details> 里的 [[录音|mm:ss]] 不会被 Obsidian 渲染成链接；先换成锚点，再按下面的规则绑定回听。
+    upgradeLiteralAudioTimeLinks(el, (target) => !!getAudioExtFromLinkPath(target));
     // el 是 HTMLElement，querySelectorAll 的返回元素类型由类型参数指定；
     // 内容是 Obsidian 正文里的内部链接，取回后按带自定义标记的锚元素处理。
     const links = Array.from(el.querySelectorAll<AudioTimeLinkElement>("a.internal-link"));
