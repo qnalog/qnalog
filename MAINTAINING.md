@@ -283,7 +283,7 @@ git tag X.Y.Z && git push origin X.Y.Z
 ### 6.2 待决定、待确认与暂停项
 
 - **多说话人确认**（待决定）。检测到多个未命名说话人时，整理等待姓名确认（`notes/speaker-confirmation-flow.ts`）。是否先以会话内编号整理、之后再命名，由维护者决定。
-- **A12 笔记索引与布局**（待决定）：选项与代价见 §14.3；当前写入行为不变。
+- **A12 笔记索引**（待决定）：选项与代价见 §14.3；当前写入行为不变。
 - **全库问答**（探索，不进入开发）：范围与退出条件见 §7.3。
 - **条件调查**：机器数据展示与历史 `partial` 原因按 §6.3 的授权与取证边界执行。`invalid-json` 不证明磁盘 JSON 损坏；不删除状态标记、不伪造 `complete`。尚未定位的截图或 `partial` 状态不作为已定位故障。
 - **暂停或可选**（不排入当前执行队列）：`modals.ts` 按域拆包、更新检查薄转发、专属服务展示、整体 `OutlineView` 拆分；Host 宽能力存量收窄与类型收敛（`SessionFinalizeService`、`QueueRetryService`、`RepolishService` 外壳，`NoteWriter` 材料编排与 `RecordingService` 启停）；三个 `@ts-nocheck` 文件（条件见 §8）；门禁正则漏检或 CSS 类名/产物大小问题（只在出现证据或真实输出问题时启动）；服务推荐（有具体需求时再核实能力、地区与费用）；历史流式任务恢复（有实际恢复需求时再调查）。
@@ -447,7 +447,6 @@ QnALog 长期以 MIT 开源维护，可审计性是隐私承诺的依据。可�
 | `autoOpenOutlineOnRecord` | 录音开始时是否自动打开侧边栏 | `liveOutline.openOnCapture` | — |
 | `setupWizardDismissed` | 关闭过首次配置向导后不再自动弹出；首页的向导按钮不受它控制 | `setupWizardDismissed` | — |
 | `autoRenameWithTitle` | 是否用 AI 提炼主题追加到文件名 | `noteNaming.renameWithTitle` | — |
-| `consolidatedLayout` | 纪要是否整合排版（顶部整合、底部原始分段） | `noteNaming.consolidatedLayout` | — |
 | `maxRetries` | 转写/整理任务的自动重试上限 | `retryPolicy.maxAttempts` | — |
 | `diagnosticsLogEnabled` | 是否写本地诊断日志 | `diagnostics.enabled` | — |
 | `diagnosticsLogFolder` | 诊断日志目录 | `diagnostics.folder` | — |
@@ -589,6 +588,7 @@ HTTP 分段转写支持桌面与移动端；实时 WebSocket 需要浏览器不�
 ### 14.1 保留设计
 
 - `src/main.ts` 保持装配根；`saveAll` 保持串行尾链；纪要分部断点先写 `.tmp` 再改名。
+- 纪要只有一种布局：整理正文在上，原始分段折叠在下；首次整理、后台合并重试与续录提交都重写整篇。`appendPolishBlock` 只写失败与无语音占位。已有追加布局笔记不批量改写。
 - `src/notes/outline-text.ts` 保持纯函数，不依赖 Obsidian、DOM 或文件读写。
 - OutlineView 的 `scheduleUpdate()` 与 `render()` 重绘时机不同，不合并。
 - i18n 以英文原文为键；英文 locale 文件为空是有意设计。
@@ -611,7 +611,6 @@ HTTP 分段转写支持桌面与移动端；实时 WebSocket 需要浏览器不�
 ### 14.3 A12 待维护者决定
 
 - **笔记索引**：① 停止自动索引，不删除笔记中的旧索引块，并保护机器块；② 保留索引写入。索引卡已有两个读取方（`indexing/related-notes-corpus.ts`、`topics/overview-card.ts`），均不核对当前正文；全库问答（§7.3）如复用索引卡，须先补读时校验。前者减少索引刷新及额外写入；后者须验证读取用途、界面、更新与来源去重。
-- **笔记布局**：① 通过设置迁移下线 `consolidatedLayout=false` 与 `appendPolishBlock`，减少维护路径，但曾关闭该选项的用户后续写入会得到不同结构；必须按 §4.5 保留设置，不批量改写旧笔记。② 保留两种布局，涉及笔记结构的修改须覆盖两条路径。导入强制 rewrite 的现有规则不变。
 
 ## 15. 笔记版本保存规则
 
@@ -622,6 +621,6 @@ HTTP 分段转写支持桌面与移动端；实时 WebSocket 需要浏览器不�
 - **版本切换**（`VersionStore.switchVersion`）：缺失或损坏的类型、清单或原稿快照必须在改母本前拒绝；母本写入成功但活动 ID 写入失败属于部分提交，缓存保留且可再次切换。
 - **续录**：新音频与逐字稿写入独立暂存；队列凭保存的 `targetPath` 与 `targetSourceId` 和完整 v2 转写账本提交，不根据当前活动笔记改写目标；账本损坏、来源冲突或目标变化时拒绝提交并保留恢复材料。`pre-append` 快照以 `activate:false` 保存。只有目标提交路径写入续录成功标记。
 - **转写重试补齐后的自动整理**（`queue-transcribe-retry-flow.ts` 的 `maybeAutoRepolish`）：笔记没有整理正文时原地整理（补缺失的会话键、不覆盖已有键，按 `autoRenameWithTitle` 改名）；否则走普通重新整理。手动「原地重新整理」不补键、不改名。失败记录 `queue.auto_repolish_failed`，已补齐的转写不回滚。
-- **首次 AI 整理与后台合并重试**在模型调用前读取完整母本 Markdown，并在重写提交前比较；内容变化时保留当前母本、转写、录音和整理检查点。首次整理与后台重试都将冲突任务标为仅手动重试，不安排自动重试；“Retry all”和启动重试跳过该任务，用户检查母本后可在进度面板单项重试。单项重试按当前母本重新整理，不复用冲突前的已完成整理检查点。追加布局在写入前读取最新 Markdown，再追加整理结果。两种重写都在写入前尝试保存不激活的 `pre-polish` 快照；续录已保存 `pre-append` 快照时，首次整理不重复保存。快照保存失败只记录日志，不单独阻止未冲突的写入。
+- **首次 AI 整理与后台合并重试**在模型调用前读取完整母本 Markdown，并在重写提交前比较；内容变化时保留当前母本、转写、录音和整理检查点。首次整理与后台重试都将冲突任务标为仅手动重试，不安排自动重试；“Retry all”和启动重试跳过该任务，用户检查母本后可在进度面板单项重试。单项重试按当前母本重新整理，不复用冲突前的已完成整理检查点。两种重写都在写入前尝试保存不激活的 `pre-polish` 快照；续录已保存 `pre-append` 快照时，首次整理不重复保存。快照保存失败只记录日志，不单独阻止未冲突的写入。
 - 同一插件实例按来源 ID 串行执行 manifest 读改写；不协调 Obsidian 同步或其他插件对同一文件的写入，仅凭磁盘状态无法归因外部修改。
 - 删除带衍生版本的笔记：确认后复核派生稿集合与正文，变化时保留文件并要求重新确认。

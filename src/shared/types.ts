@@ -182,7 +182,6 @@ export interface PluginSettings {
   autoOpenOutlineOnRecord: boolean;
   setupWizardDismissed: boolean;
   autoRenameWithTitle: boolean;
-  consolidatedLayout: boolean;
   maxRetries: number;
   diagnosticsLogEnabled: boolean;
   diagnosticsLogFolder: string;

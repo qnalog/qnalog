@@ -4,7 +4,7 @@
 import * as obsidian from "obsidian";
 import type { LiveAsrPipelineService } from "../asr/live-asr-pipeline-service";
 import { QnALogSettingTab } from "../ui/settings-tab";
-import { getModeMeta, getEffectivePolishMode } from "../shared/mode-meta";
+import { getEffectivePolishMode } from "../shared/mode-meta";
 import { decodeAudioBlob, renderAudioBufferSliceToWav, transcribeAudio } from "../asr/transcribe";
 import { getLlmConfigIssue } from "../llm/core";
 import type { PluginSettings } from "../shared/types";
@@ -12,7 +12,6 @@ import type { SessionStore } from "../session/session-store";
 import { genId } from "../shared/util-common";
 import { renderMultichannelAudioBufferSliceToWav, transcribeAudioByChannels } from "../asr/channel-transcription";
 import { transcribeImportedAudio } from "../asr/long-audio-transcription";
-import { shouldRewriteConsolidatedNote } from "../briefing/note-layout-policy";
 import { clearCommittedBriefingCheckpoint } from "../prompts/briefing-prompts";
 import { collectAudioRefs, getSegmentsDurationMs } from "../notes/audio-refs";
 import { extractDetailsBody } from "../notes/detail-blocks";
@@ -25,7 +24,6 @@ import { extractPriorOutline, getContinuationTargetIdentity } from "../session/c
 import type { ContinuationService } from "../session/continuation-service";
 import { readSessionKnowledge } from "../briefing/session-knowledge";
   
-import { mergeLeadingFrontmatterIntoDocument } from "../notes/note-briefing-output";
 import { getQueueTasksForMarkdown } from "../recent/recent-notes";
 import { RecorderService } from "../audio/recorder-service";
 import { TaskQueue } from "../queue/task-queue";
@@ -249,12 +247,9 @@ export class QueueRetryService {
       runOnTarget: (target, operation) => this.host.continuations.runOnTarget(target, operation),
       runContinuationAppend: (task) => this.runAppendTask(task as Parameters<QueueRetryService["runAppendTask"]>[0]),
       mergeAndPolish: (segments, mode, sessionMeta, speakerFrontmatter) => mergeAndPolish(this.host, segments, mode, sessionMeta, speakerFrontmatter),
-      shouldRewriteConsolidated: (session) => shouldRewriteConsolidatedNote(this.host.settings, session),
       rewriteConsolidated: (session, polished, expectedMarkdown) => this.host.noteWriter.rewriteConsolidatedIfUnchanged(session, polished, expectedMarkdown),
       saveVersion: (file, content, base, input) => this.host.versions.saveVersion(file, content, base, input),
       formatNow: (format) => window.moment().format(format),
-      mergeLeadingFrontmatter: mergeLeadingFrontmatterIntoDocument,
-      getModePrefix: (mode) => getModeMeta(this.host.settings, mode).prefix,
       clearCommittedBriefingCheckpoint: (sessionMeta) => clearCommittedBriefingCheckpoint(this.host, sessionMeta),
       renameWithGeneratedTitle: (file, polished, mode) => this.host.noteWriter.renameMarkdownWithGeneratedTitle(file, polished, mode),
       refreshNoteIndex: (file, options) => this.host.noteIndex.refreshNoteIndexSafely(file, {

@@ -49,7 +49,7 @@ function makeService() {
       createFolder: async path => { createdFolders.push(path); },
     } as never,
     fileManager: { trashFile: file => trashFileImpl(file) } as never,
-    getSettings: () => ({ mdFolder: "QnALog", noteFileNameFormatNew: "YYYY-MM-DD", consolidatedLayout: false, polishMode: "synthesis" }),
+    getSettings: () => ({ mdFolder: "QnALog", noteFileNameFormatNew: "YYYY-MM-DD", polishMode: "synthesis" }),
     detectModeFromMarkdown: () => "meeting",
     queueTasks: () => tasks,
     queueRecoveryEntries: () => recovery,
@@ -295,7 +295,7 @@ describe("continuation target coordination", () => {
     const service = new ContinuationService({
       vault: {} as never,
       fileManager: {} as never,
-      getSettings: () => ({ mdFolder: "QnALog", noteFileNameFormatNew: "YYYY-MM-DD HHmm", consolidatedLayout: false, polishMode: "synthesis" }),
+      getSettings: () => ({ mdFolder: "QnALog", noteFileNameFormatNew: "YYYY-MM-DD HHmm", polishMode: "synthesis" }),
       detectModeFromMarkdown: () => "synthesis",
       queueTasks: () => [],
       queueRecoveryEntries: () => [],

@@ -5,7 +5,6 @@ import { isKnownPolishMode, getModeMeta, getModePrefix, getEffectivePolishMode }
 import { formatLlmFailureIssue } from "../llm/failure-presentation";
 import type { PluginSettings, RecordingSession, Segment, SessionMetaForMerge } from "../shared/types";
 import { buildEmptyLlmOutputFallback } from "./note-write-content";
-import { getAudioTimeLink } from "../notes/audio-reference-text";
 import { getAudioSegmentListItem, getDurationMs, getSegmentsDurationMs, getSegmentAudioLinkOffsetMs } from "../notes/audio-refs";
 import { getFrontmatterTags } from "../shared/frontmatter-tags";
 import { ensureTranscriptBlocks, extractTranscriptSegments } from "./note-transcript-ledger";
@@ -15,9 +14,7 @@ import { normalizeModeFromLabel } from "../shared/mode-label";
 import { detectRecentModeFromFilename } from "../recent/recent-note-mode";
 import { detectModeFromMarkdownFlow, type NoteModeInferenceHost } from "./note-mode-inference";
 
-import { shouldRewriteConsolidatedNote } from "../briefing/note-layout-policy";
 import { commitContinuationFlow, type ContinuationCommitFlowHost } from "./continuation-commit-flow";
-import { serializeContinuationSegmentBlock } from "./note-transcript-materials";
 import { rewriteConsolidatedFlow, appendPolishBlockFlow, type NotePolishFlowHost } from "./note-polish-flow";
 import { replaceRealtimeOutlineNote, type OutlineNoteStoreHost, type RealtimeOutlineReplacementResult } from "./outline-note-store";
 import {
@@ -53,7 +50,7 @@ import {
 
 
 export type NoteWriterSettings = Pick<PluginSettings,
-  | "promptTemplates" | "polishMode" | "llmModel" | "consolidatedLayout"
+  | "promptTemplates" | "polishMode" | "llmModel"
   | "autoRenameWithTitle" | "mdFolder" | "noteFileNameFormatNew"
 >;
 
@@ -182,15 +179,7 @@ export class NoteWriter {
         if (!(file instanceof obsidian.TFile)) throw new Error("Continuation target note is missing");
         return this.host.vault.read(file);
       },
-      shouldRewrite: (session) => shouldRewriteConsolidatedNote(this.host.settings, session),
-      serializeIncomingSegment: (segment) => serializeContinuationSegmentBlock(
-        segment,
-        getAudioTimeLink(segment.audioName, getSegmentAudioLinkOffsetMs(segment)),
-      ),
       rewrite: (session, polished, continuationSessionId) => this.rewriteConsolidated(session, polished, continuationSessionId),
-      append: (session, polished, continuationSessionId, initialMarkdown) => this.appendPolishBlock(
-        session, polished, null, false, continuationSessionId, initialMarkdown,
-      ),
     };
   }
   async readNoteMarkdown(file: obsidian.TFile): Promise<string> {

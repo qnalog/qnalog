@@ -356,7 +356,7 @@ describe("manual note outline rebuild", () => {
     const continuations = new ContinuationService({
       vault: {} as never,
       fileManager: {} as never,
-      getSettings: () => ({ mdFolder: "Notes", noteFileNameFormatNew: "YYYY-MM-DD", consolidatedLayout: false, polishMode: "meeting" }),
+      getSettings: () => ({ mdFolder: "Notes", noteFileNameFormatNew: "YYYY-MM-DD", polishMode: "meeting" }),
       detectModeFromMarkdown: () => "meeting",
       queueTasks: () => tasks as never,
       queueRecoveryEntries: () => [],

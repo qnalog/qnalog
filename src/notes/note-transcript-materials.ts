@@ -5,7 +5,6 @@ import { labelText } from "../shared/note-labels";
 import { formatElapsed } from "../shared/util-common";
 import { getTranscribeSegmentPlaceholder } from "../shared/util-audio";
 import { nsMarker, nsRe } from "../shared/namespace";
-import type { TranscriptSegmentRecord } from "../transcript/session-transcript";
 import { normalizeTranscriptDataPlacement, serializeTranscriptBlock } from "../transcript/transcript-markdown";
 
 export type TextImportSourceDetailsInput = Pick<RecordingSession, "id" | "source"> & {
@@ -85,11 +84,4 @@ export function buildRewriteSegmentBlock(segment: Segment, audioLink: string): s
 
 export function wrapSessionTranscriptBlocks(blocks: string, sessionId: string): string {
   return withSessionSegmentMarkers(blocks, sessionId);
-}
-
-export function serializeContinuationSegmentBlock(
-  segment: Segment & { transcript: TranscriptSegmentRecord },
-  audioLink: string,
-): string {
-  return serializeTranscriptBlock(segment, buildSegmentHeading(segment, audioLink), buildSegmentBody(segment));
 }

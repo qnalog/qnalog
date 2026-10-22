@@ -93,6 +93,25 @@ describe("settings-io round-trip（白名单防丢键兜底）", () => {
     expect(reread.audioFolder).toBe(loaded.audioFolder);
   });
 
+  it("drops the retired note-layout switch and keeps the rest of a schema 2 data.json", () => {
+    const oldData = {
+      settings: {
+        schemaVersion: 2,
+        composer: { model: "saved-model" },
+        storage: { recordingLibraryPath: "my audio" },
+        noteNaming: { consolidatedLayout: false, renameWithTitle: false },
+      },
+    };
+    const loaded = normalizePluginSettings(oldData) as unknown as Record<string, unknown>;
+    expect("consolidatedLayout" in loaded).toBe(false);
+    expect(loaded.autoRenameWithTitle).toBe(false);
+    expect(loaded.llmModel).toBe("saved-model");
+    expect(loaded.audioFolder).toBe("my audio");
+    const persisted = serializePluginSettings(loaded as unknown as Parameters<typeof serializePluginSettings>[0]);
+    expect(persisted.noteNaming).not.toHaveProperty("consolidatedLayout");
+    expect(persisted.noteNaming).toMatchObject({ renameWithTitle: false });
+  });
+
   it("drops the retired report settings and keeps the rest of a schema 2 data.json", () => {
     const oldData = {
       settings: {
@@ -184,7 +203,6 @@ describe("settings-io round-trip（白名单防丢键兜底）", () => {
 
     // 布尔开关类（含「默认 true 改 false」这种最容易被 || 兜底吃掉的方向）
     a.inboxAutoImport = false;
-    a.consolidatedLayout = false;
     a.autoRenameWithTitle = false;
     a.showFloatingBall = false;
     a.enableRealtimeOutline = false;
@@ -239,7 +257,6 @@ describe("settings-io round-trip（白名单防丢键兜底）", () => {
     expect(b.diagnosticsLogFolder).toBe("自定义/诊断日志");
 
     expect(b.inboxAutoImport).toBe(false);
-    expect(b.consolidatedLayout).toBe(false);
     expect(b.autoRenameWithTitle).toBe(false);
     expect(b.showFloatingBall).toBe(false);
     expect(b.enableRealtimeOutline).toBe(false);

@@ -3,7 +3,7 @@ import type { MergeQueueTaskPayload, PluginSettings, QueueTask, QueueTaskLifecyc
 import type { VersionSaveInput } from "../versions/version-save-store";
 import { t } from "../shared/i18n";
 import { SHORT_RECORDING_CONTENT_PROBE_MS, SHORT_RECORDING_MINIMUM_MS } from "../shared/limits";
-import { isTextImportSession, shouldRewriteConsolidatedNote } from "../briefing/note-layout-policy";
+import { isTextImportSession } from "../briefing/note-layout-policy";
 import { BriefingPipelineIncompleteError } from "../briefing/pipeline";
 import { readSessionKnowledge } from "../briefing/session-knowledge";
 import { isLlmNonRetryableError } from "../llm/failure-policy";
@@ -100,7 +100,7 @@ export interface SessionSpeakerPreparation {
   utteranceProjections?: Array<{ utteranceId: string; normalizedText: string; speakerName: string | null }>;
 }
 
-export type FinalizeSettings = Pick<PluginSettings, "autoOpenNoteAfterFinish" | "sedimentAutoExtract" | "llmEndpoint" | "llmModel" | "consolidatedLayout">;
+export type FinalizeSettings = Pick<PluginSettings, "autoOpenNoteAfterFinish" | "sedimentAutoExtract" | "llmEndpoint" | "llmModel">;
 
 export interface SessionFinalizeRunPort extends SessionShortRecordingPort {
   getSettings(): FinalizeSettings;
@@ -364,8 +364,7 @@ export async function runSessionFinalization(port: SessionFinalizeRunPort, sessi
       }
     }
     try {
-      if (shouldRewriteConsolidatedNote(port.getSettings(), writeSession)) await port.rewriteConsolidated(writeSession, polished, initialMarkdown);
-      else await port.appendPolishBlock(writeSession, polished, null, false);
+      await port.rewriteConsolidated(writeSession, polished, initialMarkdown);
     } catch (writeError) {
       commitError = true;
       mergeError = writeError;

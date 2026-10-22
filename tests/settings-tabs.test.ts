@@ -176,7 +176,6 @@ describe("settings tabs render visible settings and switch pages", () => {
         segmentIntervalMinutes: 5,
         asrConcurrency: 1,
         keepSegmentAudioFiles: false,
-        consolidatedLayout: true,
         autoRenameWithTitle: false,
         enableRealtimeOutline: true,
         autoOpenOutlineOnRecord: false,

@@ -2,23 +2,19 @@ import * as obsidian from "obsidian";
 import type { MergeQueueTaskPayload, QueueTaskDeferred, RecordingSession, Segment } from "../shared/types";
 import type { VersionSaveInput } from "../versions/version-save-store";
 import { readSessionKnowledge } from "../briefing/session-knowledge";
-import { labelPattern, labelText } from "../shared/note-labels";
 import { t } from "../shared/i18n";
 
 export type MergeRetryTask = MergeQueueTaskPayload & { createdAt?: string };
 export type MergeRetrySession = RecordingSession;
 
 export interface QueueMergeRetryPort {
-  getVault(): Pick<obsidian.Vault, "getAbstractFileByPath" | "read" | "modify">;
+  getVault(): Pick<obsidian.Vault, "getAbstractFileByPath" | "read">;
   runOnTarget<T>(target: obsidian.TFile, operation: () => Promise<T>): Promise<T>;
   runContinuationAppend(task: MergeRetryTask): Promise<QueueTaskDeferred | void>;
   mergeAndPolish(segments: Segment[], mode: string, sessionMeta: Record<string, unknown>, speakerFrontmatter: Record<string, unknown> | null): Promise<string>;
-  shouldRewriteConsolidated(session: MergeRetrySession): boolean;
   rewriteConsolidated(session: MergeRetrySession, polished: string, expectedMarkdown: string): Promise<void>;
   saveVersion(file: obsidian.TFile, content: string, segments: Segment[], input: VersionSaveInput): Promise<unknown>;
   formatNow(format: string): string;
-  mergeLeadingFrontmatter(documentText: string, generated: string): { content: string; body: string };
-  getModePrefix(mode: string): string;
   clearCommittedBriefingCheckpoint(sessionMeta: unknown): Promise<void>;
   renameWithGeneratedTitle(file: obsidian.TFile, polished: string, mode: string): Promise<unknown>;
   refreshNoteIndex(file: obsidian.TFile, options: { meetingDate: unknown; reason: string }): Promise<unknown>;
@@ -61,29 +57,18 @@ async function retryMergeTaskImpl(port: QueueMergeRetryPort, task: MergeRetryTas
     segments: Array.isArray(task.segments) ? task.segments : [],
     multiSourceAudio: task.source === "merged-notes",
   };
-  if (port.shouldRewriteConsolidated(retrySession)) {
-    // Best-effort snapshot of the note text the rewrite will replace; a failure must not block the write.
-    try {
-      if (currentMarkdown) {
-        await port.saveVersion(file, currentMarkdown, retrySession.segments, {
-          kind: "pre-polish", label: t("Before polish") + " " + port.formatNow("YYYY-MM-DD HH:mm"), mode: task.mode,
-          idLabel: "pre-polish-" + port.formatNow("YYYYMMDD-HHmmss"), body: currentMarkdown, activate: false,
-        });
-      }
-    } catch (archiveError) {
-      console.warn("[QnALog] pre-polish version archive failed", archiveError);
+  // Best-effort snapshot of the note text the rewrite will replace; a failure must not block the write.
+  try {
+    if (currentMarkdown) {
+      await port.saveVersion(file, currentMarkdown, retrySession.segments, {
+        kind: "pre-polish", label: t("Before polish") + " " + port.formatNow("YYYY-MM-DD HH:mm"), mode: task.mode,
+        idLabel: "pre-polish-" + port.formatNow("YYYYMMDD-HHmmss"), body: currentMarkdown, activate: false,
+      });
     }
-    await port.rewriteConsolidated(retrySession, polished, currentMarkdown);
-  } else {
-    const vault = port.getVault();
-    const cur = await vault.read(file);
-    const failMark = new RegExp(`_\\[(?:${labelPattern("mergeFailedQueued").source})[^\\]]*\\]_`);
-    const merged = port.mergeLeadingFrontmatter(cur, polished);
-    const next = failMark.test(cur)
-      ? merged.content.replace(failMark, () => merged.body)
-      : merged.content + "\n\n## " + labelText("mergedVersionAt", `${labelText("supplementaryRecording")} · ${port.getModePrefix(task.mode)}`) + "\n\n" + merged.body + "\n\n---\n";
-    await port.getVault().modify(file, next);
+  } catch (archiveError) {
+    console.warn("[QnALog] pre-polish version archive failed", archiveError);
   }
+  await port.rewriteConsolidated(retrySession, polished, currentMarkdown);
   await port.clearCommittedBriefingCheckpoint(task.sessionMeta);
   const renamed = await port.renameWithGeneratedTitle(file, polished, task.mode);
   const targetFile = renamed instanceof obsidian.TFile ? renamed : file;

@@ -21,9 +21,7 @@ import * as obsidian from "obsidian";
 import { QueueRetryService } from "../src/queue/queue-retry-service";
 import { DEFAULT_SETTINGS } from "../src/shared/defaults";
 import { readSessionKnowledge } from "../src/briefing/session-knowledge";
-import { labelText } from "../src/shared/note-labels";
 import { matchUiLanguage, setActiveUiLanguage } from "../src/shared/i18n";
-import { getModeMeta } from "../src/shared/mode-meta";
 import { NoteWriter } from "../src/notes/note-writer";
 
 afterEach(() => {
@@ -38,7 +36,7 @@ function makeFile(TFile: new () => object, path: string): Record<string, unknown
   return Object.assign(new TFile(), { path, name: path.split("/").pop(), basename: path.split("/").pop()?.replace(/\\.md$/, ""), extension: "md" });
 }
 
-function setup(options: { text?: string; layout?: boolean; task?: Record<string, unknown>; onTarget?: (op: () => Promise<unknown>) => Promise<unknown> } = {}) {
+function setup(options: { text?: string; task?: Record<string, unknown>; onTarget?: (op: () => Promise<unknown>) => Promise<unknown> } = {}) {
   const note = makeFile(obsidian.TFile, "Notes/retry.md");
   const files = new Map<string, Record<string, unknown>>([[String(note.path), note]]);
   const contents = new Map<string, string>([[String(note.path), options.text ?? "Original note."]]);
@@ -58,7 +56,7 @@ function setup(options: { text?: string; layout?: boolean; task?: Record<string,
   const refresh = vi.fn(async () => { log.push("refresh"); });
   const saveVersion = vi.fn(async () => { log.push("snapshot"); return undefined; });
   const host = {
-    app: { vault }, settings: { ...DEFAULT_SETTINGS, consolidatedLayout: options.layout ?? false },
+    app: { vault }, settings: { ...DEFAULT_SETTINGS },
     versions: { saveVersion },
     continuations: { runOnTarget: vi.fn(async (_target: unknown, operation: () => Promise<unknown>) => {
       log.push("runOnTarget");
@@ -217,24 +215,11 @@ describe("merge queue retry consumer contract", () => {
     expect(contents.get(String(note.path))).toBe(userEdit);
   });
 
-  it("keeps a user edit made while an append merge is running", async () => {
-    const { service, task, contents, note } = setup({ text: "Original note." });
-    const userEdit = "Original note.\n\nUser edit during merge.";
-    mergeAndPolishMock.mockImplementationOnce(async () => {
-      contents.set(String(note.path), userEdit);
-      return "---\ntitle: polished\n---\n\nPolished body.";
-    });
-
-    await service.retryMergeTask(task as never);
-
-    expect(contents.get(String(note.path))).toContain("User edit during merge.");
-    expect(contents.get(String(note.path))).toContain("Polished body.");
-  });
   it.each([
     { createdAt: "2026-09-02T03:04:05.000Z", startedAt: "2026-09-02T03:04:05.000Z" },
     { createdAt: undefined, startedAt: "2026-10-09T12:30:00.000Z" },
   ])("uses a createdAt fallback or current time and generates a missing session id", async ({ createdAt, startedAt }) => {
-    const { service, task, rewritten } = setup({ layout: true, task: { sessionId: "", createdAt } });
+    const { service, task, rewritten } = setup({ task: { sessionId: "", createdAt } });
     if (!createdAt) {
       vi.useFakeTimers();
       vi.setSystemTime(new Date(startedAt));
@@ -257,15 +242,6 @@ describe("merge queue retry consumer contract", () => {
   });
 
 
-  it.each(["en", "zh"])("appends the localized heading and separator when no marker exists (%s)", async (language) => {
-    const { service, task, contents, note, host } = setup({ task: { source: "recording" } });
-    setActiveUiLanguage(matchUiLanguage(language));
-    host.settings.uiLanguage = language;
-    await service.retryMergeTask(task as never);
-    const heading = `## ${labelText("mergedVersionAt", `${labelText("supplementaryRecording")} · ${getModeMeta(host.settings, "meeting").prefix}`)}`;
-    expect(contents.get(String(note.path))).toContain(`${heading}\n\nPolished body.\n\n---\n`);
-  });
-
   it("preserves operation ordering, checkpoint identity, and renamed index target", async () => {
     const { service, task, note, log, renamed, refresh } = setup({ task: { sessionMeta: { startedAt: "2026-10-09" } } });
     const moved = makeFile(obsidian.TFile, "Notes/renamed.md");
@@ -276,29 +252,28 @@ describe("merge queue retry consumer contract", () => {
       void host;
     });
     await service.retryMergeTask(task as never);
-    expect(log).toEqual(["runOnTarget", "read", "merge", "read", "modify", "clear", "rename", "refresh"]);
+    expect(log).toEqual(["runOnTarget", "read", "merge", "snapshot", "rewrite", "clear", "rename", "refresh"]);
     expect(refresh.mock.calls[0][0]).toBe(moved);
     expect(refresh.mock.calls[0][1]).toEqual({ meetingDate: "2026-10-09", reason: "merge-retry" });
     expect(note.path).toBe("Notes/retry.md");
   });
 
-  it.each(["read", "merge", "modify", "rewrite", "rename", "refresh"]) ("propagates the original %s failure and stops later work", async (stage) => {
+  it.each(["read", "merge", "rewrite", "rename", "refresh"]) ("propagates the original %s failure and stops later work", async (stage) => {
     const error = new Error(`${stage} failed`);
-    const { service, task, vault, rewritten, renamed, refresh, log } = setup({ layout: stage === "rewrite" });
+    const { service, task, vault, rewritten, renamed, refresh, log } = setup();
     if (stage === "read") vault.read.mockRejectedValueOnce(error);
     if (stage === "merge") mergeAndPolishMock.mockRejectedValueOnce(error);
-    if (stage === "modify") vault.modify.mockRejectedValueOnce(error);
     if (stage === "rewrite") rewritten.mockRejectedValueOnce(error);
     if (stage === "rename") renamed.mockRejectedValueOnce(error);
     if (stage === "refresh") refresh.mockRejectedValueOnce(error);
     await expect(service.retryMergeTask(task as never)).rejects.toBe(error);
-    if (["read", "merge", "modify", "rewrite"].includes(stage)) expect(clearCheckpointMock).not.toHaveBeenCalled();
-    if (stage === "modify" || stage === "rewrite") expect(renamed).not.toHaveBeenCalled();
+    if (["read", "merge", "rewrite"].includes(stage)) expect(clearCheckpointMock).not.toHaveBeenCalled();
+    if (stage === "rewrite") expect(renamed).not.toHaveBeenCalled();
     if (stage === "rename") expect(refresh).not.toHaveBeenCalled();
-    if (stage === "modify") expect(log).not.toContain("clear");
+    if (stage === "rewrite") expect(log).not.toContain("clear");
   });
 
-  it("reads replacement vault and layout settings after construction", async () => {
+  it("reads the replacement vault after construction", async () => {
     const { service, host, task, rewritten, contents, note } = setup();
     const secondNote = makeFile(obsidian.TFile, "Notes/second.md");
     const secondContents = new Map([[String(secondNote.path), "Second note."]]);
@@ -313,7 +288,6 @@ describe("merge queue retry consumer contract", () => {
       }),
     } as never;
     task.mdPath = String(secondNote.path);
-    host.settings.consolidatedLayout = true;
     await service.retryMergeTask(task as never);
     expect(rewritten).toHaveBeenCalledTimes(1);
     expect(rewritten.mock.calls[0][0].mdPath).toBe(secondNote.path);

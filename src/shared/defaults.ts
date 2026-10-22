@@ -361,7 +361,6 @@ export const DEFAULT_SETTINGS: PluginSettings = {
   setupWizardDismissed: false,
 
   autoRenameWithTitle: true,
-  consolidatedLayout: true,
 
   maxRetries: 3,
   diagnosticsLogEnabled: true,

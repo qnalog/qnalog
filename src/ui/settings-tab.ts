@@ -2254,10 +2254,6 @@ export class QnALogSettingTab extends obsidian.PluginSettingTab {
       .setDesc(t("Control the organized note layout, automatic naming, and live outline behavior during recording."))
       .setHeading();
 
-    new obsidian.Setting(c).setName(t("Note consolidation layout"))
-      .setDesc(t("Note reordering after recording finishes: AI-consolidated content at the top, collapsible raw segments at the bottom. When off, the note keeps raw segments in chronological order with no top consolidation."))
-      .addToggle(txt => txt.setValue(this.plugin.settings.consolidatedLayout).onChange(async v => { this.plugin.settings.consolidatedLayout = v; await this.plugin.saveSettings(); }));
-
     new obsidian.Setting(c).setName(t("Automatically add topic to file name"))
       .setDesc(t("After recording, audio import, re-organizing, or a queue retry completes, the AI distills a topic of no more than 15 characters and appends it to the note file name."))
       .addToggle(txt => txt.setValue(this.plugin.settings.autoRenameWithTitle).onChange(async v => { this.plugin.settings.autoRenameWithTitle = v; await this.plugin.saveSettings(); }));

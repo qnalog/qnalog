@@ -238,7 +238,6 @@ export function normalizePluginSettings(savedData: unknown): PluginSettings {
   s.noteFileNameFormatNew = firstString(defaults.noteFileNameFormatNew, noteNaming.sessionPattern, raw.noteFileNameFormatNew);
   s.autoOpenNoteAfterFinish = firstBoolean(defaults.autoOpenNoteAfterFinish, noteNaming.openAfterFinish, raw.autoOpenNoteAfterFinish);
   s.autoRenameWithTitle = firstBoolean(defaults.autoRenameWithTitle, noteNaming.renameWithTitle, raw.autoRenameWithTitle);
-  s.consolidatedLayout = firstBoolean(defaults.consolidatedLayout, noteNaming.consolidatedLayout, raw.consolidatedLayout);
   s.sedimentAutoExtract = firstBoolean(defaults.sedimentAutoExtract, noteNaming.sedimentAutoExtract, raw.sedimentAutoExtract);
 
   const capture = asRecord(raw.capture);
@@ -449,7 +448,6 @@ export function serializePluginSettings(s: PluginSettings): PersistedPluginSetti
       sessionPattern: s.noteFileNameFormatNew,
       openAfterFinish: s.autoOpenNoteAfterFinish,
       renameWithTitle: s.autoRenameWithTitle,
-      consolidatedLayout: s.consolidatedLayout,
       // 曾因未登记而在每次保存时静默丢失（白名单脚枪第三例）——serialize 是重建式白名单，新增设置键必须在此登记
       sedimentAutoExtract: !!s.sedimentAutoExtract,
     },

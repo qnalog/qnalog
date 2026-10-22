@@ -9,12 +9,14 @@
 import { readFileSync } from "node:fs";
 import { createHash } from "node:crypto";
 import vm from "node:vm";
+
+// 宿主 manifest 用仓库的真实版本；与打包进 main.js 的版本不一致会触发版本错位告警。
+const PLUGIN_VERSION = JSON.parse(readFileSync(new URL("../manifest.json", import.meta.url), "utf8")).version;
 // Obsidian 提供 parseYaml / stringifyYaml；模拟宿主用它俩做等价实现，
 // 否则流水线写出的 frontmatter 会被序列化成空串（harness 缺实现，不是产品缺陷）。
 import { dump as yamlDump, load as yamlLoad } from "js-yaml";
 
 const code = readFileSync(new URL("../main.js", import.meta.url), "utf8");
-const appendLayout = process.argv.includes("--append-layout");
 const noop = () => undefined;
 
 function makeEl() {
@@ -448,13 +450,12 @@ async function main() {
   try {
     vm.runInNewContext(code, sandbox, { filename: "main.js", timeout: 10000 });
     const PluginClass = sandbox.module.exports?.default || sandbox.module.exports;
-    const plugin = new PluginClass(app, { id: "qnalog", version: "1.0.0", dir: ".obsidian/plugins/qnalog", name: "QnALog", minAppVersion: "1.0.0" });
+    const plugin = new PluginClass(app, { id: "qnalog", version: PLUGIN_VERSION, dir: ".obsidian/plugins/qnalog", name: "QnALog", minAppVersion: "1.0.0" });
     await plugin.onload();
     plugin.settings.llmEndpoint = "http://localhost:55990/v1";
     plugin.settings.llmModel = "stub-model";
     plugin.settings.llmApiKey = "stub-key";
     plugin.settings.enableRealtimeOutline = false;
-    plugin.settings.consolidatedLayout = !appendLayout;
     plugin.settings.briefingStructureLevel = "balanced";
     plugin.settings.sedimentAutoExtract = false;
 
@@ -562,18 +563,11 @@ async function main() {
     const content = noteFile._content || "";
     if (!llmCalls.length) failures.push("流水线没有发起任何模型调用（可能停在配置校验或根本没走到整理）");
     const beforeRaw = content.split("## 原始材料")[0];
-    if (appendLayout) {
-      const integratedStart = content.search(/^## .*整合版/m);
-      if (integratedStart < 0 || !/议题[\s\S]*结论/.test(content.slice(integratedStart))) {
-        failures.push("追加布局的整合版段落没有保留成稿正文");
-      }
-    } else if (!/议题[\s\S]*结论/.test(beforeRaw)) {
+    if (!/议题[\s\S]*结论/.test(beforeRaw)) {
       failures.push("笔记正文里没有写入整合后的内容（原始材料之前）");
     }
-    // 追加布局保留输入的转写折叠区；重排布局生成逐段折叠区。
-    const rawLayout = appendLayout
-      ? /<summary>分段原始转写<\/summary>/.test(content)
-      : /<summary>(?:原始转写 · 段落|Raw transcript · Segment) \d+ /.test(content);
+    // 重排布局生成逐段折叠区。
+    const rawLayout = /<summary>(?:原始转写 · 段落|Raw transcript · Segment) \d+ /.test(content);
     if (!rawLayout || !session.segments.every(segment => content.includes(segment.text))) {
       failures.push("笔记里没有保留原始转写结构或完整分段文本");
     }
@@ -1940,7 +1934,6 @@ async function main() {
     const literalRetryPath = "QnALog/LiteralSmoke/retry.md";
     try {
       literalSmokeSettingsBefore = {
-        consolidatedLayout: plugin.settings.consolidatedLayout,
         autoRenameWithTitle: plugin.settings.autoRenameWithTitle,
         llmModel: plugin.settings.llmModel,
       };
@@ -2052,7 +2045,6 @@ async function main() {
         serializeTranscriptSegment(retrySegment),
       ].join("\n\n");
       files.set(literalRetryPath, retryFile);
-      plugin.settings.consolidatedLayout = false;
       plugin.settings.autoRenameWithTitle = false;
       literalMergeSmokeBody = `\n\nRETRY LITERAL ${special}\nUnicode：保留原文`;
       const queuePathProbeTasks = () => [
@@ -2121,11 +2113,14 @@ async function main() {
       const retryResult = retryFile._content;
       if (retryResult.includes(failMark)
         || !retryResult.includes(`RETRY LITERAL ${special}\nUnicode：保留原文`)
-        || !retryResult.includes("KEEP BEFORE")
-        || !retryResult.includes("KEEP AFTER")
         || !retryResult.includes("Retry smoke transcript ledger.")) {
-        throw new Error("merge retry did not preserve model text, surrounding content, and transcript");
+        throw new Error("merge retry did not preserve model text and transcript");
       }
+      // 重排会替换整篇正文；被替换的原文必须以 pre-polish 快照留存，才能找回。
+      const prePolishSnapshot = [...files.entries()].some(([path, file]) => path.includes("/.versions/")
+        && path.includes("pre-polish")
+        && ["KEEP BEFORE", "KEEP AFTER", failMark].every((text) => String(file && file._content || "").includes(text)));
+      if (!prePolishSnapshot) throw new Error("merge retry rewrite did not keep the replaced note as a pre-polish snapshot");
       const mergeRetryOriginal = retryFile._content;
       const mergeRetrySuccess = [];
       const mergeRetryRefresh = plugin.noteIndex.refreshNoteIndexSafely;
@@ -2137,11 +2132,10 @@ async function main() {
           mergeRetryTargets.push({ path: file.path, reason: options.reason });
           return mergeRetryRefresh.call(plugin.noteIndex, file, options);
         };
-        for (const consolidatedLayout of [false, true]) {
-          plugin.settings.consolidatedLayout = consolidatedLayout;
+        {
           retryFile._content = mergeRetryOriginal;
           await plugin.queueRetry.retryMergeTask({
-            id: `merge-retry-flow-${consolidatedLayout ? "rewrite" : "append"}`,
+            id: "merge-retry-flow-rewrite",
             mdPath: literalRetryPath,
             mode: "meeting",
             source: "recording",
@@ -2158,7 +2152,6 @@ async function main() {
       } finally {
         plugin.noteIndex.refreshNoteIndexSafely = mergeRetryRefresh;
         plugin.noteWriter.renameMarkdownWithGeneratedTitle = mergeRetryRename;
-        plugin.settings.consolidatedLayout = false;
       }
       const mergeRetrySuccessDigest = createHash("sha256").update(JSON.stringify(mergeRetrySuccess)).digest("hex");
       console.log(`[merge-retry-flow] success digest: ${mergeRetrySuccessDigest}`);
@@ -3794,7 +3787,7 @@ async function main() {
     return 1;
   }
   console.log(`[merge-pipeline] OK: 会话收尾到合并整理跑通，模型调用 ${llmCalls.length} 次（知识随 ${llmCalls.filter((request) => requestPrompt(request).includes("机器证据协议")).length} 个既有请求返回），笔记保留正文、证据与原始转写`);
-  console.log(`[merge-pipeline] ${appendLayout ? "append" : "rewrite"} digest: ${smokeDigest}`);
+  console.log(`[merge-pipeline] rewrite digest: ${smokeDigest}`);
   if (rawSegmentMaterialsDigest) {
     console.log(`[raw-segment-materials] rewrite digest: ${rawSegmentMaterialsDigest}`);
   }

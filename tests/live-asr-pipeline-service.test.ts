@@ -28,7 +28,6 @@ function makeService(writeBinary: () => Promise<void>) {
       transcribeModel: "test-model",
       transcribeLanguage: "",
       audioFolder: "QnALog/Audio",
-      consolidatedLayout: true,
     }),
     vault: {
       adapter: {
