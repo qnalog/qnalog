@@ -1,4 +1,4 @@
-import { extractIndexSource, readNoteIndex, type QnALogNoteIndexCard } from "./note-index";
+import { computeNoteIndex, extractIndexSource, type QnALogNoteIndexCard } from "./note-index";
 import { extractSessionId } from "../notes/note-document";
 import { readSelectedSessionKnowledge } from "../briefing/session-knowledge";
 import { isTopicErrataFrontmatter, NS_FM, NS_MERGE_BLOCK_RE, NS_ROOT, NS_TYPE_PERSON, NS_TYPE_PERSON_MERGED, NS_TYPE_TODO_CARD, NS_TYPE_TOPIC, NS_TYPE_VERSION_CACHE, hasNamespaceFrontmatter, isDerivedVersionType, nsRe, readNamespaceFrontmatter } from "../shared/namespace";
@@ -132,7 +132,7 @@ export async function buildRelatedNotesCorpus(port: RelatedNotesCorpusPort, opti
     if (roots.length && !isPathUnderRecentNoteRoots(file.path, roots)) continue;
     const markdown = await port.readText(file.path);
     if (isMergeNote(file.basename, markdown)) { excludedMerge++; excludedMergePaths.add(path); continue; }
-    const index = readNoteIndex(markdown);
+    const index = computeNoteIndex(markdown, { path: file.path, mtime: file.mtime, noteTitle: file.basename.replace(/\.md$/i, "") });
     const effectiveBody = extractIndexSource(stripTranscriptLedger(markdown));
     if (!index && effectiveBody.length < (options.minimumBodyChars ?? RELATED_NOTE_MIN_BODY_CHARS)) {
       tooShort++;

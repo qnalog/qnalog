@@ -283,7 +283,6 @@ git tag X.Y.Z && git push origin X.Y.Z
 ### 6.2 待决定、待确认与暂停项
 
 - **多说话人确认**（待决定）。检测到多个未命名说话人时，整理等待姓名确认（`notes/speaker-confirmation-flow.ts`）。是否先以会话内编号整理、之后再命名，由维护者决定。
-- **A12 笔记索引**（待决定）：选项与代价见 §14.3；当前写入行为不变。
 - **全库问答**（探索，不进入开发）：范围与退出条件见 §7.3。
 - **条件调查**：机器数据展示与历史 `partial` 原因按 §6.3 的授权与取证边界执行。`invalid-json` 不证明磁盘 JSON 损坏；不删除状态标记、不伪造 `complete`。尚未定位的截图或 `partial` 状态不作为已定位故障。
 - **暂停或可选**（不排入当前执行队列）：`modals.ts` 按域拆包、更新检查薄转发、专属服务展示、整体 `OutlineView` 拆分；Host 宽能力存量收窄与类型收敛（`SessionFinalizeService`、`QueueRetryService`、`RepolishService` 外壳，`NoteWriter` 材料编排与 `RecordingService` 启停）；三个 `@ts-nocheck` 文件（条件见 §8）；门禁正则漏检或 CSS 类名/产物大小问题（只在出现证据或真实输出问题时启动）；服务推荐（有具体需求时再核实能力、地区与费用）；历史流式任务恢复（有实际恢复需求时再调查）。
@@ -326,7 +325,7 @@ git tag X.Y.Z && git push origin X.Y.Z
 - **待调研**：哪些关系信息足以连接相关笔记；关系结构能否从现有文件重建、成本多大；用固定问题集比较「词法检索加索引卡」与「再加关系扩展」的必要来源召回。
 - **验证形式**：合成笔记集上的离线原型与一份短调研记录；不访问真实知识库。
 - **退出条件**：找到可行方案后，由维护者决定是否转为开发并写入 §6.1；未找到则保留单篇问答与主题层。
-- **转入开发的前置条件**：索引卡读取时核对当前来源修订（`topics/overview-card.ts` 与 `indexing/related-notes-corpus.ts` 现不核对）；引用带转写时间精度；同源版本只计一份来源。
+- **转入开发的前置条件**：引用带转写时间精度；同源版本只计一份来源。
 
 ### 7.4 数据、实现与隐私边界
 
@@ -588,6 +587,7 @@ HTTP 分段转写支持桌面与移动端；实时 WebSocket 需要浏览器不�
 ### 14.1 保留设计
 
 - `src/main.ts` 保持装配根；`saveAll` 保持串行尾链；纪要分部断点先写 `.tmp` 再改名。
+- 索引卡不写进笔记：读取方（`indexing/related-notes-corpus.ts`、`topics/overview-card.ts`）用 `computeNoteIndex` 按当前正文计算，只对带 QnALog 会话、转写或旧索引标记的笔记计算，按路径、mtime 与正文长度缓存，计算失败时退回笔记里已存的索引卡。写笔记后 `foldNoteMachineData` 只把会话注释收进唯一的「索引数据」折叠块并移除被写笔记里的旧索引卡；未被写入的旧笔记不改。`upsertNoteIndex` 仅用于构造旧版本笔记。
 - 纪要只有一种布局：整理正文在上，原始分段折叠在下；首次整理、后台合并重试与续录提交都重写整篇。`appendPolishBlock` 只写失败与无语音占位。已有追加布局笔记不批量改写。
 - `src/notes/outline-text.ts` 保持纯函数，不依赖 Obsidian、DOM 或文件读写。
 - OutlineView 的 `scheduleUpdate()` 与 `render()` 重绘时机不同，不合并。
@@ -607,10 +607,6 @@ HTTP 分段转写支持桌面与移动端；实时 WebSocket 需要浏览器不�
 | 会话知识 HTML 注释及证据状态 | `briefing/session-knowledge.ts` 保留 JSON schema、证据校验、`partial`/`stale` 状态和 malformed 处理 | `session-knowledge`、`text-correction`、`note-index` |
 | 笔记索引与沉淀机器壳 | `indexing/note-index.ts` 与 `sediment/` 分别拥有各自 JSON/容器格式；仅共用通用 details 范围，不搬 schema | `note-index`、`machine-block-fold`、`note-markdown-characterization` |
 | 旧版转写标题与原始材料提取 | `notes/note-markdown.ts` 保留 legacy heading 解析、布局次序和旧材料白名单；共通范围扫描由 `note-document.ts` 提供 | `note-markdown-characterization`、`version-content`、`machine-block-fold` |
-
-### 14.3 A12 待维护者决定
-
-- **笔记索引**：① 停止自动索引，不删除笔记中的旧索引块，并保护机器块；② 保留索引写入。索引卡已有两个读取方（`indexing/related-notes-corpus.ts`、`topics/overview-card.ts`），均不核对当前正文；全库问答（§7.3）如复用索引卡，须先补读时校验。前者减少索引刷新及额外写入；后者须验证读取用途、界面、更新与来源去重。
 
 ## 15. 笔记版本保存规则
 

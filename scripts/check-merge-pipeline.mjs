@@ -607,16 +607,8 @@ async function main() {
     if (!citedIds.length || citedIds.some((id) => !sourceUtteranceIds.has(id))) {
       failures.push("知识快照证据未全部指向笔记中持久化的 utterance");
     }
-    const indexMatch = content.match(/<details>\s*<summary>[^<]*<\/summary>\s*<!--\s*qnalog-note-index\s*-->\s*```json\s*([\s\S]*?)\s*```\s*<!--\s*qnalog-note-index-end\s*-->(?:\s*<!--\s*qnalog-(?:session-knowledge\s+[\s\S]*?|session(?::|\s)[^>]*|continuation-committed:[^>]*)-->)*\s*<\/details>/);
-    if (!indexMatch) failures.push("收尾后没有生成 note-index 块");
-    else {
-      try {
-        const index = JSON.parse(indexMatch[1]);
-        if (index.schemaVersion !== 2 || index.knowledge?.status !== "complete") {
-          failures.push("note-index 没有保存知识快照摘要");
-        }
-      } catch { failures.push("note-index 数据不是有效 JSON"); }
-    }
+    // 索引卡不再写进笔记（读取方按正文计算）；知识快照的完整性已在上方检查。
+    if (/<!--\s*qnalog-note-index\s*-->\s*```json/.test(content)) failures.push("收尾后仍写入了 note-index 索引卡");
     const protocolRequests = llmCalls.filter((request) => requestPrompt(request).includes("机器证据协议"));
     if (!protocolRequests.length || protocolRequests.length > 2 || protocolRequests.some((request) => !requestPrompt(request).includes("===UTTERANCE"))) {
       failures.push(`结构化知识必须随既有分部整理回复返回，不得另发提取请求；实际协议调用 ${protocolRequests.length} 次`);
@@ -1411,10 +1403,10 @@ async function main() {
           || (segment.text.match(new RegExp(expected.textPrefix.replace(/[.*+?^${}()|[\]\\]/g, "\\$&"), "g")) || []).length !== 1;
       })) failures.push("合并后的转写账本未保留来源顺序、时间、来源归属与原文");
  
-      if (!merged._content.includes("qnalog-merge") || !merged._content.includes("qnalog-merge-end")
-        || !merged._content.includes("qnalog-note-index")) {
-        failures.push("合并成稿缺少来源元数据或真实索引");
+      if (!merged._content.includes("qnalog-merge") || !merged._content.includes("qnalog-merge-end")) {
+        failures.push("合并成稿缺少来源元数据");
       }
+      if (merged._content.includes("<!-- qnalog-note-index -->")) failures.push("合并成稿仍写入了 note-index 索引卡");
       if (sourceA.file._content !== sourceA.content || sourceB.file._content !== sourceB.content) {
         failures.push("合并操作修改了来源笔记");
       }
@@ -2391,7 +2383,7 @@ async function main() {
             bodyPreserved: visible.includes(sample.body),
             optionalOverview: sample.id === "overview" || !visible.includes("[!abstract]"),
             sourcePreserved: content.includes(sample.source),
-            indexed: content.includes("<!-- qnalog-note-index -->"),
+            noIndexCard: !content.includes("<!-- qnalog-note-index -->"),
             knowledgePreserved: content.includes("<!-- qnalog-session-knowledge "),
             machineDataHidden: !qnalogCommentsOutsideDetails(content).length && hasSingleMachineDataDetails(content),
             policySelected: calls.some((request) => requestPrompt(request).includes(expectedPolicy)),
