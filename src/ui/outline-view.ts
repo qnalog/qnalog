@@ -371,12 +371,15 @@ export class OutlineView extends obsidian.ItemView {
     this.containerEl.children[1].empty();
     this._lastSig = "";
     this.render();
+    this.scheduleUpdate();
     // 节流：recorder 每 500ms 滴答一次。只更新计时文本，结构不变时不重建 DOM。
     this.unsubscribeRecorder = this.plugin.recorder.on(() => this.scheduleUpdate());
     this.registerEvent(this.app.workspace.on("file-open", () => this.syncActiveRows()));
     this.registerEvent(this.app.workspace.on("active-leaf-change", () => {
       this.handleActiveLeafChange();
       this.syncActiveRows();
+      // 切换标签页可能改变当前页签与活动笔记，需要按结构签名重绘侧边栏。
+      this.scheduleUpdate();
     }));
     // 文件系统变化需要刷新最近纪要。create 在启动、同步和批量粘贴时可能密集触发，
     // 因此统一进入短延迟合并刷新；metadata changed 负责补上 frontmatter 尚未解析完成的情况。

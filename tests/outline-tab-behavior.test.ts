@@ -347,3 +347,38 @@ describe("recent note deletion confirmation", () => {
     expect(uiMocks.notices.at(-1)).toContain("Derived versions changed while the dialog was open");
   });
 });
+
+describe("outline sidebar repaint on workspace focus changes", () => {
+  it("schedules a repaint when the view opens and whenever the active leaf changes", async () => {
+    const handlers = new Map<string, () => void>();
+    const view = Object.create(OutlineView.prototype) as OutlineView;
+    const scheduleUpdate = vi.fn();
+    const syncActiveRows = vi.fn();
+    Object.assign(view, {
+      containerEl: { children: [null, { empty: () => undefined }] },
+      app: {
+        workspace: { on: (name: string, handler: () => void) => { handlers.set(name, handler); return name; } },
+        vault: { on: (name: string) => name },
+        metadataCache: { on: (name: string) => name },
+      },
+      plugin: {
+        recorder: { on: () => () => undefined },
+        getCurrentSession: () => null,
+        settings: { enableRealtimeOutline: false },
+      },
+      registerEvent: () => undefined,
+      render: () => undefined,
+      scheduleUpdate,
+      syncActiveRows,
+    });
+
+    await view.onOpen();
+    expect(scheduleUpdate).toHaveBeenCalledTimes(1);
+
+    view.idlePanelTab = "ask";
+    handlers.get("active-leaf-change")?.();
+    expect(view.idlePanelTab).toBe("");
+    expect(syncActiveRows).toHaveBeenCalledTimes(1);
+    expect(scheduleUpdate).toHaveBeenCalledTimes(2);
+  });
+});
