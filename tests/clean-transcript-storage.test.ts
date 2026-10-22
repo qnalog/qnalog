@@ -305,9 +305,15 @@ describe("clean transcript storage", () => {
       getCachedFrontmatter: (file) => app.metadataCache.getFileCache(file)?.frontmatter,
       loadErrata: async () => null,
       getDefaultMode: () => "general",
+      detectNoteMode: () => null,
       getModeDisplayName: () => "General",
       getInFlight: () => inFlight,
       mergeAndPolish: async () => "---\ntitle: Updated title\n---\nNew organized body.",
+      saveReorganizeSnapshot: async (file, content, snapshotSegments, mode) => {
+        await versions.saveVersion(file, content, snapshotSegments, {
+          kind: "pre-reorganize", label: "Before reorganize", mode, idLabel: "pre-reorganize", body: content, activate: false,
+        });
+      },
       stripModeSuggestionBlocks: (text) => text,
       validateOriginalVersionForReorganization: (file) => versions.validateOriginalVersionForReorganization(file),
       replaceOriginalVersionBody: (file, payload) => versions.replaceOriginalVersionBody(file, payload),
@@ -329,7 +335,12 @@ describe("clean transcript storage", () => {
     const manifest = JSON.parse(await vault.adapter.read(`${folder}/manifest.json`)) as { activeVersionId: string; versions: Array<{ id: string; fileName: string; kind: string }> };
     const originalRecord = manifest.versions.find((record) => record.kind === "source-original");
     expect(manifest.activeVersionId).toBe(originalRecord?.id);
-    expect(manifest.versions.some((record) => record.kind === "pre-reorganize")).toBe(false);
+    // 被替换的整篇笔记存为不激活的「整理前」快照，活动版本仍是「初稿」。
+    const before = manifest.versions.find((record) => record.kind === "pre-reorganize");
+    expect(before).toBeDefined();
+    expect(manifest.activeVersionId).not.toBe(before?.id);
+    expect(files.get(`${folder}/${before?.fileName}`)?.data).toContain("qnalog_custom: keep-me");
+    expect(files.get(`${folder}/${before?.fileName}`)?.data).not.toContain("New organized body.");
     expect(files.get(derivedPath)?.data).toBe(derivedCacheBefore);
 
     await versions.switchVersion(originalPath, sourceFile.path);

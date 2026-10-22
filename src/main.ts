@@ -86,6 +86,7 @@ import { TopicPreviewModal } from "./ui/topic-preview-modal";
 import { removeMembersFromTopic } from "./ui/topic-member-removal";
 import { isTopicSourceEligible, TopicSummarySnapshot, type TopicsUiPort } from "./ui/topics-ui-port";
 import type { ErrataUiPort } from "./ui/errata-ui-port";
+import { confirmAndReorganize, currentRegeneratePreference, type RegenerateActionsPort } from "./ui/regenerate-actions";
 import { LibraryViewService } from "./views/library-view-service";
 import { ViewShellService } from "./ui/view-shell-service";
 import { RecordingService } from "./audio/recording-service";
@@ -598,7 +599,7 @@ class QnALogPlugin extends obsidian.Plugin {
     this.ribbonEl = this.addRibbonIcon("mic", t("QnALog: click to start/stop; hover to expand the controls"), () => this.recording.toggleRecording());
     this.recorder.on(() => this.shell.refreshOutlineView());
 
-    this.registerView(VIEW_TYPE_OUTLINE, (leaf) => new OutlineView(leaf, this, this.createTopicsUiPort(), this.createErrataUiPort()));
+    this.registerView(VIEW_TYPE_OUTLINE, (leaf) => new OutlineView(leaf, this, this.createTopicsUiPort(), this.createErrataUiPort(), this.createRegenerateActionsPort()));
     this.addRibbonIcon(QNALOG_PLUGIN_ICON_ID, t("QnALog voice notes panel"), () => this.shell.openOutlineView());
     this.registerMarkdownPostProcessor((el, ctx) => this.audioLinks.enhanceAudioTimeLinks(el, ctx));
 
@@ -718,16 +719,29 @@ class QnALogPlugin extends obsidian.Plugin {
       );
     } });
 
+    // 两个重新生成动作：「重新整理」改写当前笔记，「另存为新版本」不动当前笔记；都用笔记自己的模式与已勾选的偏好。
     this.addCommand({
-      id: "regenerate-briefing-from-frontmatter",
-      name: t("Reorganize This Note (Using Speaker Names)"),
+      id: "reorganize-current-note",
+      name: t("Reorganize Current Note"),
       checkCallback: (checking) => {
         const file = this.app.workspace.getActiveFile();
-        const isMd = file instanceof obsidian.TFile && file.extension === "md";
-        const mode = isMd ? this.noteWriter.detectModeFromMarkdown(file) : null;
-        if (!isMd || !mode) return false;
+        if (!(file instanceof obsidian.TFile) || file.extension !== "md" || !this.noteWriter.detectModeFromMarkdown(file)) return false;
         if (checking) return true;
-        void this.repolish.repolishMarkdownFile(file, mode);
+        const port = this.createRegenerateActionsPort();
+        void confirmAndReorganize(port, file, { preference: currentRegeneratePreference(port) });
+        return true;
+      },
+    });
+    this.addCommand({
+      id: "save-current-note-as-new-version",
+      name: t("Save Current Note as New Version"),
+      checkCallback: (checking) => {
+        const file = this.app.workspace.getActiveFile();
+        const mode = file instanceof obsidian.TFile && file.extension === "md" ? this.noteWriter.detectModeFromMarkdown(file) : null;
+        if (!(file instanceof obsidian.TFile) || !mode) return false;
+        if (checking) return true;
+        const port = this.createRegenerateActionsPort();
+        void port.saveAsNewVersion(file, mode, currentRegeneratePreference(port));
         return true;
       },
     });
@@ -997,6 +1011,20 @@ class QnALogPlugin extends obsidian.Plugin {
           || this.app.metadataCache.getFirstLinkpathDest(target, "");
         if (file instanceof obsidian.TFile) await openOrRevealFile(this.app, file);
       },
+    };
+  }
+
+  createRegenerateActionsPort(): RegenerateActionsPort {
+    return {
+      app: this.app,
+      settings: this.settings,
+      saveSettings: () => this.saveSettings(),
+      detectNoteMode: (file) => {
+        const mode = this.noteWriter.detectModeFromMarkdown(file);
+        return mode && mode !== "off" ? mode : null;
+      },
+      reorganizeNoteInPlace: (file, options) => this.repolish.reorganizeNoteInPlace(file, options),
+      saveAsNewVersion: (file, mode, preference) => this.repolish.repolishMarkdownFile(file, mode, preference),
     };
   }
 

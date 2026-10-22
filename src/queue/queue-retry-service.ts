@@ -4,7 +4,6 @@
 import * as obsidian from "obsidian";
 import type { LiveAsrPipelineService } from "../asr/live-asr-pipeline-service";
 import { QnALogSettingTab } from "../ui/settings-tab";
-import { getEffectivePolishMode } from "../shared/mode-meta";
 import { decodeAudioBlob, renderAudioBufferSliceToWav, transcribeAudio } from "../asr/transcribe";
 import { getLlmConfigIssue } from "../llm/core";
 import type { PluginSettings } from "../shared/types";
@@ -79,9 +78,8 @@ export interface QueueRetryHost {
   confirmSpeakerNames(session: { id: string; mdPath: string; source: string; importTranscribeProviderId?: string }, segments: { text: string }[]): Promise<unknown>;
   /** 词汇表与行业提示词服务。 */
   vocabulary: VocabularyService;
-  /** 重新整理服务：导入转写完成后按说话人姓名重排纪要。 */
+  /** 重新整理服务：补齐转写后把整理正文原地写回笔记。 */
   repolish: {
-    repolishMarkdownFile(file: obsidian.TFile, mode: string, repolishOptions?: unknown): Promise<boolean>;
     reorganizeNoteInPlace(file: unknown, options?: { firstOrganizing?: boolean }): Promise<boolean>;
   };
   /** 设置对象本身，不拷贝；服务直接读字段。 */
@@ -174,11 +172,8 @@ export class QueueRetryService {
         const queue = this.host.queue;
         return queue && typeof queue.snapshot === "function" ? queue.snapshot() : ((queue && queue.tasks) || []);
       },
-      detectMode: (file) => this.host.noteWriter.detectModeFromMarkdown(file),
-      getDefaultPolishMode: () => getEffectivePolishMode(this.host.settings, this.host.settings.polishMode),
-      repolish: (file, mode) => this.host.repolish.repolishMarkdownFile(file, mode, null),
       readNote: (file) => this.host.app.vault.read(file),
-      reorganizeInPlace: (file) => this.host.repolish.reorganizeNoteInPlace(file, { firstOrganizing: true }),
+      reorganizeInPlace: (file, options) => this.host.repolish.reorganizeNoteInPlace(file, options),
       removeMergeTasksForNote: (mdPaths, sessionId) => this.host.queue ? this.host.queue.removeMergeTasksForNote(mdPaths, sessionId) : Promise.resolve(0),
     };
   }

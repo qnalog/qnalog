@@ -160,6 +160,8 @@ function makePort(content: string, options: { autoRename?: boolean; rename?: (fi
     getCachedFrontmatter: () => null,
     loadErrata: vi.fn(async () => null),
     getDefaultMode: vi.fn(() => "meeting"),
+    detectNoteMode: vi.fn(() => null),
+    saveReorganizeSnapshot: vi.fn(async () => undefined),
     getModeDisplayName: () => "",
     getModeOptions: vi.fn(() => modes),
     resolveLinkPath: vi.fn((link: string) => (link === "qnalog-20261017-125032.m4a" ? audioPath : null)),

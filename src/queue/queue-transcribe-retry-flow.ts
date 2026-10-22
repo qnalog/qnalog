@@ -41,14 +41,13 @@ export interface QueueTranscribeRetryPort {
   insertBeforeSegmentsEnd(mdPath: string, block: string, sessionId: string): Promise<unknown>;
   confirmSpeakerNames(session: { id: string; mdPath: string; source: string; importTranscribeProviderId?: string }, segments: { text: string }[]): Promise<unknown>;
   getQueueTasks(): readonly { id?: string; type?: string; mdPath?: string; continuation?: unknown; sessionId?: string }[];
-  detectMode(file: obsidian.TFile): string | undefined;
-  getDefaultPolishMode(): string;
-  /** 普通重新整理（派生版本）；返回 true 表示派生版本已写入。 */
-  repolish(file: obsidian.TFile, mode: string): Promise<boolean>;
   /** 读取笔记当前内容，用于判断整理正文是否已有实际内容。 */
   readNote(file: obsidian.TFile): Promise<string>;
-  /** 原地整理：把整理正文写回原笔记（用于原笔记尚无整理正文的情形）；返回 true 表示正文已写入。 */
-  reorganizeInPlace(file: obsidian.TFile): Promise<boolean>;
+  /**
+   * 原地整理：把整理正文写回原笔记；返回 true 表示正文已写入。
+   * `firstOrganizing`：笔记尚无整理正文时为 true（补会话键、按标题改名）；已有正文时为 false，写前存「整理前」快照。
+   */
+  reorganizeInPlace(file: obsidian.TFile, options: { firstOrganizing: boolean }): Promise<boolean>;
   /** 移除同一笔记的首次整理（merge）任务，见 TaskQueue.removeMergeTasksForNote。 */
   removeMergeTasksForNote(mdPaths: readonly string[], sessionId: string | undefined): Promise<number>;
 }
@@ -273,13 +272,11 @@ function maybeAutoRepolish(port: QueueTranscribeRetryPort, task: TranscribeRetry
   if (remaining.length) return;
   if (tasks.some((item) => item && item.type === "merge" && item.continuation && item.sessionId === task.sessionId)) return;
   new obsidian.Notice(t("\"{0}\" All failed segments are transcribed; re-organizing the body...").replace("{0}", mdFile.basename), 8000);
-  const mode = port.detectMode(mdFile) || port.getDefaultPolishMode();
   void (async () => {
     try {
       const content = await port.readNote(mdFile);
-      const organized = hasOrganizedBody(content)
-        ? await port.repolish(mdFile, mode)
-        : await port.reorganizeInPlace(mdFile);
+      // 已有整理正文时同样原地重写（按笔记自己的模式，写前存快照），让主笔记包含补齐的转写，而不是另生成衍生笔记。
+      const organized = await port.reorganizeInPlace(mdFile, { firstOrganizing: !hasOrganizedBody(content) });
       // 整理已成功写回后，首次整理任务持有的旧分段快照已失效，必须移出队列，否则会在笔记已整理后再次运行。
       // 整理失败时保留这些任务，由队列原有的重试路径处理。
       if (organized) {

@@ -174,7 +174,8 @@ describe("transcription retry consumer contract", () => {
     expect(fixture.diagnostics.logDiagnostic).not.toHaveBeenCalledWith("warn", "queue.transcribe_empty_result", expect.any(String), expect.anything());
     expect(fixture.diagnostics.logDiagnostic).not.toHaveBeenCalledWith("warn", "asr.long_recording_anomaly", expect.any(String), expect.anything());
     expect(fixture.cleanup).not.toHaveBeenCalled();
-    expect(fixture.host.repolish.repolishMarkdownFile).toHaveBeenCalledTimes(1);
+    await vi.waitFor(() => expect(fixture.host.repolish.reorganizeNoteInPlace).toHaveBeenCalledWith(fixture.file, { firstOrganizing: false }));
+    expect(fixture.host.repolish.repolishMarkdownFile).not.toHaveBeenCalled();
   });
 
   it("completes a no-speech empty retry as a blank segment and replaces the failure placeholder", async () => {
@@ -291,11 +292,13 @@ describe("automatic re-organization after backfilling the last failed segment", 
     expect(fixture.contents.get(fixture.file.path)).toContain("recognized words");
   });
 
-  it("keeps the derived re-organization when the original note already has an organized body", async () => {
+  it("rewrites an already organized note in place instead of creating a derived note", async () => {
     const fixture = setup(`## ✨ 整合版（meeting）\n\n真实整理正文。\n\n---\n\n## 原始材料\n\n### ${placeholderFor("retry-1")}\n`);
     await expect(fixture.service.retryTranscribeTask(fixture.task as never)).resolves.toBeUndefined();
-    await vi.waitFor(() => expect(fixture.host.repolish.repolishMarkdownFile).toHaveBeenCalledTimes(1));
-    expect(fixture.host.repolish.reorganizeNoteInPlace).not.toHaveBeenCalled();
+    await vi.waitFor(() => expect(fixture.host.repolish.reorganizeNoteInPlace).toHaveBeenCalledTimes(1));
+    // 已有正文：不补会话键、不改名（firstOrganizing=false），整理流程在写入前存「整理前」快照。
+    expect(fixture.host.repolish.reorganizeNoteInPlace).toHaveBeenCalledWith(fixture.file, { firstOrganizing: false });
+    expect(fixture.host.repolish.repolishMarkdownFile).not.toHaveBeenCalled();
   });
 
   it("logs a failed in-place re-organization without rejecting the retry", async () => {
@@ -349,13 +352,13 @@ describe("stale first-time merge tasks after automatic re-organization", () => {
     expect(fixture.host.repolish.repolishMarkdownFile).not.toHaveBeenCalled();
   });
 
-  it("removes the stale first-time merge task after the derived re-organization succeeds", async () => {
+  it("removes the stale first-time merge task after re-organizing an organized note in place", async () => {
     const fixture = setup(`${organizedNoteBody}### ${placeholderFor("retry-1")}\n`);
-    fixture.host.repolish.repolishMarkdownFile.mockResolvedValueOnce(true);
+    fixture.host.repolish.reorganizeNoteInPlace.mockResolvedValueOnce(true);
     const queue = attachRealQueue(fixture, [mergeTask("merge-stale"), mergeTask("merge-other-note", { mdPath: "Notes/other.md" })]);
     await expect(fixture.service.retryTranscribeTask(fixture.task as never)).resolves.toBeUndefined();
     await vi.waitFor(() => expect(queue.tasks.map((task) => task.id)).toEqual(["merge-other-note"]));
-    expect(fixture.host.repolish.reorganizeNoteInPlace).not.toHaveBeenCalled();
+    expect(fixture.host.repolish.reorganizeNoteInPlace).toHaveBeenCalledWith(fixture.file, { firstOrganizing: false });
   });
 
   it("keeps the first-time merge task when the in-place re-organization fails", async () => {

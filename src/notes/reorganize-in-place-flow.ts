@@ -22,10 +22,14 @@ const DRAFT_IMPORT_TITLE_SUFFIX_RE = new RegExp(
 
 /**
  * `firstOrganizing`：笔记首次整理（转写补齐后的自动整理）。为 true 时补齐会话 frontmatter 并按标题改名，
- * 使结果与首次整理一致。默认 false，即侧边栏的手动「原地重新整理」，行为不变。
+ * 使结果与首次整理一致。默认 false，即手动「重新整理」。
+ * `mode`：用户在菜单里选的模式；缺省时用笔记自己的模式，取不到再用默认模式。
+ * `preference`：可选的整理偏好，与「另存为新版本」相同。
  */
 export interface ReorganizeInPlaceOptions {
   firstOrganizing?: boolean;
+  mode?: string;
+  preference?: unknown;
 }
 
 export interface ReorganizeInPlacePort {
@@ -33,9 +37,13 @@ export interface ReorganizeInPlacePort {
   getCachedFrontmatter(file: obsidian.TFile): Record<string, unknown> | null | undefined;
   loadErrata(file: obsidian.TFile): Promise<ErrataRules | null>;
   getDefaultMode(): string;
+  /** 笔记当前的模式（frontmatter / 标签推断）；无法判断时返回 null。 */
+  detectNoteMode(file: obsidian.TFile): string | null;
   getModeDisplayName(mode: string): string;
   getInFlight(): Set<string>;
-  mergeAndPolish(segments: Segment[], mode: string, sessionMeta: Record<string, unknown>, frontmatter: Record<string, unknown> | null): Promise<string>;
+  mergeAndPolish(segments: Segment[], mode: string, sessionMeta: Record<string, unknown>, frontmatter: Record<string, unknown> | null, preference: unknown): Promise<string>;
+  /** 把写入前的整篇笔记存为不激活的版本快照；失败时抛错，调用方据此放弃写入。 */
+  saveReorganizeSnapshot(file: obsidian.TFile, content: string, segments: Segment[], mode: string): Promise<void>;
   clearCommittedBriefingCheckpoint(sessionMeta: Record<string, unknown>): Promise<void>;
   /** 笔记里没有原始转写时，询问并用对应录音重新转写写回；返回是否已写回。 */
   recoverOriginalTranscript(file: obsidian.TFile): Promise<boolean>;
@@ -177,7 +185,7 @@ export async function reorganizeNoteInPlace(port: ReorganizeInPlacePort, file: u
     if (!input.segments.length) throw new Error(t("No QnALog original transcript found. Use this on a note Markdown that contains \"Segmented raw transcript\" or recording segments."));
     const firstOrganizing = options.firstOrganizing === true;
     const noteFields = firstOrganizing ? readSessionFieldsFromNote(snapshot, port.getModeOptions()) : null;
-    const mode = noteFields?.mode || port.getDefaultMode();
+    const mode = noteFields?.mode || options.mode || port.detectNoteMode(file) || port.getDefaultMode();
     const leadingFrontmatter = noteFields
       ? buildAbsentSessionFrontmatter(parseFrontmatter(splitLeadingFrontmatter(snapshot).frontmatter), {
         mode: noteFields.mode,
@@ -194,7 +202,7 @@ export async function reorganizeNoteInPlace(port: ReorganizeInPlacePort, file: u
     taskStarted = true;
     port.tasks.patchTaskActivity(taskId, { stage: "llm", stageLabel: t("AI reorganizing"), detail: t("Generating a new note body"), progress: 10 });
     const sessionMeta = { ...input.sessionMeta, _freshBriefing: true };
-    const generated = await port.mergeAndPolish(input.segments, mode, sessionMeta, input.originalFrontmatter);
+    const generated = await port.mergeAndPolish(input.segments, mode, sessionMeta, input.originalFrontmatter, options.preference ?? null);
     const next = buildReorganizedNote(snapshot, generated, (text) => port.stripModeSuggestionBlocks(text), leadingFrontmatter);
     if (extractTranscriptSegments(next).length < input.segments.length) {
       throw new Error(t("The reorganized note would lose original transcript segments; the note was not changed."));
@@ -202,6 +210,12 @@ export async function reorganizeNoteInPlace(port: ReorganizeInPlacePort, file: u
     port.tasks.patchTaskActivity(taskId, { stage: "writing", stageLabel: t("Writing"), detail: t("Replacing the organized note body"), progress: 78 });
     if (await port.getVault().read(file) !== snapshot) {
       throw new Error(t("The note changed while reorganizing; the result was not written. Review the note and try again."));
+    }
+    // 写入前保留被替换的整篇笔记（含用户手改）；快照存不下就不写，正文保持原样。
+    try {
+      await port.saveReorganizeSnapshot(file, snapshot, input.segments, mode);
+    } catch (error) {
+      throw new Error(t("Could not save the current note as a version before reorganizing; the note was not changed. {0}").replace("{0}", getTaskErrorMessage(error)));
     }
     let changed = false;
     await port.getVault().process(file, (latest) => {

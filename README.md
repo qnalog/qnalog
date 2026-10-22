@@ -54,7 +54,12 @@ The default **General** template chooses paragraphs, lists, or topic sections fr
 
 The sidebar tabs appear in this order: **Notes**, **Outline**, **Distill**, **Q&A**, and **Topics**. They show the note list, live outline and markers, reviewable knowledge candidates, questions about a note, and topic pages. The note list context menu can open a note in Outline or Distill; Distill starts a scan when the note has no scan results.
 
-In the note list context menu, **Reorganize** regenerates the organized body in place and replaces the current content. The plugin does not save the replaced body; use Obsidian's file recovery if you need to restore it. Reorganization updates an existing **Original** snapshot to the new draft. **Generate derived version** creates a separate derived note and leaves the source note unchanged.
+The note list context menu has two re-generate actions. Each submenu lists the modes (the note's own mode first) and optional preferences:
+
+- **Reorganize** regenerates the organized body in the chosen mode and replaces the current content. Before writing, the current note is saved to the plugin's hidden version folder (`.versions`); if that save fails, nothing is written. An existing **Original** snapshot is updated to the new draft.
+- **Save as new version** creates a separate derived note and leaves the source note unchanged. **Clean copy** is also in this submenu.
+
+The matching commands are **Reorganize Current Note** and **Save Current Note as New Version**; they use the note's own mode and the checked preference.
 
 The 1.6.1 interface follows the active light or dark theme and supports narrow panels, visible keyboard focus, and reduced-motion preferences.
 
@@ -75,13 +80,13 @@ Transcribed notes preserve the original speech-to-text text and revision history
 <details>
 <summary>Original, derived, and clean-copy versions</summary>
 
-Before the first derived version, QnALog caches the source text as an **Original** snapshot. Reorganization updates an existing snapshot to the new draft. When no snapshot exists, reorganization does not create one; the first later derived version uses the then-current source note as its original. **Generate Clean Copy** creates a separate file and activates that version in the source note. Regular reorganization creates a derived Markdown file and a `minutes` cache but does not activate the derived version automatically. Use Obsidian file recovery to restore an organized body replaced by reorganization.
+Before the first new version, QnALog caches the source text as an **Original** snapshot. Reorganization updates an existing snapshot to the new draft. When no snapshot exists, reorganization does not create one; the first later new version uses the then-current source note as its original. **Save as new version → Clean copy** creates a separate file and activates that version in the source note. Other new versions create a derived Markdown file and a `minutes` cache but are not activated automatically. The whole note replaced by reorganization is kept in the hidden `.versions` folder. After failed transcription segments are transcribed again, QnALog reorganizes the note in place automatically, saving the current note first in the same way.
 
 </details>
 
 ### Errata for note corrections
 
-Use **QnALog: Create or open errata for this note** to open the note's errata file. Select a short incorrect term and run **QnALog: Correct selected text** to save a replacement; QnALog also updates matching text in the current editor while leaving transcript blocks unchanged. Use **QnALog: Mark selected text as noise** to record text that should be excluded from future organization. Reorganize or regenerate the note to apply its errata to new output. Errata files are stored under `QnALog/勘误表`. Section headings may use Chinese or English (`替换/Replace`, `噪音/Noise`, `说明/Notes`); newly created files use the current interface language.
+Use **QnALog: Create or open errata for this note** to open the note's errata file. Select a short incorrect term and run **QnALog: Correct selected text** to save a replacement; QnALog also updates matching text in the current editor while leaving transcript blocks unchanged. Use **QnALog: Mark selected text as noise** to record text that should be excluded from future organization. Reorganize the note or save it as a new version to apply its errata to new output. Errata files are stored under `QnALog/勘误表`. Section headings may use Chinese or English (`替换/Replace`, `噪音/Noise`, `说明/Notes`); newly created files use the current interface language.
 
 ### Long content, task progress, and recovery
 
