@@ -51,14 +51,14 @@ vi.mock("obsidian", () => {
   class PluginSettingTab {}
   class Notice { constructor(message: string) { uiMocks.notices.push(String(message)); } }
   class Menu {
-    items: Array<{ title?: string; icon?: string; onClick?: () => unknown }> = [];
+    items: Array<{ title?: string; icon?: string; checked?: boolean; submenu?: Menu; onClick?: () => unknown }> = [];
     addItem(callback: (item: Record<string, unknown>) => void) {
       const item = {
         setTitle(title: string) { this.title = title; return this; },
         setIcon(icon: string) { this.icon = icon; return this; },
         setDisabled(disabled: boolean) { this.disabled = disabled; return this; },
-        setChecked() { return this; },
-        setSubmenu() { return new Menu(); },
+        setChecked(checked: boolean) { this.checked = checked; return this; },
+        setSubmenu() { this.submenu = new Menu(); return this.submenu; },
         onClick(handler: () => unknown) { this.onClick = handler; return this; },
       };
       callback(item);
@@ -172,7 +172,8 @@ describe("recent note sidebar context actions", () => {
     const openFile = vi.fn(async () => undefined);
     const cachedRead = vi.fn(async () => markdown);
     const requestSedimentExtraction = vi.fn();
-    const reorganizeNoteInPlace = vi.fn();
+    const reorganizeNoteInPlace = vi.fn(async () => true);
+    const saveAsNewVersion = vi.fn(async () => true);
     const view = Object.create(OutlineView.prototype) as OutlineView;
     const menuHolder: { menu?: { items: Array<{ title?: string; icon?: string; disabled?: boolean; onClick?: () => unknown }> } } = {};
     Object.assign(view, {
@@ -181,6 +182,14 @@ describe("recent note sidebar context actions", () => {
       getSedimentPanelState: () => ({ hasPipelineStarted, scanning: false }),
       requestSedimentExtraction,
       errataUi: withErrataUi ? { openForFile: vi.fn(async () => undefined) } : null,
+      regenerateUi: {
+        app: { vault: { cachedRead } },
+        settings: { repolishPreference: "" },
+        saveSettings: vi.fn(async () => undefined),
+        detectNoteMode: () => "learning",
+        reorganizeNoteInPlace,
+        saveAsNewVersion,
+      },
       render: vi.fn(),
       showMenuAtMouse: (menu: typeof menuHolder.menu) => { menuHolder.menu = menu; },
     });
@@ -188,15 +197,32 @@ describe("recent note sidebar context actions", () => {
     const menu = menuHolder.menu!;
     const outline = menu.items.find((item) => item.title === "Open outline");
     const extract = menu.items.find((item) => item.title === "Distill content");
-    return { file, openFile, cachedRead, reorganizeNoteInPlace, requestSedimentExtraction, view, outline, extract, menu };
+    return { file, openFile, cachedRead, reorganizeNoteInPlace, saveAsNewVersion, requestSedimentExtraction, view, outline, extract, menu };
   }
 
-  it("offers in-place reorganization and labels the existing submenu as derived versions", async () => {
+  it("offers Reorganize and Save as new version, each listing the note's own mode first", async () => {
     const h = await setup(false);
-    expect(h.menu.items.find((item) => item.title === "Reorganize")).toMatchObject({ icon: "refresh-cw" });
-    expect(h.menu.items.find((item) => item.title === "Reorganize")?.disabled).not.toBe(true);
+    const reorganize = h.menu.items.find((item) => item.title === "Reorganize");
+    const saveAs = h.menu.items.find((item) => item.title === "Save as new version");
+    expect(reorganize).toMatchObject({ icon: "refresh-cw" });
     expect(h.cachedRead).not.toHaveBeenCalled();
-    expect(h.menu.items.some((item) => item.title === "Generate derived version")).toBe(true);
+    for (const sub of [reorganize?.submenu, saveAs?.submenu]) {
+      expect(sub?.items[0]).toMatchObject({ checked: true });
+      expect(sub?.items.filter((item) => item.checked)).toHaveLength(1);
+    }
+    expect(saveAs?.submenu?.items.at(-1)?.title).toBe("Clean copy");
+    expect(h.menu.items.some((item) => item.title === "Generate derived version" || item.title === "Generate Clean Copy")).toBe(false);
+  });
+
+  it("routes a mode pick to the matching action with that mode", async () => {
+    uiMocks.confirm.mockClear();
+    const h = await setup(false, "# Note\n\nNo transcript here.");
+    const reorganizeFirst = h.menu.items.find((item) => item.title === "Reorganize")?.submenu?.items[0];
+    await reorganizeFirst?.onClick?.();
+    await vi.waitFor(() => expect(h.reorganizeNoteInPlace).toHaveBeenCalledWith(h.file, { mode: "learning", preference: null }));
+    const saveFirst = h.menu.items.find((item) => item.title === "Save as new version")?.submenu?.items[0];
+    await saveFirst?.onClick?.();
+    expect(h.saveAsNewVersion).toHaveBeenCalledWith(h.file, "learning", null);
   });
 
   it("shows Open errata only when the UI port is available", async () => {
@@ -218,8 +244,7 @@ describe("recent note sidebar context actions", () => {
       "Merge with Previous Recording",
       "Open errata",
       "Reorganize",
-      "Generate Clean Copy",
-      "Generate derived version",
+      "Save as new version",
       "Rename",
       "Delete Transcript Record",
     ]);
@@ -229,27 +254,6 @@ describe("recent note sidebar context actions", () => {
     expect(entries.at(-1)?.title).toBe("Delete Transcript Record");
     expect(entries.every((entry, index) => entry.title || (index > 0 && index < entries.length - 1
       && entries[index - 1]?.title && entries[index + 1]?.title))).toBe(true);
-  });
-
-  it("hands off to the reorganize flow without its own prompt when the note has no original transcript", async () => {
-    uiMocks.notices.length = 0;
-    uiMocks.confirm.mockClear();
-    const h = await setup(false, "# Note\n\nNo transcript here.");
-    const reorganize = h.menu.items.find((item) => item.title === "Reorganize");
-    await reorganize?.onClick?.();
-    // 转写恢复的询问由整理流程负责，菜单既不拦截也不先弹确认。
-    expect(h.reorganizeNoteInPlace).toHaveBeenCalledWith(h.file);
-    expect(uiMocks.confirm).not.toHaveBeenCalled();
-    expect(uiMocks.notices).toHaveLength(0);
-  });
-
-  it("asks for confirmation after finding original transcript segments", async () => {
-    uiMocks.confirm.mockClear();
-    const h = await setup(false, "<details><summary>分段原始转写</summary>\n### Segment 1\nHello\n</details>");
-    const reorganize = h.menu.items.find((item) => item.title === "Reorganize");
-    await reorganize?.onClick?.();
-    expect(uiMocks.confirm).toHaveBeenCalledTimes(1);
-    expect(h.reorganizeNoteInPlace).toHaveBeenCalledWith(h.file);
   });
 
   it("opens the note before selecting the outline tab", async () => {

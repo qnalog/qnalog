@@ -5,7 +5,6 @@ import type QnALogPlugin from "../main";
 import { t as i18nT } from '../shared/i18n';
 import * as obsidian from "obsidian";
 import { hashRealtimeOutlineText, normalizeOutlineMarkdownForDisplay, parseRealtimeOutlineStateFromMarkdown } from "../notes/outline-text";
-import { extractTranscriptSegments } from "../notes/note-transcript-ledger";
 
 import { ImportAudioModal, ImportTextModal, PeopleDirectorySuggestionModal, QueueModal } from "./modals";
 
@@ -53,11 +52,11 @@ import { clampSpeakerChannelCount, extractSpeakerIdsFromMarkdown, normalizeSpeak
 
 import { isKnowledgeSourceAlreadyScanned, resolveRuntimeAudioInputMode } from "../notes/recording-issues";
 
-import { REPOLISH_PREFERENCE_PRESETS, getRepolishPreferencePreset } from "../prompts/briefing-prompts";
 
 import { VIEW_TYPE_OUTLINE } from "../notes/realtime-outline";
 import type { TopicsUiPort } from "./topics-ui-port";
 import type { ErrataUiPort } from "./errata-ui-port";
+import { confirmAndReorganize, fillModePreferenceMenu, type RegenerateActionsPort } from "./regenerate-actions";
 import { addTopicJoinSubmenu } from "./topic-join-menu";
 import { TopicsPanel } from "./topics-panel";
 import { openCreateTopic, openTopicJoin } from "./topic-ui-actions";
@@ -223,6 +222,8 @@ export class OutlineView extends obsidian.ItemView {
   declare plugin: QnALogPlugin;
   declare topicsUi: TopicsUiPort | null;
   declare errataUi: ErrataUiPort | null;
+  /** 「重新整理 / 另存为新版本」两个动作的入口。 */
+  declare regenerateUi: RegenerateActionsPort | null;
   topicsSnapshotRefreshAt = 0;
   topicsSnapshotRefreshPending = false;
   declare topicPromptRefreshPaths: Set<string>;
@@ -314,11 +315,12 @@ export class OutlineView extends obsidian.ItemView {
   declare _sidebarMoreExpanded: boolean;
   /** 纪要列表的搜索关键词。 */
   declare _recentSearch: string;
-  constructor(leaf, plugin, topicsUi: TopicsUiPort | null = null, errataUi: ErrataUiPort | null = null) {
+  constructor(leaf, plugin, topicsUi: TopicsUiPort | null = null, errataUi: ErrataUiPort | null = null, regenerateUi: RegenerateActionsPort | null = null) {
     super(leaf);
     this.plugin = plugin;
     this.topicsUi = topicsUi;
     this.errataUi = errataUi;
+    this.regenerateUi = regenerateUi;
     this.topicPromptRefreshPaths = new Set();
     this.topicSourceCheckPaths = new Set();
     this.aiOutline = "";
@@ -4543,26 +4545,6 @@ export class OutlineView extends obsidian.ItemView {
     // 偏好 + 思考 并排一行（紧凑双列），方案在上独占一行——压扁「更多设置」。
     const pairRow = moreBody.createDiv({ cls: "qnalog-outline-control-pair" });
 
-    // 整理偏好（左半）：复用右键「生成衍生版本」预设，读写同一个 repolishPreference。
-    // 侧边栏只保留最小正交集合；其余预设留在右键高级菜单。主表 REPOLISH_PREFERENCE_PRESETS 不删 key，避免已存值变孤儿。
-    const prefCell = pairRow.createDiv({ cls: "qnalog-outline-pair-cell" });
-    prefCell.createSpan({ cls: "qnalog-outline-control-label", text: i18nT("Preference") });
-    const SIDEBAR_PREF_KEYS = ["detailed", "concise", "structured", "natural", "expanded"];
-    const curPref = this.plugin.settings.repolishPreference || "";
-    // 不放"无特殊偏好"项：未选偏好时触发器留空（blankWhenUnset）。菜单只列 5 个正交预设。
-    const prefItems = SIDEBAR_PREF_KEYS.map(k => ({ value: k, label: i18nT(REPOLISH_PREFERENCE_PRESETS[k].label) }));
-    // 当前偏好若是被精简掉的旧值，补一项让触发器显示其真实名字
-    if (curPref && !SIDEBAR_PREF_KEYS.includes(curPref)) {
-      const hiddenPreset = getRepolishPreferencePreset(curPref);
-      if (hiddenPreset) prefItems.push({ value: curPref, label: i18nT(hiddenPreset.label) });
-    }
-    mkSelect(prefCell, {
-      current: curPref,
-      items: prefItems,
-      blankWhenUnset: true,
-      onPick: async (v) => { this.plugin.settings.repolishPreference = v; await this.plugin.saveSettings(); },
-    });
-
     // 思考档（右半）：默认 / 快速 / 推理。仅当前 AI 整理服务支持调节时可选，否则灰掉。
     const thinkCtrl = getThinkingControl(this.plugin.settings.llmEndpoint, this.plugin.settings.llmModel);
     const thinkCell = pairRow.createDiv({ cls: "qnalog-outline-pair-cell" });
@@ -5806,22 +5788,6 @@ export class OutlineView extends obsidian.ItemView {
     }
   }
 
-  showRecentModeMenu(evt, file) {
-    const menu = new obsidian.Menu();
-    const modes = getVisibleModeEntries(this.plugin.settings, false);
-    for (const [mode] of modes) {
-      menu.addItem((item) => {
-        item.setTitle(getModeDisplayName(this.plugin.settings, mode))
-          .setIcon("refresh-cw")
-          .onClick(() => {
-            const pref = this.plugin.settings.repolishPreference || "";
-            void this.plugin.repolish.repolishMarkdownFile(file, mode, pref ? getRepolishPreferencePreset(pref) : null);
-          });
-      });
-    }
-    this.showMenuAtMouse(menu, evt);
-  }
-
   async handleGenerateCleanCopy(file: obsidian.TFile): Promise<void> {
     let existing;
     try {
@@ -5912,72 +5878,27 @@ export class OutlineView extends obsidian.ItemView {
       actionsGroup.push((target) => target.addItem((item) => item.setTitle(i18nT("Open errata")).setIcon("file-warning")
         .onClick(() => void this.errataUi?.openForFile(file))));
     }
-    actionsGroup.push((target) => target.addItem((item) => {
-      item.setTitle(i18nT("Reorganize")).setIcon("refresh-cw")
-        .onClick(async () => {
-          const markdown = await this.app.vault.cachedRead(file);
-          if (!extractTranscriptSegments(markdown).length) {
-            // 原始转写已丢失：交给整理流程询问并用录音重新转写，不在菜单里拦截。
-            void this.plugin.repolish.reorganizeNoteInPlace(file);
-            return;
-          }
-          const confirmed = await qnalogConfirm(
-            this.plugin.app,
-            i18nT("Reorganize this note"),
-            i18nT("This will regenerate this note's organized body in the note's own mode and replace the current content. Before writing, the current note is saved to QnALog's hidden version folder (.versions). The original transcript stays unchanged."),
-            i18nT("Reorganize"),
-          );
-          if (confirmed) void this.plugin.repolish.reorganizeNoteInPlace(file);
+    const regenerateUi = this.regenerateUi;
+    if (regenerateUi) {
+      const noteMode = regenerateUi.detectNoteMode(file);
+      actionsGroup.push((target) => target.addItem((item) => {
+        item.setTitle(i18nT("Reorganize")).setIcon("refresh-cw");
+        const sub = (item as obsidian.MenuItem & { setSubmenu(): obsidian.Menu }).setSubmenu();
+        fillModePreferenceMenu(sub, regenerateUi, noteMode, (mode, preference) => {
+          void confirmAndReorganize(regenerateUi, file, { mode, preference });
         });
-    }));
-    actionsGroup.push((target) => target.addItem((item) => {
-      item.setTitle(i18nT("Generate Clean Copy"))
-        .setIcon("file-text")
-        .onClick(() => { void this.handleGenerateCleanCopy(file); });
-    }));
-    actionsGroup.push((target) => target.addItem((item) => {
-      item.setTitle(i18nT("Generate derived version"))
-        .setIcon("refresh-cw");
-      const sub = (item as obsidian.MenuItem & { setSubmenu(): obsidian.Menu }).setSubmenu();
-      // 偏好（可选修饰）：点击只在前面打钩/取消，就地更新、菜单不关（捕获阶段拦掉点击，阻止 Obsidian 关菜单）。
-      // 没勾偏好就按默认执行。真正触发整理的是下面的"模式"——届时拼接「模式模板 + 已选偏好」两段提示词。
-      const prefItems = [];
-      const syncPrefChecks = () => {
-        const cur = this.plugin.settings.repolishPreference || "";
-        for (const [k, it] of prefItems) { try { it.setChecked(cur === k); } catch { /* intentionally empty */ } }
-      };
-      for (const key of ["detailed", "concise", "structured", "natural", "expanded"]) {
-        const preset = getRepolishPreferencePreset(key);
-        if (!preset) continue;
-        sub.addItem((presetItem) => {
-          presetItem.setTitle(preset.label).setChecked((this.plugin.settings.repolishPreference || "") === key);
-          prefItems.push([key, presetItem]);
-          const dom = (presetItem as unknown as { dom: HTMLElement }).dom;
-          if (dom) {
-            dom.addEventListener("click", (e) => {
-              e.preventDefault(); e.stopPropagation();
-              if (e.stopImmediatePropagation) e.stopImmediatePropagation();
-              this.plugin.settings.repolishPreference = ((this.plugin.settings.repolishPreference || "") === key) ? "" : key;
-              void this.plugin.saveSettings();
-              syncPrefChecks();
-            }, true);
-          }
+      }));
+      actionsGroup.push((target) => target.addItem((item) => {
+        item.setTitle(i18nT("Save as new version")).setIcon("copy-plus");
+        const sub = (item as obsidian.MenuItem & { setSubmenu(): obsidian.Menu }).setSubmenu();
+        fillModePreferenceMenu(sub, regenerateUi, noteMode, (mode, preference) => {
+          void regenerateUi.saveAsNewVersion(file, mode, preference);
         });
-      }
-      sub.addSeparator();
-      const modes = getVisibleModeEntries(this.plugin.settings, false);
-      for (const [mode] of modes) {
-        sub.addItem((subItem) => {
-          subItem.setTitle(getModeDisplayName(this.plugin.settings, mode))
-            .setIcon("refresh-cw")
-            .onClick(() => {
-              const pref = this.plugin.settings.repolishPreference || "";
-              const preset = pref ? getRepolishPreferencePreset(pref) : null;
-              void this.plugin.repolish.repolishMarkdownFile(file, mode, preset);
-            });
-        });
-      }
-    }));
+        sub.addSeparator();
+        sub.addItem((cleanItem) => cleanItem.setTitle(i18nT("Clean copy")).setIcon("file-text")
+          .onClick(() => { void this.handleGenerateCleanCopy(file); }));
+      }));
+    }
 
     const topicsUi = this.topicsUi;
     const topicsGroup: MenuItemBuilder[] = [];
