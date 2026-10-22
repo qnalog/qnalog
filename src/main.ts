@@ -26,7 +26,7 @@ import { ApiKeyStorageError, createApiKeyStorageNamespace, isValidApiKeyStorageN
 import type {PluginSettings, RecordingSession, PreparedLiveSegment } from "./shared/types";
 import { SessionStore } from "./session/session-store";
 
-import { describeBuildSource, normalizePluginBuildInfo, resolveDisplayVersion, type PluginBuildInfo } from "./shared/build-info";
+import { buildInfoMatchesManifest, describeBuildSource, normalizePluginBuildInfo, resolveDisplayVersion, type PluginBuildInfo } from "./shared/build-info";
 
 import {AUDIO_EXT } from "./shared/catalog-import";
 
@@ -121,6 +121,9 @@ export function applyUiLanguage(settings: { uiLanguage?: string } | null | undef
   setActiveUiLanguage(resolveUiLanguage(configured, obsidian.getLanguage()));
 }
 
+// esbuild.config.mjs 在构建时把仓库 manifest 的版本注入为常量；未经打包运行时不存在。
+declare const QNALOG_BUILD_VERSION: string | undefined;
+
 class QnALogPlugin extends obsidian.Plugin {
   declare settings: PluginSettings;
   // 域服务字段在 onload 里赋值。TypeScript 不推断「仅赋值」的属性，
@@ -208,7 +211,9 @@ class QnALogPlugin extends obsidian.Plugin {
       const path = obsidian.normalizePath(`${dir}/build-info.json`);
       if (!(await this.app.vault.adapter.exists(path))) return;
       const raw = await this.app.vault.adapter.read(path);
-      this.buildInfo = normalizePluginBuildInfo(JSON.parse(raw));
+      const info = normalizePluginBuildInfo(JSON.parse(raw));
+      // BRAT / Obsidian 更新会替换 manifest 与 main.js，但留下旧的 build-info.json。
+      this.buildInfo = buildInfoMatchesManifest(info, this.manifest && this.manifest.version) ? info : null;
     } catch (e) {
       console.warn("[QnALog] build-info read failed", e);
     }
@@ -527,7 +532,8 @@ class QnALogPlugin extends obsidian.Plugin {
       },
       now: () => Date.now(),
       normalizePath: (path) => obsidian.normalizePath(path),
-      buildVersion: this.manifest && this.manifest.version ? this.manifest.version : "",
+      buildVersion: typeof QNALOG_BUILD_VERSION === "string" ? QNALOG_BUILD_VERSION : "",
+      getBuildInfo: () => this.buildInfo,
     });
     this.tasks.start();
     this.recorder = new RecorderService({

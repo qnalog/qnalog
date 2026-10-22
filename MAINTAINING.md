@@ -181,12 +181,13 @@ npm ci && npm run build && git status --short main.js   # 期望：无输出
 | 构建位置 | 版本标识 |
 |---|---|
 | `main` 且无未提交改动 | `x.y.z`（与仓库 `manifest.json` 一致） |
-| 其他分支 / 有改动 | `x.y.z-dev.<分支>.<提交>[.dirty]` |
-| 游离头指针 | `x.y.z-dev.detached.<提交>` |
+| 其他分支 / 有改动 | `x.y.(z+1)-dev.<分支>.<提交>[.dirty]` |
+| 游离头指针 | `x.y.(z+1)-dev.detached.<提交>` |
 
 - 仓库里的 `manifest.json` 始终是发版身份；开发标识只出现在构建产物内部（`QNALOG_BUILD_*`）与 `install:vault` 写入知识库的 manifest 副本。
 - 「有改动」只算已跟踪文件有改动、或 `src/` 下有未跟踪文件；其他未跟踪草稿不影响。
-- 开发版标识不触发版本错位告警：`UpdateService.warnIfBuildManifestSkew` 只比较 `x.y.z`。
+- 开发版的补丁号加一：semver 中 `x.y.z-dev.*` 低于 `x.y.z`，BRAT 与 Obsidian 会用已发布的 `x.y.z` 覆盖开发安装；`x.y.(z+1)-dev.*` 只会被更新的正式版替换。
+- 版本错位告警（`UpdateService.warnIfBuildManifestSkew`）比较打包进 `main.js` 的版本与 manifest 的 `x.y.z`；开发安装改用 `build-info.json` 记录的构建源版本。`build-info.json` 的 `displayVersion` 与 manifest 不一致时（更新器替换了插件但留下该文件）视为无效。
 
 ### 4.2 发版步骤
 

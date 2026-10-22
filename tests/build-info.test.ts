@@ -1,8 +1,8 @@
 import { describe, expect, it } from "vitest";
-import { computeBuildIdentity } from "../scripts/build-identity.mjs";
+import { computeBuildIdentity, nextPatchVersion } from "../scripts/build-identity.mjs";
 import { t } from "../src/shared/i18n";
 import { describeBuildIdentity, computeBuildIdentity as compute } from "../scripts/build-identity.mjs";
-import { baseVersion, describeBuildSource, normalizePluginBuildInfo, resolveDisplayVersion } from "../src/shared/build-info";
+import { baseVersion, buildInfoMatchesManifest, describeBuildSource, normalizePluginBuildInfo, resolveDisplayVersion } from "../src/shared/build-info";
 
 // 开发分支的构建必须在版本号上能看出来：这是用户在本地验证时区分
 // "我正在跑哪一份构建"的唯一依据，静默退化成发版号会让验证失去意义。
@@ -16,29 +16,39 @@ describe("构建身份标识", () => {
   it("开发分支 → 带分支与提交的 dev 后缀", () => {
     const identity = computeBuildIdentity({ version: "1.0.0", branch: "refactor/main-ts-decomposition", sha: "8a83183", dirty: false });
     expect(identity.channel).toBe("dev");
-    expect(identity.displayVersion).toBe("1.0.0-dev.refactor-main-ts-decomposition.8a83183");
+    expect(identity.displayVersion).toBe("1.0.1-dev.refactor-main-ts-decomposition.8a83183");
   });
 
   it("有未提交改动 → 追加 dirty，避免把工作树状态当成已提交版本", () => {
     const identity = computeBuildIdentity({ version: "1.0.0", branch: "feat/x", sha: "abc1234", dirty: true });
-    expect(identity.displayVersion).toBe("1.0.0-dev.feat-x.abc1234.dirty");
+    expect(identity.displayVersion).toBe("1.0.1-dev.feat-x.abc1234.dirty");
   });
 
   it("main 上有未提交改动同样算开发版", () => {
     const identity = computeBuildIdentity({ version: "1.0.0", branch: "main", sha: "abc1234", dirty: true });
     expect(identity.channel).toBe("dev");
-    expect(identity.displayVersion).toBe("1.0.0-dev.main.abc1234.dirty");
+    expect(identity.displayVersion).toBe("1.0.1-dev.main.abc1234.dirty");
   });
 
   it("游离头指针没有分支名，用 detached 占位", () => {
     const identity = computeBuildIdentity({ version: "2.1.0", branch: "HEAD", sha: "abc1234", dirty: false });
     expect(identity.channel).toBe("dev");
-    expect(identity.displayVersion).toBe("2.1.0-dev.detached.abc1234");
+    expect(identity.displayVersion).toBe("2.1.1-dev.detached.abc1234");
+  });
+
+  it("开发版在版本排序上高于当前发版、低于下一个正式补丁版（BRAT 不会用当前发版覆盖它）", () => {
+    expect(nextPatchVersion("1.6.13")).toBe("1.6.14");
+    expect(nextPatchVersion("2.0.9")).toBe("2.0.10");
+    const { displayVersion } = computeBuildIdentity({ version: "1.6.13", branch: "feat/x", sha: "abc1234", dirty: false });
+    // semver：1.6.13 < 1.6.14-dev.* < 1.6.14
+    const [core, pre] = displayVersion.split(/-(.+)/);
+    expect(core).toBe("1.6.14");
+    expect(pre.startsWith("dev.")).toBe(true);
   });
 
   it("版本串中的分支名只保留 semver 允许的字符", () => {
     const identity = computeBuildIdentity({ version: "1.0.0", branch: "feat/中文 分支#1", sha: "abc1234", dirty: false });
-    expect(identity.displayVersion).toBe("1.0.0-dev.feat-1.abc1234");
+    expect(identity.displayVersion).toBe("1.0.1-dev.feat-1.abc1234");
   });
 });
 
@@ -72,6 +82,13 @@ describe("构建身份读取", () => {
     expect(normalizePluginBuildInfo("nope")).toBeNull();
     expect(normalizePluginBuildInfo({ version: "1.0.0", displayVersion: "x", channel: "whatever" })).toBeNull();
     expect(normalizePluginBuildInfo({ version: "", displayVersion: "", channel: "dev" })).toBeNull();
+  });
+
+  it("只在 manifest 版本等于 build-info 记录的标识时采用它（BRAT 更新后留下的旧文件不算）", () => {
+    const info = normalizePluginBuildInfo({ version: "1.6.13", displayVersion: "1.6.14-dev.feat-x.abc1234", channel: "dev", branch: "feat/x", sha: "abc1234", dirty: false, builtAt: "" });
+    expect(buildInfoMatchesManifest(info, "1.6.14-dev.feat-x.abc1234")).toBe(true);
+    expect(buildInfoMatchesManifest(info, "1.6.13")).toBe(false);
+    expect(buildInfoMatchesManifest(null, "1.6.13")).toBe(false);
   });
 
   it("baseVersion 去掉预发布后缀，供版本错位自检只比 x.y.z", () => {

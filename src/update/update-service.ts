@@ -1,6 +1,6 @@
 import type { AvailableUpdate, PluginSettings } from "../shared/types";
 import { compareVersions } from "../shared/version";
-import { baseVersion } from "../shared/build-info";
+import { baseVersion, buildInfoMatchesManifest, type PluginBuildInfo } from "../shared/build-info";
 import { resolveUpdateRawBases } from "./update-source";
 import { t } from "../shared/i18n";
 
@@ -49,7 +49,10 @@ export interface UpdateRuntime {
   warn(message: string, error?: unknown): void;
   now(): number;
   normalizePath(path: string): string;
+  /** 打包进 main.js 的版本号（构建时仓库 manifest 的版本）。 */
   buildVersion: string;
+  /** 开发安装写入的 build-info.json；正式发布没有。 */
+  getBuildInfo?(): PluginBuildInfo | null;
 }
 
 export interface CheckForUpdatesOptions {
@@ -157,9 +160,13 @@ export class UpdateService {
   warnIfBuildManifestSkew(): void {
     try {
       const built = baseVersion(this.runtime.buildVersion);
-      const declared = baseVersion(this.host.manifest && this.host.manifest.version);
-      // 只比 x.y.z：本地安装的开发版会在 manifest 上带 -dev.<分支>.<提交> 后缀，
-      // 那是刻意标注，不是"只换了 manifest 没换 main.js"的错位。
+      const manifestVersion = this.host.manifest && this.host.manifest.version;
+      const info = this.runtime.getBuildInfo ? this.runtime.getBuildInfo() : null;
+      // 开发安装的 manifest 写的是安装期标识（补丁号加一的 -dev 版本），
+      // 这时与 main.js 比较的是 build-info 记录的构建源版本。
+      const declared = buildInfoMatchesManifest(info, manifestVersion)
+        ? baseVersion(info.version)
+        : baseVersion(manifestVersion);
       if (built && declared && built !== declared) {
         this.runtime.warn(`[QnALog] build/manifest 版本错位：main.js=${built} manifest=${declared}`);
         this.runtime.notice(

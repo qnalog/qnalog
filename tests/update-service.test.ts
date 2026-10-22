@@ -5,6 +5,7 @@ vi.mock("obsidian", () => ({
 }));
 
 import type { AvailableUpdate } from "../src/shared/types";
+import type { PluginBuildInfo } from "../src/shared/build-info";
 import {
   UpdateService,
   type UpdateAdapter,
@@ -56,6 +57,7 @@ class MemoryAdapter implements UpdateAdapter {
 interface FixtureOptions {
   currentVersion?: string;
   buildVersion?: string;
+  buildInfo?: PluginBuildInfo | null;
   availableUpdate?: AvailableUpdate | null;
   initialFiles?: Record<string, string>;
   request?: RequestHandler;
@@ -95,6 +97,7 @@ function createFixture(options: FixtureOptions = {}) {
     now: () => now,
     normalizePath: (path) => path.replace(/\\/g, "/").replace(/\/+/g, "/"),
     buildVersion: options.buildVersion ?? options.currentVersion ?? "1.0.0",
+    getBuildInfo: () => options.buildInfo ?? null,
   };
   const service = new UpdateService({
     settings,
@@ -166,6 +169,30 @@ describe("UpdateService checks", () => {
 });
 
 describe("UpdateService skew warning", () => {
+  const devInfo = (displayVersion: string): PluginBuildInfo => ({
+    version: "1.6.13", displayVersion, channel: "dev", branch: "feat/x", sha: "abc1234", dirty: false, builtAt: "",
+  });
+
+  it("does not warn for a dev install whose manifest carries the next-patch dev label", () => {
+    const fixture = createFixture({ currentVersion: "1.6.14-dev.feat-x.abc1234", buildVersion: "1.6.13", buildInfo: devInfo("1.6.14-dev.feat-x.abc1234") });
+    fixture.service.warnIfBuildManifestSkew();
+    expect(fixture.warnings).toEqual([]);
+    expect(fixture.notices).toEqual([]);
+  });
+
+  it("ignores a stale dev build-info left behind after BRAT installed the release", () => {
+    const fixture = createFixture({ currentVersion: "1.6.13", buildVersion: "1.6.13", buildInfo: devInfo("1.6.14-dev.feat-x.abc1234") });
+    fixture.service.warnIfBuildManifestSkew();
+    expect(fixture.notices).toEqual([]);
+  });
+
+  it("warns when an updater replaced the manifest but not main.js", () => {
+    const fixture = createFixture({ currentVersion: "1.6.14", buildVersion: "1.6.13", buildInfo: devInfo("1.6.14-dev.feat-x.abc1234") });
+    fixture.service.warnIfBuildManifestSkew();
+    expect(fixture.notices).toHaveLength(1);
+    expect(fixture.warnings[0]?.message).toBe("[QnALog] build/manifest 版本错位：main.js=1.6.13 manifest=1.6.14");
+  });
+
   it("preserves the build/manifest mismatch warning", () => {
     const fixture = createFixture({ currentVersion: "2.0.0", buildVersion: "1.9.0" });
     fixture.service.warnIfBuildManifestSkew();

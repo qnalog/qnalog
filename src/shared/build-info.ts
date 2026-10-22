@@ -13,7 +13,7 @@ import { t } from "./i18n";
 export interface PluginBuildInfo {
   /** 仓库 manifest 的版本（发版身份），例如 1.0.0 */
   version: string;
-  /** 展示用完整版本串；dev 时形如 1.0.0-dev.<分支>.<提交>[.dirty] */
+  /** 展示用完整版本串；dev 时形如 1.0.1-dev.<分支>.<提交>[.dirty]（补丁号比 version 大一） */
   displayVersion: string;
   /** "release" 或 "dev" */
   channel: string;
@@ -47,6 +47,16 @@ export function normalizePluginBuildInfo(value: unknown): PluginBuildInfo | null
 }
 
 /**
+ * build-info.json 是否描述当前安装的这份插件。
+ * BRAT 与 Obsidian 更新插件时只替换 main.js / manifest.json / styles.css，
+ * 上一次开发安装留下的 build-info.json 会留在目录里；manifest 版本与它记录的
+ * displayVersion 不一致时，它描述的是已被替换的旧构建，不能再用。
+ */
+export function buildInfoMatchesManifest(info: PluginBuildInfo | null, manifestVersion: unknown): info is PluginBuildInfo {
+  return !!info && info.displayVersion === text(manifestVersion);
+}
+
+/**
  * 界面上显示的版本串。
  * 有开发标识时用它（其中已含分支与提交），否则回退到 manifest 的版本。
  */
@@ -62,11 +72,7 @@ export function describeBuildSource(info: PluginBuildInfo): string {
   return t("Development branch {0}{1}").replace("{0}", where || t("unknown")).replace("{1}", info.dirty ? t("(uncommitted changes)") : "");
 }
 
-/**
- * 去掉预发布后缀，只留 x.y.z。
- * 版本错位自检用它比较：开发版的 manifest 带 -dev.<分支>.<提交> 后缀，
- * 那是刻意标注，不是"只换了 manifest 没换 main.js"。
- */
+/** 去掉预发布后缀，只留 x.y.z。 */
 export function baseVersion(value: unknown): string {
   return text(value).split("-")[0];
 }
