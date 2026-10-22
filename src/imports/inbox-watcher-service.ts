@@ -4,7 +4,6 @@
 import * as obsidian from "obsidian";
 import type { PluginSettings } from "../shared/types";
 import { AUDIO_EXT } from "../shared/catalog-import";
-import { isAbsoluteExternalInboxPath } from "../audio/external-inbox";
 import { isSyncConflictName } from "../notes/recording-issues";
 import { ensureVaultFolder, findAvailableVaultPath } from "../shared/util-vault";
 
@@ -13,12 +12,18 @@ import { t } from "../shared/i18n";
 export interface InboxWatcherHost {
   /** 知识库与工作区访问。 */
   app: obsidian.App;
-  /** 外部收件箱服务：扫描库外文件夹。 */
-  externalInbox: { scanExternalInboxFolder(options?: unknown): Promise<void> };
   /** 导入服务：把收件箱里的文件送进导入流程。 */
   imports: { importAudioFiles(paths: string[], modeOverride?: string, options?: unknown): Promise<unknown>; importTextFiles(paths: string[], modeOverride?: string): Promise<void> };
   /** 设置对象本身，不拷贝；服务直接读字段。 */
   settings: PluginSettings;
+}
+
+// 监听文件夹只支持知识库内的相对路径；绝对路径（库外文件夹）不再扫描。
+const ABSOLUTE_PATH = /^(?:[a-zA-Z]:[\\/]|\\\\|\/)/;
+
+export function isOutsideVaultPath(value: unknown): boolean {
+  const path = typeof value === "string" ? value.trim() : "";
+  return !!path && ABSOLUTE_PATH.test(path);
 }
 
 export class InboxWatcherService {
@@ -40,7 +45,7 @@ export class InboxWatcherService {
     if (!(file instanceof obsidian.TFile)) return;
     if (!AUDIO_EXT.has((file.extension || "").toLowerCase())) return;
     const inbox = this.host.settings.inboxFolder;
-    if (!inbox || isAbsoluteExternalInboxPath(inbox)) return;
+    if (!inbox || isOutsideVaultPath(inbox)) return;
     const inboxNorm = obsidian.normalizePath(inbox);
     if (!file.path.startsWith(inboxNorm + "/") && file.path !== inboxNorm) return;
     const archiveSub = this.host.settings.inboxArchiveSubfolder || "";
@@ -106,11 +111,18 @@ export class InboxWatcherService {
     this._inboxPending.set(file.path, { timer, size: observedSize, mtime: observedMtime });
   }
 
+  /** 启动时提示：之前设置的库外监听文件夹已不再自动处理，源文件保持原样。 */
+  warnIfWatchedFolderOutsideVault(): void {
+    if (!this.host.settings.inboxAutoImport || !isOutsideVaultPath(this.host.settings.inboxFolder)) return;
+    new obsidian.Notice(t("The watched folder is outside the vault. QnALog only watches folders inside the vault; choose one in Settings → Auto-import."), 10000);
+  }
+
   async scanInboxFolder() {
     const inbox = this.host.settings.inboxFolder;
     if (!inbox) { new obsidian.Notice(t("Watch folder not configured")); return; }
-    if (isAbsoluteExternalInboxPath(inbox)) {
-      return this.host.externalInbox.scanExternalInboxFolder({ manual: true, source: "command" });
+    if (isOutsideVaultPath(inbox)) {
+      new obsidian.Notice(t("The watched folder is outside the vault. QnALog only watches folders inside the vault; choose one in Settings → Auto-import."), 10000);
+      return;
     }
     const inboxNorm = obsidian.normalizePath(inbox);
     const folder = this.host.app.vault.getAbstractFileByPath(inboxNorm);

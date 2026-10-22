@@ -195,7 +195,6 @@ describe("settings tabs render visible settings and switch pages", () => {
       },
       saveSettings: vi.fn(async () => undefined),
       shell: { syncBubbleVisibility: vi.fn() },
-      externalInbox: { refreshExternalInboxWatcher: vi.fn() },
       cleanup: {},
       inbox: {},
       queue: { tasks: [] },

@@ -2347,37 +2347,26 @@ export class QnALogSettingTab extends obsidian.PluginSettingTab {
       .setDesc(t("Watch an inbox folder and automatically process audio synced in from cloud storage or other devices."))
       .setHeading();
 
-    let inboxFolderInput: obsidian.TextComponent | null = null;
     new obsidian.Setting(c).setName(t("Watched folder"))
-      .setDesc(t("Enter a relative path within the vault, or choose a folder synced to your computer such as Nutstore. Once new audio finishes syncing, a combined summary is generated automatically and the source file stays where it is."))
+      .setDesc(t("Enter a folder path inside the vault, for example one that phone recordings sync into. Once new audio finishes syncing, notes are generated automatically and the audio is moved to the archive subfolder."))
       .addText(txt => {
-        inboxFolderInput = txt;
         txt.setValue(this.plugin.settings.inboxFolder || "")
-          .setPlaceholder(`${DEFAULT_SETTINGS.audioFolder}/inbox ${t("(or a folder on your computer)")}`)
+          .setPlaceholder(`${DEFAULT_SETTINGS.audioFolder}/inbox`)
           .onChange(async v => {
             this.plugin.settings.inboxFolder = v.trim();
             await this.plugin.saveSettings();
-            this.plugin.externalInbox.refreshExternalInboxWatcher();
           });
-      })
-      .addButton(b => b.setButtonText(t("Select")).onClick(async () => {
-        const folder = await this.plugin.externalInbox.chooseExternalInboxFolder();
-        if (!folder) return;
-        this.plugin.settings.inboxFolder = folder;
-        inboxFolderInput?.setValue(folder);
-        await this.plugin.saveSettings();
-      }));
+      });
 
     new obsidian.Setting(c).setName(t("Automatically process new files"))
       .setDesc(t("When off, you can scan the watched folder manually from the command palette."))
       .addToggle(t => t.setValue(this.plugin.settings.inboxAutoImport).onChange(async v => {
         this.plugin.settings.inboxAutoImport = v;
         await this.plugin.saveSettings();
-        this.plugin.externalInbox.refreshExternalInboxWatcher();
       }));
 
     new obsidian.Setting(c).setName(t("Archive subfolder"))
-      .setDesc(t("Used only for vault-watched folders. After processing, files are moved to this subfolder; source audio in a computer-synced folder is never moved or deleted."))
+      .setDesc(t("After processing, files are moved to this subfolder of the watched folder. Leave it empty to keep files in place."))
       .addText(t => t.setValue(this.plugin.settings.inboxArchiveSubfolder || "")
         .setPlaceholder("processed")
         .onChange(async v => { this.plugin.settings.inboxArchiveSubfolder = v; await this.plugin.saveSettings(); }));

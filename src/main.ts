@@ -36,10 +36,8 @@ import { getDesktopModule } from "./shared/desktop-runtime";
 
 import {RealtimeOutlineCoordinator } from "./notes/outline-coordinator";
 
-import {ExternalInboxScanner, isAbsoluteExternalInboxPath } from "./audio/external-inbox";
 
 // 以下 8 个声明已抽到 ./shared/limits（纯搬迁、零行为改动），这里 import 回来保持裸名调用点不变。
-import {EXTERNAL_INBOX_SCAN_INTERVAL_MS } from "./shared/limits";
 
 // 以下 9 个声明已抽到 ./notes/recording-issues（纯搬迁、零行为改动），这里 import 回来保持裸名调用点不变。
 import {transformApiKeyFieldsDeep } from "./notes/recording-issues";
@@ -105,7 +103,6 @@ import { getMarkdownFilesUnderRecentRoots, getRecentNoteRoots, getRecentNotes } 
 import { isPathUnderRecentNoteRoots } from "./recent/recent-note-paths";
 import { pickAudioFile, qnalogConfirm } from "./ui/helpers";
 import { ImportService } from "./imports/import-service";
-import { ExternalInboxService } from "./audio/external-inbox-service";
 import { RepolishService } from "./notes/repolish-service";
 import { InboxWatcherService } from "./imports/inbox-watcher-service";
 import { KnowledgeExtractionService } from "./indexing/knowledge-extraction-service";
@@ -140,7 +137,6 @@ class QnALogPlugin extends obsidian.Plugin {
   declare knowledgeExtraction: KnowledgeExtractionService;
   declare inbox: InboxWatcherService;
   declare repolish: RepolishService;
-  declare externalInbox: ExternalInboxService;
   declare imports: ImportService;
   declare sessionFinalize: SessionFinalizeService;
   declare continuations: ContinuationService;
@@ -286,7 +282,6 @@ class QnALogPlugin extends obsidian.Plugin {
       confirm: (title, body, ctaText) => qnalogConfirm(this.app, title, body, ctaText),
       pickAudioFile: (files) => pickAudioFile(this.app, files),
     }, (file, polished, mode) => this.noteWriter.renameMarkdownWithGeneratedTitle(file, polished, mode));
-    this.externalInbox = new ExternalInboxService(this);
     this.imports = new ImportService(this);
     this.sessionFinalize = new SessionFinalizeService(this);
     this.masterPartials = new MasterPartialService({
@@ -713,11 +708,6 @@ class QnALogPlugin extends obsidian.Plugin {
     }));
 
     this.addCommand({ id: "scan-inbox", name: t("Scan Watched Folder"), callback: () => this.inbox.scanInboxFolder() });
-    this.externalInbox.externalInboxScanner = new ExternalInboxScanner();
-    this.registerInterval(window.setInterval(() => {
-      if (!this.settings.inboxAutoImport || !isAbsoluteExternalInboxPath(this.settings.inboxFolder)) return;
-      void this.externalInbox.scanExternalInboxFolder({ manual: false, source: "poll" });
-    }, EXTERNAL_INBOX_SCAN_INTERVAL_MS));
 
     this.addCommand({ id: "cleanup-empty-short-recordings", name: t("Clean Up Blank Short Recordings"), callback: () => this.cleanup.cleanupEmptyShortRecordings() });
     this.addCommand({ id: "cleanup-expired-segment-cache", name: t("Clean Up Expired Segmented Audio Cache"), callback: async () => {
@@ -908,13 +898,7 @@ class QnALogPlugin extends obsidian.Plugin {
     this.app.workspace.onLayoutReady(() => {
       void this.masterPartials.recoverInterrupted();
       this.warnIfBuildManifestSkew();
-      this.externalInbox.refreshExternalInboxWatcher();
-      const inboxTimer = window.setTimeout(() => {
-        if (this.settings.inboxAutoImport && isAbsoluteExternalInboxPath(this.settings.inboxFolder)) {
-          void this.externalInbox.scanExternalInboxFolder({ manual: false, source: "startup" });
-        }
-      }, 4000);
-      this.register(() => window.clearTimeout(inboxTimer));
+      this.inbox.warnIfWatchedFolderOutsideVault();
       const cleanupTimer = window.setTimeout(() => {
         void this.asrPipeline.cleanupExpiredSegmentCacheFiles().catch((e) => console.error("[QnALog] startup segment cache cleanup failed", e));
       }, 6000);
@@ -1043,7 +1027,6 @@ class QnALogPlugin extends obsidian.Plugin {
 
   onunload() {
     try { if (this.outlineCoordinator) this.outlineCoordinator.dispose(); } catch { /* intentionally empty */ }
-    this.externalInbox.closeExternalInboxWatcher();
     try { if (this.queueRetry) this.queueRetry.dispose(); } catch { /* intentionally empty */ }
     try { this.recording.endScreenLifecycle(); } catch { /* intentionally empty */ }
     void (async () => {
