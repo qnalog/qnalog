@@ -863,25 +863,4 @@ export async function generatePeopleDirectorySuggestions(plugin, file, markdown)
   return suggestions;
 }
 
-export function normalizePersonNameForEmail(value) {
-  let text = String(value || "").trim();
-  if (!text) return "";
-  text = text
-    .replace(/^\[\[|\]\]$/g, "")
-    .replace(/\|.*$/g, "")
-    .replace(/^@+/, "")
-    .replace(/^[姓名人员：:\s]+/, "")
-    .replace(/[（(][^）)]*[）)]/g, "")
-    .replace(/【[^】]*】/g, "")
-    .trim();
-  const arrow = text.split(/\s*(?:->|=>|→|➡|：|:)\s*/).filter(Boolean);
-  if (arrow.length > 1) text = arrow[arrow.length - 1].trim();
-  const dash = text.split(/\s+(?:-|—|–)\s+|\s*--\s*/).filter(Boolean);
-  if (dash.length > 1) text = dash[0].trim();
-  text = text.replace(/\s+/g, " ").trim();
-  if (!text || text.length > 30) return "";
-  if (/^(未提及|未知|待补充|无|暂无|不详|发言人\d*|说话人\d*|参会人|参与者|人员|业务需求方|技术负责人|负责人|某负责人|某同学)$/i.test(text)) return "";
-  return text;
-}
-
 /* eslint-enable @typescript-eslint/no-unsafe-assignment, @typescript-eslint/no-unsafe-member-access, @typescript-eslint/no-unsafe-call, @typescript-eslint/no-unsafe-argument, @typescript-eslint/no-unsafe-return -- end of QnALog dynamic-typing region */

@@ -220,7 +220,6 @@ describe("recent note sidebar context actions", () => {
       "Reorganize",
       "Generate Clean Copy",
       "Generate derived version",
-      "Export",
       "Rename",
       "Delete Transcript Record",
     ]);

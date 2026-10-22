@@ -30,13 +30,11 @@ describe("默认目录跟随界面语言", () => {
     expect(s.audioFolder).toBe("QnALog/录音");
     expect(s.mdFolder).toBe("QnALog/转写纪要");
     expect(s.meetingMaterialsFolder).toBe("QnALog/会议资料");
-    expect(s.htmlReportFolder).toBe("QnALog/HTML报告");
     expect(s.vocabularyFile).toBe("QnALog/资料库/词汇表.md");
     expect(s.peopleDirectoryFolder).toBe("QnALog/资料库/人员");
     expect(s.basesFolder).toBe("QnALog/资料库/视图");
     expect(s.diagnosticsLogFolder).toBe("QnALog/系统/诊断日志");
     expect(DEFAULT_LIBRARY_PATHS.archiveFolder).toBe("QnALog/资料库/归档");
-    expect(defaultFolderPaths().emailDraftFolder).toBe("QnALog/邮件草稿");
   });
 
   it("英文环境的新装目录是英文", () => {
@@ -45,13 +43,11 @@ describe("默认目录跟随界面语言", () => {
     expect(s.audioFolder).toBe("QnALog/Recordings");
     expect(s.mdFolder).toBe("QnALog/Transcribed notes");
     expect(s.meetingMaterialsFolder).toBe("QnALog/Meeting materials");
-    expect(s.htmlReportFolder).toBe("QnALog/HTML reports");
     expect(s.vocabularyFile).toBe("QnALog/Library/Glossary.md");
     expect(s.peopleDirectoryFolder).toBe("QnALog/Library/People");
     expect(s.basesFolder).toBe("QnALog/Library/Views");
     expect(s.diagnosticsLogFolder).toBe("QnALog/System/Diagnostics log");
     expect(DEFAULT_LIBRARY_PATHS.archiveFolder).toBe("QnALog/Library/Archive");
-    expect(defaultFolderPaths().emailDraftFolder).toBe("QnALog/Email drafts");
   });
 
   it("Obsidian 是未登记语言时回退英文（只提供中英两套）", () => {

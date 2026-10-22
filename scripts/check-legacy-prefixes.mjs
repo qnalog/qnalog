@@ -38,10 +38,6 @@ const ALLOWED = [
     file: "src/sediment/index.ts",
     reason: "按旧沉淀 id 查找 1.0.0 已写进日记的待办标记；只读不写。",
   },
-  {
-    file: "src/report/render.ts",
-    reason: "HTML 报告模板的 .lv-* 类与 --lv-* 变量：报告是自带内联样式表的独立 HTML，不改动（维护者 2026-09-15 决定）。",
-  },
 ];
 
 /** 本脚本自身必须能写出这些前缀才能识别它们，与 check-mainline-isolation 同样的自我豁免。 */

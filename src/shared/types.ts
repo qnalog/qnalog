@@ -115,8 +115,6 @@ export interface PluginSettings {
   mdFolder: string;
   topicsFolder: string;
   meetingMaterialsFolder: string;
-  htmlReportFolder: string;
-  reportBrandName: string;
   noteFileNameFormatNew: string;
   /** 稳定区分不同知识库的 Obsidian SecretStorage 条目；不是密钥。 */
   apiKeyStorageNamespace: string;
@@ -193,7 +191,6 @@ export interface PluginSettings {
   bubbleSize: BubbleSize;
   floatingBallPos: FloatingBallPosition;
   autoOpenNoteAfterFinish: boolean;
-  autoOpenHtmlReportAfterGenerate: boolean;
   lastUpdateCheckAt: string | null;
   availableUpdate: AvailableUpdate | null;
   lastUpdateError: string;
@@ -208,7 +205,6 @@ export interface PersistedPluginSettings {
   capture: Record<string, unknown>;
   speech: Record<string, unknown>;
   composer: Record<string, unknown>;
-  presentation: Record<string, unknown>;
   vocabulary: Record<string, unknown>;
   views: Record<string, unknown>;
   liveOutline: Record<string, unknown>;

@@ -3,7 +3,6 @@
     "src/ui/outline-view.ts": [
       "app",
       "audioLinks",
-      "delivery",
       "diagnostics",
       "getCurrentSession",
       "knowledgeExtraction",
@@ -113,9 +112,6 @@
     ["VocabularyService", "KnowledgeExtractionService"]
   ],
   "uiImportsFromNonUi": {
-    "src/delivery/delivery-service.ts": [
-      "src/ui/modals"
-    ],
     "src/imports/import-service.ts": [
       "src/ui/modals",
       "src/ui/view-shell-service"
@@ -146,10 +142,6 @@
     "src/audio/external-inbox-service.ts": [
       "ExternalInboxHost.app:App",
       "ExternalInboxHost.settings:PluginSettings"
-    ],
-    "src/delivery/delivery-service.ts": [
-      "DeliveryHost.app:App",
-      "DeliveryHost.settings:PluginSettings"
     ],
     "src/diagnostics/diagnostics-service.ts": [
       "DiagnosticsHost.app:App",

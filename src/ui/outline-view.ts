@@ -5977,26 +5977,12 @@ export class OutlineView extends obsidian.ItemView {
     }));
 
     const topicsUi = this.topicsUi;
-    const topicsAndExportGroup: MenuItemBuilder[] = [];
+    const topicsGroup: MenuItemBuilder[] = [];
     if (topicsUi?.isSourceNote(file.path)) {
-      topicsAndExportGroup.push((target) => target.addItem((item) => item.setTitle(i18nT("Create topic")).setIcon("layers-3")
+      topicsGroup.push((target) => target.addItem((item) => item.setTitle(i18nT("Create topic")).setIcon("layers-3")
         .onClick(() => openCreateTopic(this.app, topicsUi, file.path, () => this.forceRecentRender()))));
-      topicsAndExportGroup.push((target) => this.addTopicJoinMenu(target, file.path));
+      topicsGroup.push((target) => this.addTopicJoinMenu(target, file.path));
     }
-    topicsAndExportGroup.push((target) => target.addItem((item) => {
-      item.setTitle(i18nT("Export"))
-        .setIcon("file-output");
-      const sub = (item as obsidian.MenuItem & { setSubmenu(): obsidian.Menu }).setSubmenu();
-      sub.addItem((subItem) => subItem
-        .setTitle(i18nT("Email Draft"))
-        .onClick(() => this.plugin.delivery.createEmailDraftForMarkdownFile(file)));
-      sub.addItem((subItem) => subItem
-        .setTitle(i18nT("HTML Report"))
-        .onClick(() => this.plugin.delivery.generateHtmlReportForMarkdownFile(file)));
-      sub.addItem((subItem) => subItem
-      .setTitle(i18nT("PDF Report"))
-        .onClick(() => this.plugin.delivery.generatePdfReportForMarkdownFile(file)));
-    }));
 
     const finalGroup: MenuItemBuilder[] = [];
     if (typeof beginRename === "function") {
@@ -6010,7 +5996,7 @@ export class OutlineView extends obsidian.ItemView {
         .onClick(() => this.confirmDeleteRecentNote(file));
     }));
 
-    groups.push(retryGroup, notesGroup, recordingGroup, actionsGroup, topicsAndExportGroup, finalGroup);
+    groups.push(retryGroup, notesGroup, recordingGroup, actionsGroup, topicsGroup, finalGroup);
     let hasItems = false;
     for (const group of groups) {
       if (group.length === 0) continue;

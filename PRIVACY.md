@@ -19,7 +19,7 @@ This file may contain service addresses, model names, prompt templates, queue it
 QnALog does not include analytics, advertising, or telemetry. It may make network requests when you use features that require them:
 
 - Speech-to-text requests send audio data to the transcription service configured by the user.
-- AI organization, questions, knowledge extraction, and report generation send relevant text and prompts to the large-language-model service configured by the user.
+- AI organization, questions, and knowledge extraction send relevant text and prompts to the large-language-model service configured by the user.
 - Topic integration sends the selected notes' overviews to the configured model by default. If the user selects finalized note bodies, those bodies are sent instead after the request estimate and credit-use notice. The preview dialog provides a cancel action before the topic page is changed.
 - User-initiated service tests and model-list retrieval may contact the configured service.
 - Update checks request `manifest.json` only, from this repository's `main` branch (raw GitHub source and jsDelivr mirrors). They run only after the user clicks **Check for updates** in Settings > About or runs **Check for Updates** from the command palette. The plugin compares the version and, if a newer one exists, points the user at the GitHub release page. It never downloads or installs plugin files, and it does not update itself. The update source is a fixed constant and is not user-configurable.

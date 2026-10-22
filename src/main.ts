@@ -65,7 +65,6 @@ import type { DiagnosticsSnapshot } from "./diagnostics/diagnostics-service";
 import { SetupWizardModal } from "./ui/setup-wizard-modal";
 import { needsFirstRunWizard } from "./setup/wizard-controller";
 import { TaskActivityService } from "./tasks/task-activity-service";
-import { DeliveryService } from "./delivery/delivery-service";
 import { NoteWriter, type NoteWriterHost } from "./notes/note-writer";
 import { QueueRetryService } from "./queue/queue-retry-service";
 import { VersionStore } from "./versions/version-store";
@@ -128,7 +127,6 @@ class QnALogPlugin extends obsidian.Plugin {
   // 因此跨模块读取 plugin.<域> 的调用方（如 TaskQueue）需要这里的显式声明。
   declare diagnostics: DiagnosticsService;
   declare sessionStore: SessionStore;
-  declare delivery: DeliveryService;
   declare noteWriter: NoteWriter;
   declare tasks: TaskActivityService;
   /** 装配别名：会话收尾的任务计量视图绑定到任务中心服务（SessionFinalizeHost.taskMeters）。 */
@@ -221,7 +219,6 @@ class QnALogPlugin extends obsidian.Plugin {
     // 状态栏与录音器晚于 loadAll 建立，所以 tasks.start()/startStatusBar() 仍留在原位调用。
     this.sessionStore = new SessionStore();
     this.diagnostics = new DiagnosticsService(this);
-    this.delivery = new DeliveryService(this);
     const getNoteWriterOwner = () => this;
     const noteWriterHost: NoteWriterHost = {
       get vault() { return getNoteWriterOwner().app.vault; },
@@ -662,30 +659,6 @@ class QnALogPlugin extends obsidian.Plugin {
     this.addCommand({ id: "suggest-people-directory-updates", name: t("AI: Scan Notes Library for People Suggestions"), callback: () => { void this.people.suggestPeopleDirectoryFromLibrary(); } });
     this.addCommand({ id: "open-todo-wall", name: t("Open To-do Wall"), callback: () => { void this.library.openTodoWall(); } });
     this.addCommand({ id: "import-audio", name: t("Import Existing Audio File: Transcribe + Polish"), callback: () => new ImportAudioModal(this.app, this).open() });
-    this.addCommand({
-      id: "generate-html-report",
-      name: t("AI: Generate HTML Report for This Note"),
-      checkCallback: (checking) => {
-        const file = this.app.workspace.getActiveFile();
-        const isMd = file instanceof obsidian.TFile && file.extension === "md";
-        if (!isMd) return false;
-        if (checking) return true;
-        void this.delivery.generateHtmlReportForMarkdownFile(file);
-        return true;
-      },
-    });
-    this.addCommand({
-      id: "generate-pdf-report",
-      name: t("AI: Generate PDF Report for This Note (Full Page, No Truncation)"),
-      checkCallback: (checking) => {
-        const file = this.app.workspace.getActiveFile();
-        const isMd = file instanceof obsidian.TFile && file.extension === "md";
-        if (!isMd) return false;
-        if (checking) return true;
-        void this.delivery.generatePdfReportForMarkdownFile(file);
-        return true;
-      },
-    });
     this.addCommand({ id: "check-updates", name: t("Check for Updates"), callback: () => this.checkForUpdates({ silent: false }) });
     this.addCommand({ id: "open-outline", name: t("Open Voice Notes Panel"), callback: () => this.shell.openOutlineView() });
     this.addCommand({ id: "record-mic-only", name: t("Start Recording · Microphone only"), callback: () => { this.recording._oneShotCaptureMode = "mic"; void this.recording.startRecording(); } });

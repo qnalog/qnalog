@@ -11,7 +11,6 @@ import {
   extractIntegratedBriefing,
   splitImportedTextIntoNormalSegments,
   stripImportAppendices,
-  stripMarkdownForEmailBrief,
 } from "../src/notes/note-markdown";
 import { normalizeBriefingFrontmatterFields, parseSuggestedTagsFromOutput, postProcessBriefingOutput } from "../src/notes/note-briefing-output";
 import { stripEmptyPlaceholders } from "../src/notes/empty-short-note";
@@ -925,12 +924,6 @@ describe("笔记结构标签解析：中英 fixture 等价", () => {
     expect(cleanTranscriptBlock("_[No content in this segment]_")).toBe("");
   });
 
-  it("stripMarkdownForEmailBrief：正文在原始材料标题前截断，中英标题都认", () => {
-    expect(stripMarkdownForEmailBrief("# 正文\n\n## 📁 原始材料\n\n转写一。")).toBe("# 正文");
-    expect(stripMarkdownForEmailBrief("# Body\n\n## 📁 Original material\n\nTranscript.")).toBe("# Body");
-    expect(stripMarkdownForEmailBrief("\uFEFF---\r\nmode: mic\r\n---\r\n# Body")).toBe("# Body");
-    expect(stripMarkdownForEmailBrief("---\nmode: mic\n# Unclosed")).toBe("---\nmode: mic\n# Unclosed");
-  });
 });
 
 describe("Frontmatter 系统字段：键名和值不随界面语言变化", () => {

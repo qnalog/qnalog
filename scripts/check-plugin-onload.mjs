@@ -57,7 +57,7 @@ if ((repolishServiceSource.match(/loadErrata:\s*\(file\)\s*=>\s*this\.host\.erra
 
 // onload 里应当装配好的域服务字段。新增域服务时在这里补一行。
 const DOMAIN_FIELDS = [
-  "diagnostics", "delivery", "noteWriter", "tasks", "queueRetry", "versions", "people",
+  "diagnostics", "noteWriter", "tasks", "queueRetry", "versions", "people",
   "profiles", "vocabulary", "cleanup", "outline", "meetingWorkbench", "audioLinks", "noteIndex",
   "topics", "inbox", "knowledgeExtraction", "recorder", "recording", "queue", "bubble", "sessionStore", "continuations", "errata",
 ];

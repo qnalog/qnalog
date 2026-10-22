@@ -51,8 +51,6 @@ export function nsMarkerAnyRe(name: string, flags = "i"): RegExp {
 export const NS_SEGMENTS_START_RE = new RegExp(`<!--\\s*${nsRe("segments-start")}`);
 /** 匹配会话标记：`<!-- qnalog-session:xxx -->` 或 `<!-- qnalog-session -->`。 */
 export const NS_SESSION_RE = new RegExp(`<!--\\s*${nsRe("session")}(?::|\\s*--)`);
-/** 只匹配 `<!-- qnalog-segments-start -->`（不带捕获组）。 */
-export const NS_SEGMENTS_START_ONLY_RE = nsMarkerAnyRe("segments-start");
 
 /** 会话标记并捕获 id：`<!-- qnalog-session:VALUE -->`。 */
 export const NS_SESSION_VALUE_RE = new RegExp(`<!--\\s*${nsRe("session")}:\\s*([^>\\s]+)\\s*-->`, "i");

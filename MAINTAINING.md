@@ -380,8 +380,6 @@ QnALog 长期以 MIT 开源维护，可审计性是隐私承诺的依据。可�
 | `mdFolder` | 纪要 Markdown 落盘目录 | `storage.briefingNotePath` | — |
 | `meetingMaterialsFolder` | 会议材料导入目录 | `storage.meetingMaterialPath` | — |
 | `topicsFolder` | 主题页文件夹，默认路径按界面语言选择 | `storage.topicsFolder` | — |
-| `htmlReportFolder` | HTML 报告保存目录 | `storage.htmlReportPath` | — |
-| `reportBrandName` | 「研讨」报告页脚公司名；留空则取纪要里的公司标签 | `presentation.reportBrandName` | — |
 | `noteFileNameFormatNew` | 纪要文件名日期格式 | `noteNaming.sessionPattern` | — |
 | `apiKeyStorageNamespace` | 区分不同知识库的 SecretStorage 条目；内部字段，不进设置界面 | `security.apiKeyStorageNamespace` | — |
 | `transcribeEndpoint` | 兼容兜底：provider 未填地址时的回退；内部字段，不进设置界面 | `speech.compatEndpoint` | — |
@@ -457,7 +455,6 @@ QnALog 长期以 MIT 开源维护，可审计性是隐私承诺的依据。可�
 | `bubbleSize` | 悬浮按钮大小 | `ui.bubbleSize` | — |
 | `floatingBallPos` | 悬浮按钮位置（拖动写入）；内部字段，不进设置界面 | `ui.floatingControlPosition` | — |
 | `autoOpenNoteAfterFinish` | 处理完成后是否自动打开纪要 | `noteNaming.openAfterFinish` | — |
-| `autoOpenHtmlReportAfterGenerate` | 生成 HTML 报告后是否用浏览器打开 | `presentation.openHtmlReportAfterGenerate` | — |
 | `lastUpdateCheckAt` | 上次检查更新时间；内部字段，不进设置界面 | `updates.lastCheckedAt` | — |
 | `availableUpdate` | 已发现的可用更新；内部字段，不进设置界面 | `updates.available` | — |
 | `lastUpdateError` | 上次检查失败原因；内部字段，不进设置界面 | `updates.lastError` | — |

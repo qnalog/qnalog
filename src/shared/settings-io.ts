@@ -229,7 +229,6 @@ export function normalizePluginSettings(savedData: unknown): PluginSettings {
   s.mdFolder = firstString(defaults.mdFolder, storage.briefingNotePath, raw.mdFolder);
   s.topicsFolder = obsidian.normalizePath(firstString(defaults.topicsFolder, storage.topicsFolder, raw.topicsFolder));
   s.meetingMaterialsFolder = obsidian.normalizePath(firstString(defaults.meetingMaterialsFolder, storage.meetingMaterialPath, raw.meetingMaterialsFolder));
-  s.htmlReportFolder = firstString(defaults.htmlReportFolder, storage.htmlReportPath, raw.htmlReportFolder);
   s.inboxFolder = firstString(defaults.inboxFolder, storage.inboxPath, raw.inboxFolder);
   s.inboxAutoImport = firstBoolean(defaults.inboxAutoImport, storage.autoImportInbox, raw.inboxAutoImport);
   s.inboxArchiveSubfolder = firstString(defaults.inboxArchiveSubfolder, storage.archiveSubfolder, raw.inboxArchiveSubfolder);
@@ -330,9 +329,6 @@ export function normalizePluginSettings(savedData: unknown): PluginSettings {
   s.briefingLanguageInstruction = firstString(defaults.briefingLanguageInstruction, languagePolicy.extraInstruction, raw.briefingLanguageInstruction);
   s.industryProfile = normalizeIndustryProfile(firstRecord(composer.industryProfile, raw.industryProfile), defaults.industryProfile);
 
-  const presentation = asRecord(raw.presentation);
-  s.autoOpenHtmlReportAfterGenerate = firstBoolean(defaults.autoOpenHtmlReportAfterGenerate, presentation.openHtmlReportAfterGenerate, raw.autoOpenHtmlReportAfterGenerate);
-  s.reportBrandName = firstString(defaults.reportBrandName, presentation.reportBrandName, raw.reportBrandName).trim();
 
   const vocabulary = asRecord(raw.vocabulary);
   s.customVocabulary = firstString(defaults.customVocabulary, vocabulary.inlineTerms, raw.customVocabulary);
@@ -443,7 +439,6 @@ export function serializePluginSettings(s: PluginSettings): PersistedPluginSetti
       recordingLibraryPath: s.audioFolder,
       briefingNotePath: s.mdFolder,
       meetingMaterialPath: s.meetingMaterialsFolder || DEFAULT_SETTINGS.meetingMaterialsFolder,
-      htmlReportPath: s.htmlReportFolder,
       inboxPath: s.inboxFolder,
       autoImportInbox: s.inboxAutoImport,
       archiveSubfolder: s.inboxArchiveSubfolder,
@@ -509,10 +504,6 @@ export function serializePluginSettings(s: PluginSettings): PersistedPluginSetti
         extraInstruction: s.briefingLanguageInstruction || "",
       },
       industryProfile: s.industryProfile || {},
-    },
-    presentation: {
-      openHtmlReportAfterGenerate: s.autoOpenHtmlReportAfterGenerate !== false,
-      reportBrandName: s.reportBrandName || "",
     },
     vocabulary: {
       inlineTerms: s.customVocabulary || "",

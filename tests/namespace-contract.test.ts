@@ -98,7 +98,7 @@ describe("数据层命名空间与 Frontmatter schema", () => {
     for (const [key, value] of Object.entries(DEFAULT_LIBRARY_PATHS)) {
       expect(value, key).toMatch(/^QnALog\//);
     }
-    for (const key of ["audioFolder", "mdFolder", "meetingMaterialsFolder", "htmlReportFolder", "segmentCacheFolder"] as const) {
+    for (const key of ["audioFolder", "mdFolder", "meetingMaterialsFolder", "segmentCacheFolder"] as const) {
       expect(DEFAULT_SETTINGS[key], key).toMatch(/^QnALog\//);
     }
   });
