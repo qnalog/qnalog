@@ -14,15 +14,12 @@ import {
   NS_TYPE_DERIVED,
   NS_TYPE_VERSION_CACHE,
   NS_VIEW_OUTLINE,
-  NS_VIEW_MINUTES_KANBAN,
-  NS_FM_SEMANTIC,
   hasNamespaceFrontmatter,
   isNamespaceTag,
   isDerivedVersionType,
   nsMarker,
   nsRe,
   readNamespaceFrontmatter,
-  readSemanticMeta,
   setNamespaceFrontmatter,
 } from "../src/shared/namespace";
 import { QNALOG_BASE_DEFINITIONS } from "../src/views/base-definitions";
@@ -56,17 +53,9 @@ describe("数据层命名空间与 Frontmatter schema", () => {
     expect(isDerivedVersionType(NS_TYPE_VERSION_CACHE)).toBe(false);
   });
 
-  it("Canvas 语义元数据只读 qnalogSemantic 键", () => {
-    expect(NS_FM_SEMANTIC).toBe("qnalogSemantic");
-    expect(readSemanticMeta({ [NS_FM_SEMANTIC]: { sourcePath: "a.md" } })).toEqual({ sourcePath: "a.md" });
-    expect(readSemanticMeta({ lexvoiceSemantic: { sourcePath: "a.md" } })).toBeUndefined();
-    expect(readSemanticMeta(null)).toBeUndefined();
-  });
-
   it("frontmatter 与视图类型用的是 QnALog 取值", () => {
     expect(NS_FM_SPEAKERS).toBe("qnalog_speakers");
     expect(NS_VIEW_OUTLINE).toBe("qnalog-outline-view");
-    expect(NS_VIEW_MINUTES_KANBAN).toBe("qnalog-minutes-kanban-view");
   });
 
   it("业务字段始终使用 qnalog_* canonical 键并读取旧别名", () => {
@@ -109,7 +98,7 @@ describe("数据层命名空间与 Frontmatter schema", () => {
     for (const [key, value] of Object.entries(DEFAULT_LIBRARY_PATHS)) {
       expect(value, key).toMatch(/^QnALog\//);
     }
-    for (const key of ["audioFolder", "mdFolder", "meetingMaterialsFolder", "htmlReportFolder", "segmentCacheFolder"] as const) {
+    for (const key of ["audioFolder", "mdFolder", "meetingMaterialsFolder", "segmentCacheFolder"] as const) {
       expect(DEFAULT_SETTINGS[key], key).toMatch(/^QnALog\//);
     }
   });

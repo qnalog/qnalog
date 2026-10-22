@@ -18,16 +18,6 @@ describe("纪要提示词的标题层级与编号纪律", () => {
     expect(source).not.toMatch(/\n#{2,3} [一二三四五六七八九十]+、/);
   });
 
-  it("研讨报告提取器的章节映射与去编号后的模板一致", () => {
-    expect(source).toContain("`问题意识` →");
-    expect(source).toContain("`观点谱系`(分立场小标题)");
-    expect(source).toContain("`概念、方法与案例` →");
-    expect(source).toContain("`后续问题`(列表)");
-    expect(source).toContain("`可转化为笔记的条目` →");
-    expect(source).not.toContain("`一、问题意识`");
-    expect(source).not.toContain("`六、可转化为笔记的条目`");
-  });
-
   it("callout 收尾纪律写入提示词", () => {
     expect(source).toContain("不要用空的 \\`>\\` 行收尾");
   });

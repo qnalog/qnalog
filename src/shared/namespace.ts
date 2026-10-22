@@ -51,8 +51,6 @@ export function nsMarkerAnyRe(name: string, flags = "i"): RegExp {
 export const NS_SEGMENTS_START_RE = new RegExp(`<!--\\s*${nsRe("segments-start")}`);
 /** 匹配会话标记：`<!-- qnalog-session:xxx -->` 或 `<!-- qnalog-session -->`。 */
 export const NS_SESSION_RE = new RegExp(`<!--\\s*${nsRe("session")}(?::|\\s*--)`);
-/** 只匹配 `<!-- qnalog-segments-start -->`（不带捕获组）。 */
-export const NS_SEGMENTS_START_ONLY_RE = nsMarkerAnyRe("segments-start");
 
 /** 会话标记并捕获 id：`<!-- qnalog-session:VALUE -->`。 */
 export const NS_SESSION_VALUE_RE = new RegExp(`<!--\\s*${nsRe("session")}:\\s*([^>\\s]+)\\s*-->`, "i");
@@ -318,13 +316,9 @@ export function isDerivedVersionType(value: unknown): boolean {
 
 /** 视图类型。 */
 export const NS_VIEW_OUTLINE = "qnalog-outline-view";
-export const NS_VIEW_MINUTES_KANBAN = "qnalog-minutes-kanban-view";
 
 /** Custom icon shared by the ribbon entry, sidebar title and live-minutes view. */
 export const QNALOG_PLUGIN_ICON_ID = nsRe("plugin-icon");
-
-/** 语义 Canvas 的 JSON 键。 */
-export const NS_FM_SEMANTIC = "qnalogSemantic";
 
 /**
  * 音频文件名前缀。
@@ -384,14 +378,3 @@ export function nsMarkerLegacyVariants(name: string, value?: string): string[] {
 /** 内部不透明 id 前缀（`genId()`）；1.0.0 写的是 `lv-`。无人解析前缀，改生成器安全。 */
 export const NS_ID_PREFIX = NS_TAG;
 
-
-/** 从 Canvas 文档里读语义元数据。 */
-export function readSemanticMeta<T = unknown>(document: unknown): T | undefined {
-  if (!document || typeof document !== "object") return undefined;
-  return (document as Record<string, unknown>)[NS_FM_SEMANTIC] as T | undefined;
-}
-
-/** 把语义元数据写到 Canvas 文档上。 */
-export function writeSemanticMeta(document: Record<string, unknown>, meta: unknown): void {
-  document[NS_FM_SEMANTIC] = meta;
-}

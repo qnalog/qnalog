@@ -20,7 +20,6 @@ export interface DefaultFolderNames {
   notes: string;
   topics: string;
   meetingMaterials: string;
-  htmlReports: string;
   library: string;
   glossary: string;
   people: string;
@@ -31,8 +30,6 @@ export interface DefaultFolderNames {
   duplicatePeople: string;
   system: string;
   diagnosticsLog: string;
-  emailDrafts: string;
-  emailAttachments: string;
 }
 
 const FOLDER_NAMES: Record<"zh" | "en", DefaultFolderNames> = {
@@ -41,7 +38,6 @@ const FOLDER_NAMES: Record<"zh" | "en", DefaultFolderNames> = {
     notes: "转写纪要",
     topics: "主题",
     meetingMaterials: "会议资料",
-    htmlReports: "HTML报告",
     library: "资料库",
     glossary: "词汇表.md",
     people: "人员",
@@ -52,15 +48,12 @@ const FOLDER_NAMES: Record<"zh" | "en", DefaultFolderNames> = {
     duplicatePeople: "重复人员",
     system: "系统",
     diagnosticsLog: "诊断日志",
-    emailDrafts: "邮件草稿",
-    emailAttachments: "附件",
   },
   en: {
     audio: "Recordings",
     notes: "Transcribed notes",
     topics: "Topics",
     meetingMaterials: "Meeting materials",
-    htmlReports: "HTML reports",
     library: "Library",
     glossary: "Glossary.md",
     people: "People",
@@ -71,8 +64,6 @@ const FOLDER_NAMES: Record<"zh" | "en", DefaultFolderNames> = {
     duplicatePeople: "Duplicate people",
     system: "System",
     diagnosticsLog: "Diagnostics log",
-    emailDrafts: "Email drafts",
-    emailAttachments: "Attachments",
   },
 };
 
@@ -82,7 +73,6 @@ export interface DefaultFolderPaths {
   mdFolder: string;
   topicsFolder: string;
   meetingMaterialsFolder: string;
-  htmlReportFolder: string;
   vocabularyFile: string;
   peopleDirectoryFolder: string;
   peopleBaseFile: string;
@@ -91,8 +81,6 @@ export interface DefaultFolderPaths {
   archiveFolder: string;
   duplicatePeopleArchiveFolder: string;
   diagnosticsLogFolder: string;
-  emailDraftFolder: string;
-  emailDraftAttachmentFolder: string;
 }
 
 const FOLDER_PATHS = new Map<string, DefaultFolderPaths>();
@@ -108,7 +96,6 @@ export function defaultFolderPaths(): DefaultFolderPaths {
     mdFolder: `${NS_ROOT}/${n.notes}`,
     topicsFolder: `${NS_ROOT}/${n.topics}`,
     meetingMaterialsFolder: `${NS_ROOT}/${n.meetingMaterials}`,
-    htmlReportFolder: `${NS_ROOT}/${n.htmlReports}`,
     vocabularyFile: `${NS_ROOT}/${n.library}/${n.glossary}`,
     peopleDirectoryFolder: `${NS_ROOT}/${n.library}/${n.people}`,
     peopleBaseFile: `${NS_ROOT}/${n.library}/${n.views}/${n.peopleBase}`,
@@ -117,8 +104,6 @@ export function defaultFolderPaths(): DefaultFolderPaths {
     archiveFolder: `${NS_ROOT}/${n.library}/${n.archive}`,
     duplicatePeopleArchiveFolder: `${NS_ROOT}/${n.library}/${n.archive}/${n.duplicatePeople}`,
     diagnosticsLogFolder: `${NS_ROOT}/${n.system}/${n.diagnosticsLog}`,
-    emailDraftFolder: `${NS_ROOT}/${n.emailDrafts}`,
-    emailDraftAttachmentFolder: `${NS_ROOT}/${n.emailDrafts}/${n.emailAttachments}`,
   };
   FOLDER_PATHS.set(langId, paths);
   return paths;
@@ -150,8 +135,6 @@ export const DEFAULT_SETTINGS: PluginSettings = {
   get mdFolder() { return defaultFolderPaths().mdFolder; },
   get topicsFolder() { return defaultFolderPaths().topicsFolder; },
   get meetingMaterialsFolder() { return defaultFolderPaths().meetingMaterialsFolder; },
-  get htmlReportFolder() { return defaultFolderPaths().htmlReportFolder; },
-  reportBrandName: "",  // seminar 报告页脚公司名；留空则用纪要里的「公司/」标签。报告不含 logo。
   noteFileNameFormatNew: "YYYY-MM-DD HHmm",
 
   // —— 转写：多 provider 注册表 ——
@@ -395,7 +378,6 @@ export const DEFAULT_SETTINGS: PluginSettings = {
   bubbleSize: "large",  // 悬浮气泡大小：large / medium / small
   floatingBallPos: { left: 60, top: 120 },
   autoOpenNoteAfterFinish: true,
-  autoOpenHtmlReportAfterGenerate: true,
 
   lastUpdateCheckAt: null,
   availableUpdate: null,

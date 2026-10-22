@@ -35,7 +35,7 @@ Download `main.js`, `manifest.json`, `styles.css`, `LICENSE`, and `NOTICE` from 
 On the settings home, click the **AI Organize** status row to open its model field on the API tab. Under **API → Speech Recognition**, **Get models** lists models returned by the configured transcription service; if no usable catalogue is available, enter the model ID manually. Settings tab labels follow the selected interface language.
 
 
-Recording transcription needs a configured speech-to-text (ASR) service. Importing a complete audio file may use a separate transcription service. AI organization, questions, knowledge extraction, and generated reports need a configured large language model (LLM); an ASR key alone does not enable those features. You can use local services where supported.
+Recording transcription needs a configured speech-to-text (ASR) service. Importing a complete audio file may use a separate transcription service. AI organization, questions, and knowledge extraction need a configured large language model (LLM); an ASR key alone does not enable those features. You can use local services where supported.
 
 Alibaba Cloud Bailian quick config uses Qwen-Audio-3.1-ASR-Flash over its native HTTP API for recording transcription and Qwen-Audio-3.1-ASR-Flash-Filetrans for whole-file imports with speaker diarization. Under **API → Speech Recognition**, **Get models** lists the service catalogue; selecting a recognized Bailian ASR model updates its endpoint and protocol together. Bailian models use their registered native HTTP, Chat Completions, file-transcription, task WebSocket, or Qwen3 event WebSocket path. WebSocket recording requires desktop Obsidian; Gummy one-sentence tasks rotate before the service's one-minute audio limit. The quick-config defaults remain unchanged. See [`MAINTAINING.md`](MAINTAINING.md) for protocol details and region-specific pricing.
 
@@ -48,11 +48,11 @@ Alibaba Cloud Bailian quick config uses Qwen-Audio-3.1-ASR-Flash over its native
 2. Choose a template and audio input, then check that the level meter reacts.
 3. Start recording. Follow the live outline and add markers or notes as needed.
 4. Stop recording and follow transcription, AI organization, and Markdown writing in **Task progress**. Retry from the failed step if processing stops.
-5. Use the **Distill** and **Q&A** tabs as needed, or generate a report from a completed note.
+5. Use the **Distill** and **Q&A** tabs as needed.
 
 The default **General** template chooses paragraphs, lists, or topic sections from the content without requiring a recording type. Short notes stay direct; longer bodies can include an optional overview. Its organizing rules preserve personal voice, feelings, questions, uncertainty, and speaker attribution where it affects meaning. Only explicit requests, reminders, or committed future actions become tasks. Saved default templates and custom prompts continue to apply.
 
-The sidebar tabs appear in this order: **Notes**, **Outline**, **Distill**, **Q&A**, and **Topics**. They show the note list, live outline and markers, reviewable knowledge candidates, questions about a note, and topic pages. **Minutes Board** is a separate view, opened with its command or the button in the panel. The note list context menu can open a note in Outline or Distill; Distill starts a scan when the note has no scan results.
+The sidebar tabs appear in this order: **Notes**, **Outline**, **Distill**, **Q&A**, and **Topics**. They show the note list, live outline and markers, reviewable knowledge candidates, questions about a note, and topic pages. The note list context menu can open a note in Outline or Distill; Distill starts a scan when the note has no scan results.
 
 In the note list context menu, **Reorganize** regenerates the organized body in place and replaces the current content. The plugin does not save the replaced body; use Obsidian's file recovery if you need to restore it. Reorganization updates an existing **Original** snapshot to the new draft. **Generate derived version** creates a separate derived note and leaves the source note unchanged.
 
@@ -99,13 +99,9 @@ People can be kept, merged, or ignored. Confirmed todos become standalone cards;
 
 Right-click an original minutes note and choose **Create topic** to select related notes by project tags, topic tags, or similar content. Topic pages use note overviews by default; choosing finalized note bodies shows a request estimate and a credit-use notice first. The page opens with a narrative overview, groups progress into threads, cites source notes with footnotes, and shows a program-generated timeline. Updates open a change preview and can be undone when the page has not changed afterward. The page keeps block anchors out of the body; a rebuildable cache stores the block index. Topic integration does not modify source notes.
 
-### Notes, board, and deliverables
+### Note list
 
-The note list can group recent notes by folder or time, with search and template filters. **Minutes Board** is a separate view for saved meeting materials.
-
-HTML and PDF reports are generated from a note by calling the configured LLM; they do not modify the original note. HTML and PDF are available from commands and the note list's context menu under **Export**. PDF generation requires desktop Obsidian and very tall single-page reports have a height limit; use HTML for complete reading.
-
-The note list's **Export** menu can also create an `.eml` email draft. It can contain a summary and attachments including the original Markdown, a generated PDF, or existing exported files; recipients can be matched from the people library. Review and send the draft in your email client. QnALog does not send email automatically.
+The note list can group recent notes by folder or time, with search and template filters.
 
 ### Recording reliability
 
@@ -132,11 +128,9 @@ These are default locations; folders and files are created as needed. The segmen
 | Errata | `QnALog/勘误表` |
 | Diagnostics log | `QnALog/System/Diagnostics log` |
 | Archive | `QnALog/Library/Archive` |
-| HTML reports | `QnALog/HTML reports` |
-| Email drafts | `QnALog/Email drafts` |
 | Segment cache | `QnALog/.cache/segments` |
 
-Saved configurable paths do not change when the interface language changes, and existing files are not moved. Unset paths and computed defaults such as the email-draft location use the current resolved interface language: Chinese uses Chinese directory names; other resolved languages use English names. Obsidian determines the interface language by default. The email-draft location has no separate setting. Cache locations are not user-configurable folder settings.
+Saved configurable paths do not change when the interface language changes, and existing files are not moved. Unset paths use the current resolved interface language: Chinese uses Chinese directory names; other resolved languages use English names. Obsidian determines the interface language by default. Cache locations are not user-configurable folder settings.
 
 ## Platform and audio setup
 
@@ -157,7 +151,7 @@ QnALog requires no QnALog account and has no QnALog-operated backend, ads, analy
 Network requests depend on the feature you use:
 
 - Transcription sends audio to the configured speech-to-text service.
-- Organization, Q&A, knowledge extraction, and report generation send relevant text and prompts to the configured LLM. Manual service tests and model-list retrieval can also make requests.
+- Organization, Q&A, and knowledge extraction send relevant text and prompts to the configured LLM. Manual service tests and model-list retrieval can also make requests.
 - When you click **Check for updates** in Settings → About or run **Check for Updates** from the command palette, QnALog reads this repository's `main` branch `manifest.json` from raw GitHub or jsDelivr mirrors. There is no background update check; QnALog does not download or install plugin files. Obsidian or BRAT manages installation.
 
 The optional desktop external-import feature reads audio from the one directory you select, copies it into the vault's QnALog cache, and stores import state in the plugin directory. It leaves source files in place. Transcription and organization of imported audio still use your configured services.

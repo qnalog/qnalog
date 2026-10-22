@@ -94,6 +94,30 @@ describe("settings-io round-trip（白名单防丢键兜底）", () => {
     expect(reread.audioFolder).toBe(loaded.audioFolder);
   });
 
+  it("drops the retired report settings and keeps the rest of a schema 2 data.json", () => {
+    const oldData = {
+      settings: {
+        schemaVersion: 2,
+        composer: { model: "saved-model", endpoint: "https://example.test/v1" },
+        storage: { recordingLibraryPath: "my audio", briefingNotePath: "my notes", htmlReportPath: "my reports" },
+        presentation: { openHtmlReportAfterGenerate: false, reportBrandName: "Acme" },
+      },
+    };
+    const loaded = normalizePluginSettings(oldData) as unknown as Record<string, unknown>;
+    expect(classifySettingsSchema(oldData)).toBe("current");
+    for (const key of ["htmlReportFolder", "reportBrandName", "autoOpenHtmlReportAfterGenerate"]) {
+      expect(key in loaded, key).toBe(false);
+    }
+    expect(loaded.llmModel).toBe("saved-model");
+    expect(loaded.llmEndpoint).toBe("https://example.test/v1");
+    expect(loaded.audioFolder).toBe("my audio");
+    expect(loaded.mdFolder).toBe("my notes");
+    const persisted = serializePluginSettings(loaded as unknown as Parameters<typeof serializePluginSettings>[0]);
+    expect(persisted).not.toHaveProperty("presentation");
+    expect(persisted.storage).not.toHaveProperty("htmlReportPath");
+    expect(persisted.storage).toMatchObject({ recordingLibraryPath: "my audio", briefingNotePath: "my notes" });
+  });
+
   it("drops the retired automatic update setting when saving", () => {
     const settings = normalizePluginSettings({
       autoCheckUpdates: true,
@@ -152,7 +176,6 @@ describe("settings-io round-trip（白名单防丢键兜底）", () => {
     a.audioFolder = "自定义/录音库";
     a.mdFolder = "自定义/纪要目录";
     a.inboxFolder = "收件箱";
-    a.reportBrandName = "测试公司";
     a.customVocabulary = "术语A，术语B";
     a.vocabularyFile = "自定义/词汇表.md";
     a.peopleDirectoryFolder = "自定义/人员";
@@ -210,7 +233,6 @@ describe("settings-io round-trip（白名单防丢键兜底）", () => {
     expect(b.audioFolder).toBe("自定义/录音库");
     expect(b.mdFolder).toBe("自定义/纪要目录");
     expect(b.inboxFolder).toBe("收件箱");
-    expect(b.reportBrandName).toBe("测试公司");
     expect(b.customVocabulary).toBe("术语A，术语B");
     expect(b.vocabularyFile).toBe("自定义/词汇表.md");
     expect(b.peopleDirectoryFolder).toBe("自定义/人员");

@@ -1,22 +1,15 @@
 /* eslint-disable @typescript-eslint/no-unsafe-assignment, @typescript-eslint/no-unsafe-member-access, @typescript-eslint/no-unsafe-call, @typescript-eslint/no-unsafe-argument, @typescript-eslint/no-unsafe-return -- QnALog 的设置/数据层有意保持动态类型（@ts-nocheck 且从 loadData 读未类型化 JSON），这些纯类型规则在此没有可执行结论，留待逐步补类型 */
-// 由 main.ts 抽出（模块化拆解、纯搬迁、零行为改动）：视图外壳：侧边栏与看板的打开、气泡显隐联动、会议日程问答入口
+// 由 main.ts 抽出（模块化拆解、纯搬迁、零行为改动）：视图外壳：侧边栏的打开、气泡显隐联动、会议日程问答入口
 
 import * as obsidian from "obsidian";
-import { getSemanticCanvasPath } from "../canvas/semantic-outline-canvas";
-import { VIEW_TYPE_MINUTES_KANBAN } from "../ui/minutes-kanban-view";
 import { BubbleWidget } from "../ui/modals";
-import { getModeMeta, getModePrefix} from "../shared/mode-meta";
 import { isMobileRuntime } from "../shared/util-platform";
-import { DEFAULT_SETTINGS } from "../shared/defaults";
 import type { PluginSettings } from "../shared/types";
 import type { SessionStore } from "../session/session-store";
-import { MODE_META } from "../shared/catalog-modes";
-import { sanitizeFilename } from "../shared/util-common";
 import { VIEW_TYPE_OUTLINE } from "../notes/realtime-outline";
 import { getRecentNotes } from "../recent/recent-notes";
 import { TaskActivityService } from "../tasks/task-activity-service";
-import { ensureVaultFolder, findAvailableVaultPath, findAvailableMarkdownPath } from "../shared/util-vault";
-import { nsMarker, readSemanticMeta } from "../shared/namespace";
+import { nsMarker } from "../shared/namespace";
 
 import { t } from "../shared/i18n";
 /** ViewShellService 需要宿主提供的能力；运行时由 src/main.ts 的插件实例实现。 */
@@ -98,109 +91,6 @@ export class ViewShellService {
       this.host.bubble.show();
       this.host.bubble.keepInViewport();
       this.host.bubble.updateDockTail();
-    }
-  }
-
-  async openMinutesKanban() {
-    const existing = this.host.app.workspace.getLeavesOfType(VIEW_TYPE_MINUTES_KANBAN);
-    if (existing.length) {
-      await this.host.app.workspace.revealLeaf(existing[0]);
-      return;
-    }
-    const leaf = this.host.app.workspace.getLeaf("tab");
-    await leaf.setViewState({ type: VIEW_TYPE_MINUTES_KANBAN, active: true });
-    await this.host.app.workspace.revealLeaf(leaf);
-  }
-
-  getMinutesKanbanItems() {
-    const canvasFiles = this.host.app.vault.getFiles().filter((file) => file.extension === "canvas");
-    const root = obsidian.normalizePath(this.host.settings.mdFolder || DEFAULT_SETTINGS.mdFolder);
-    return getRecentNotes(this.host, Number.MAX_SAFE_INTEGER).filter((item) => {
-      const path = obsidian.normalizePath(item.file.path);
-      return path === root || path.startsWith(`${root}/`);
-    }).map((item) => {
-      const notePath = obsidian.normalizePath(item.file.path);
-      const expected = obsidian.normalizePath(getSemanticCanvasPath(notePath));
-      const prefix = `${item.file.basename} · 语义图`;
-      const associatedCanvases = canvasFiles.filter((file) => (
-        obsidian.normalizePath(file.path) === expected
-        || (file.parent && item.file.parent
-          && obsidian.normalizePath(file.parent.path) === obsidian.normalizePath(item.file.parent.path)
-          && file.basename.startsWith(prefix))
-      ));
-      const meta = getModeMeta(this.host.settings, item.mode) || MODE_META.off;
-      return {
-        file: item.file,
-        title: item.title || item.file.basename,
-        mode: item.mode,
-        modeLabel: getModePrefix(meta) || t("Notes"),
-        icon: meta.icon || "file-text",
-        folderPath: item.folderPath || obsidian.normalizePath(this.host.settings.mdFolder || DEFAULT_SETTINGS.mdFolder),
-        timeLabel: item.displayTime || "",
-        durationLabel: item.durationLabel || "",
-        canvasFiles: associatedCanvases,
-      };
-    });
-  }
-
-  async createMinutesKanbanFolder(rawName) {
-    const name = sanitizeFilename(String(rawName || "").replace(/[\\/]+/g, " ")).trim();
-    if (!name) throw new Error(t("Enter a valid folder name"));
-    const root = obsidian.normalizePath(this.host.settings.mdFolder || DEFAULT_SETTINGS.mdFolder);
-    const path = obsidian.normalizePath(`${root}/${name}`);
-    const existing = this.host.app.vault.getAbstractFileByPath(path);
-    if (existing && !(existing instanceof obsidian.TFolder)) throw new Error(t("A file with the same name already exists"));
-    if (!existing) await ensureVaultFolder(this.host.app, path);
-    return path;
-  }
-
-  async moveMinutesKanbanItem(item, rawFolderPath) {
-    const file = item && item.file;
-    if (!(file instanceof obsidian.TFile) || file.extension !== "md") throw new Error(t("note not found"));
-    const root = obsidian.normalizePath(this.host.settings.mdFolder || DEFAULT_SETTINGS.mdFolder);
-    const folderPath = obsidian.normalizePath(rawFolderPath || root);
-    if (!(folderPath === root || folderPath.startsWith(`${root}/`))) throw new Error(t("The target group is outside the notes folder"));
-    await ensureVaultFolder(this.host.app, folderPath);
-    const currentFolder = file.parent ? obsidian.normalizePath(file.parent.path) : "";
-    if (currentFolder === folderPath) return;
-
-    const oldNotePath = obsidian.normalizePath(file.path);
-    const oldBase = file.basename;
-    const canvasSnapshots = [];
-    for (const canvasFile of Array.isArray(item.canvasFiles) ? item.canvasFiles : []) {
-      if (!(canvasFile instanceof obsidian.TFile) || canvasFile.extension !== "canvas") continue;
-      let content = "";
-      try { content = await this.host.app.vault.cachedRead(canvasFile); } catch { /* keep moving the note */ }
-      canvasSnapshots.push({ file: canvasFile, content });
-    }
-
-    const noteTarget = findAvailableMarkdownPath(this.host.app, `${folderPath}/${file.name}`, oldNotePath);
-    if (!noteTarget) throw new Error(t("Could not generate an available target filename"));
-    await this.host.app.fileManager.renameFile(file, noteTarget);
-    const movedNote = this.host.app.vault.getAbstractFileByPath(noteTarget);
-    const newBase = movedNote instanceof obsidian.TFile
-      ? movedNote.basename
-      : String(noteTarget.split("/").pop() || oldBase).replace(/\.md$/i, "");
-
-    for (const snapshot of canvasSnapshots) {
-      const suffix = snapshot.file.basename.startsWith(oldBase)
-        ? snapshot.file.basename.slice(oldBase.length)
-        : " · 语义图";
-      const canvasTarget = findAvailableVaultPath(this.host.app, `${folderPath}/${newBase}${suffix}.canvas`);
-      if (!canvasTarget) continue;
-      try {
-        await this.host.app.fileManager.renameFile(snapshot.file, canvasTarget);
-        const movedCanvas = this.host.app.vault.getAbstractFileByPath(canvasTarget);
-        if (!(movedCanvas instanceof obsidian.TFile) || !snapshot.content) continue;
-        const document = JSON.parse(snapshot.content);
-        const semanticMeta = readSemanticMeta<Record<string, unknown>>(document);
-        if (document && typeof document === "object" && semanticMeta && typeof semanticMeta === "object") {
-          semanticMeta.sourcePath = noteTarget;
-          await this.host.app.vault.modify(movedCanvas, JSON.stringify(document, null, 2));
-        }
-      } catch (error) {
-        console.warn("[QnALog] move associated semantic canvas failed", error);
-      }
     }
   }
 

@@ -57,9 +57,9 @@ if ((repolishServiceSource.match(/loadErrata:\s*\(file\)\s*=>\s*this\.host\.erra
 
 // onload 里应当装配好的域服务字段。新增域服务时在这里补一行。
 const DOMAIN_FIELDS = [
-  "diagnostics", "delivery", "noteWriter", "tasks", "queueRetry", "versions", "people",
+  "diagnostics", "noteWriter", "tasks", "queueRetry", "versions", "people",
   "profiles", "vocabulary", "cleanup", "outline", "meetingWorkbench", "audioLinks", "noteIndex",
-  "topics", "inbox", "knowledgeExtraction", "recorder", "recording", "queue", "bubble", "semanticCanvas", "sessionStore", "continuations", "errata",
+  "topics", "inbox", "knowledgeExtraction", "recorder", "recording", "queue", "bubble", "sessionStore", "continuations", "errata",
 ];
 const PORT_HOST_FIELDS = {
   topics: true,
@@ -387,7 +387,7 @@ async function main() {
       if (field === "noteWriter") {
         const methods = [
           "getFileFrontmatter", "ensureFolder", "findAvailableMarkdownPath", "renameFile", "openFile",
-          "confirm", "getRecentNotes", "generateTitleTag", "polishTranscript", "mergeAndPolish",
+          "confirm", "getRecentNotes", "generateTitleTag", "mergeAndPolish",
           "clearCommittedBriefingCheckpoint",
         ];
         if (service.host === plugin
@@ -467,7 +467,7 @@ async function main() {
   // 招聘/晋升评审场景已移除，命令数比此前少 5 个（刷新招聘统计×2、重建总览看板、重建招聘主页、招聘/晋升内联编辑）。
   // 学习卡片场景已移除，再少 3 个（打开学习卡片瀑布墙、打开概念墙、打开对象总览）。
   expect(plugin.commands.length >= 22, `注册的命令数异常：${plugin.commands.length}`);
-  expect(plugin.views.length >= 2, `注册的视图数异常：${plugin.views.length}`);
+  expect(plugin.views.length >= 1, `注册的视图数异常：${plugin.views.length}`);
   expect(plugin.settingTabs.length >= 1, "没有注册设置页");
   expect(plugin.intervals.length >= 1, "没有注册状态栏维护定时器");
 

@@ -297,13 +297,8 @@ describe("QnALog note index", () => {
     const index = buildNoteIndex(minutes, { noteTitle: "会议知识索引" })!;
     const marker = serializeNoteIndex(index);
     expect(marker).not.toContain("QnALog/转写纪要");
-    const resolved = resolveNoteIndex(
-      index,
-      "QnALog/转写纪要/产品/会议知识索引.md",
-      "QnALog/转写纪要/产品/会议知识索引 · 语义图.canvas",
-    );
+    const resolved = resolveNoteIndex(index, "QnALog/转写纪要/产品/会议知识索引.md");
     expect(resolved.filePath).toContain("产品/会议知识索引.md");
-    expect(resolved.semanticCanvasPath).toContain("语义图.canvas");
   });
 
   it("signals topic truncation instead of silently pretending the index is complete", () => {

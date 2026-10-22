@@ -98,47 +98,6 @@ function renderImportSpeakerControl(parent, owner) {
     }
   };
 }
-export function pickReportAccentColor(app, defaultHex = null) {
-  return new Promise((resolve) => {
-    const modal = new obsidian.Modal(app);
-    modal.titleEl.setText(i18nT("Choose report colour scheme"));
-    let chosen = defaultHex || "#E85F28";
-    let settled = false;
-    const finish = (val) => { if (settled) return; settled = true; resolve(val); try { modal.close(); } catch { /* intentionally empty */ } };
-    const wrap = modal.contentEl.createDiv({ cls: "qnalog-color-pick" });
-    wrap.createEl("p", { cls: "qnalog-color-hint", text: i18nT("The report uses the chosen colors and keeps the layout unchanged. You can regenerate it repeatedly; existing files are not overwritten.") });
-    const sw = wrap.createDiv({ cls: "qnalog-color-swatches" });
-    const presets = [[i18nT("Warm orange (default)"), "#E85F28"], [i18nT("Sapphire"), "#2F6BD8"], [i18nT("Ink teal"), "#138A8A"], [i18nT("Pine green"), "#3B9A4B"], [i18nT("Lotus purple"), "#7A4AD8"], [i18nT("Rose red"), "#D8407E"], [i18nT("Brown gold"), "#B5811A"], [i18nT("Graphite blue"), "#54627A"]];
-    const swatchEls = [];
-    let customInput;
-    const select = (hex) => {
-      chosen = hex;
-      if (customInput) customInput.value = hex;
-      for (const [el, h] of swatchEls) el.toggleClass("is-active", h.toLowerCase() === hex.toLowerCase());
-    };
-    for (const [name, hex] of presets) {
-      const el = sw.createDiv({ cls: "qnalog-color-swatch" });
-      el.style.backgroundColor = hex;
-      el.setAttr("aria-label", name);
-      el.setAttr("title", name);
-      el.onclick = () => select(hex);
-      swatchEls.push([el, hex]);
-    }
-    const crow = wrap.createDiv({ cls: "qnalog-color-custom" });
-    crow.createEl("label", { text: i18nT("Custom") });
-    customInput = crow.createEl("input");
-    customInput.type = "color";
-    customInput.value = chosen;
-    customInput.oninput = () => select(customInput.value);
-    const actions = wrap.createDiv({ cls: "qnalog-color-actions" });
-    actions.createEl("button", { text: i18nT("Generate report"), cls: "mod-cta" }).onclick = () => finish(chosen);
-    actions.createEl("button", { text: i18nT("Cancel") }).onclick = () => finish(null);
-    modal.onClose = () => finish(null);
-    select(chosen);
-    modal.open();
-  });
-}
-
 export class AudioTimeModal extends obsidian.Modal {
   constructor(app, playbackSource: AudioTimePlaybackSource, startMs, label) {
     super(app);

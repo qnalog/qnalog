@@ -46,7 +46,6 @@ describe("NoteWriter mode detection for clean transcript display state", () => {
       confirm: async () => { throw new Error("unexpected confirmation"); },
       getRecentNotes: () => { throw new Error("unexpected recent-note lookup"); },
       generateTitleTag: async () => { throw new Error("unexpected title generation"); },
-      polishTranscript: async () => { throw new Error("unexpected transcript polish"); },
       mergeAndPolish: async () => { throw new Error("unexpected note merge"); },
       clearCommittedBriefingCheckpoint: async () => { throw new Error("unexpected checkpoint cleanup"); },
     });

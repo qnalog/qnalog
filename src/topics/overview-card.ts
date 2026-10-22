@@ -65,7 +65,7 @@ function abstract(markdown: string): string {
 export function buildOverviewCard(input: OverviewCardInput): OverviewCard {
   const { document, markdown, frontmatter, mtime, ctime } = input;
   const index = readNoteIndex(markdown);
-  const resolved = index ? resolveNoteIndex(index, document.path, null) : null;
+  const resolved = index ? resolveNoteIndex(index, document.path) : null;
   const abstractText = abstract(markdown);
   const indexText = document.summary || resolved?.core.summary || "";
   const overview = abstractText || indexText.slice(0, OVERVIEW_MAX_CHARS);

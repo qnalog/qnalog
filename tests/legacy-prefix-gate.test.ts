@@ -37,7 +37,7 @@ describe("旧前缀静态门禁", () => {
   it("白名单里的兼容代码被放行（读取 1.0.0 遗留数据是正当用途）", () => {
     const allowed = {
       "src/shared/namespace.ts": 'export const NS_AUDIO_PREFIX_LEGACY = "lex";',
-      "src/report/render.ts": '.lv-panorama { display: none; }',
+      "src/sediment/index.ts": 'const legacyId = "lv-123";',
     };
     expect(checkLegacyPrefixes(allowed)).toEqual([]);
   });

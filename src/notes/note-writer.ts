@@ -19,7 +19,6 @@ import { shouldRewriteConsolidatedNote } from "../briefing/note-layout-policy";
 import { commitContinuationFlow, type ContinuationCommitFlowHost } from "./continuation-commit-flow";
 import { serializeContinuationSegmentBlock } from "./note-transcript-materials";
 import { rewriteConsolidatedFlow, appendPolishBlockFlow, type NotePolishFlowHost } from "./note-polish-flow";
-import { polishEditorFlow, type NoteEditorPolishFlowHost, type NotePolishEditor } from "./note-editor-polish-flow";
 import { replaceRealtimeOutlineNote, type OutlineNoteStoreHost, type RealtimeOutlineReplacementResult } from "./outline-note-store";
 import {
   readMergeSourceFlow,
@@ -81,7 +80,6 @@ export interface NoteWriterHost {
   confirm(title: string, body: string, ctaText: string): Promise<unknown>;
   getRecentNotes(limit: number): Array<{ file: obsidian.TFile; timestamp: number }>;
   generateTitleTag(polished: string, mode: string): Promise<string>;
-  polishTranscript(raw: string, mode: string): Promise<string>;
   mergeAndPolish(segments: Segment[], mode: string, sessionMeta: SessionMetaForMerge): Promise<string>;
   clearCommittedBriefingCheckpoint(sessionMeta: SessionMetaForMerge): Promise<void>;
 }
@@ -98,16 +96,8 @@ export class NoteWriter {
   private readonly noteSegmentStoreHost: NoteSegmentStoreHost;
   private readonly noteMergeMetadataStoreHost: NoteMergeMetadataStoreHost;
   private readonly noteMergePreviousFlowHost: NoteMergePreviousFlowHost;
-  private readonly noteEditorPolishFlowHost: NoteEditorPolishFlowHost;
   constructor(host: NoteWriterHost) {
     this.host = host;
-    this.noteEditorPolishFlowHost = {
-      getMode: () => getEffectivePolishMode(
-        this.host.settings,
-        this.host.settings.polishMode === "off" ? "meeting" : this.host.settings.polishMode,
-      ),
-      polishTranscript: (raw, mode) => this.host.polishTranscript(raw, mode),
-    };
     this.noteModeInferenceHost = {
       getFileFrontmatter: (file) => this.host.getFileFrontmatter(file),
       getTags: (frontmatter) => getFrontmatterTags(frontmatter),
@@ -265,9 +255,6 @@ export class NoteWriter {
     mode: string,
   ): Promise<obsidian.TFile | null> {
     return renameMarkdownWithGeneratedTitleFlow(this.noteTitleRenameFlowHost, fileOrPath, polished, mode);
-  }
-  polishEditor(editor: NotePolishEditor): Promise<void> {
-    return polishEditorFlow(this.noteEditorPolishFlowHost, editor);
   }
   detectModeFromMarkdown(file: unknown): string | null {
     return detectModeFromMarkdownFlow(this.noteModeInferenceHost, file);

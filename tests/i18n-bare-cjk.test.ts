@@ -19,8 +19,6 @@ const CJK = /[\u4e00-\u9fff\u3000-\u303f\uff00-\uffef]/;
 /** 用途即内容/提示词/数据的文件：整文件豁免（理由逐条列出）。 */
 const CONTENT_FILES: Record<string, string> = {
   "src/prompts/": "发给模型的指令文本（i18n.ts 头部声明：提示词与界面语言无关）",
-  "src/report/render.ts": "HTML 报告正文——生成的文档，非界面（决策 A）",
-  "src/report/report-templates.ts": "报告模板与注入哨兵",
   "src/versions/version-content.ts": "笔记正文与版本区标记（决策 A）",
   "src/versions/version-store.ts": "版本信息区标签（写入笔记的数据）",
   "src/versions/version-activation-store.ts": "版本激活写入母本的标题与版本信息（笔记内容）",
@@ -50,7 +48,6 @@ const CONTENT_FILES: Record<string, string> = {
   "src/shared/defaults.ts": "设置默认值——写入笔记的值不是界面文案（决策 A）",
   "src/shared/i18n.ts": "语言下拉 native name（日本語 按设计不译）",
   "src/diagnostics/diagnostics-service.ts": "诊断报告正文——生成的文档，收件人是开发者",
-  "src/canvas/semantic-outline-canvas.ts": ".canvas 文件内容",
   "src/views/wall-markdown.ts": "待办墙笔记正文（生成的文档）",
   "src/views/base-definitions.ts": "墙笔记 frontmatter/yaml 正文",
   "src/audio/channel-speakers.ts": "说话人身份数据（写笔记与 frontmatter，显示点单独包 t()）",
@@ -188,14 +185,6 @@ const BARE_EXCEPTIONS: Record<string, Array<[string, string]>> = {
     ["窗口小结：", "prompt"],
     ["请把下面同一场会议的议题材料归并成一篇完整的「综合纪要」。这是最终成文阶段，不是继续按内部窗口拼接。\\n\\n【成品结构】\\n1. 开头必须是一个 `> [!abstract] 会议梗概`，用 2–4 个连贯段落说明会议背景、核心问题、讨论如何推进、形成了什么结论以及当前状态。不要写“已按顺序整理”等", "prompt"],
     ["（没有可用的全局议题图，请从全部内部材料中自行识别。）", "prompt"],
-  ],
-  "src/delivery/delivery-service.ts": [
-    ["-HTML报告.html", "data"],
-    ["-报告.pdf", "data"],
-    ["-纪要PDF.pdf", "data"],
-    ["-邮件草稿.eml", "data"],
-    ["QnALog 会议纪要", "note"],
-    ["会议纪要：", "note"],
   ],
   "src/imports/import-service.ts": [
     [" · 结束", "note"],

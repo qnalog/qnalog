@@ -1902,42 +1902,6 @@ export class QnALogSettingTab extends obsidian.PluginSettingTab {
     }
 
     new obsidian.Setting(c)
-      .setName(t("HTML Report"))
-      .setDesc(t("Generate a standalone HTML report from the notes that is suitable for reading, sharing, and printing."))
-      .setHeading();
-    const reportHint = c.createDiv({ cls: "setting-item-description qnalog-section-hint" });
-    reportHint.setText(t("The report uses the same note content and does not modify the original note in Obsidian."));
-
-    new obsidian.Setting(c).setName(t("HTML report save folder"))
-      .setDesc(t("Path relative to the current Obsidian vault. Generated HTML reports are saved as files inside the vault for easier archiving, syncing, or manual moving. Changes apply only to new files; existing files are not migrated automatically."))
-      .addText(t => t
-        .setPlaceholder(DEFAULT_SETTINGS.htmlReportFolder)
-        .setValue(this.plugin.settings.htmlReportFolder || DEFAULT_SETTINGS.htmlReportFolder)
-        .onChange(async v => {
-          this.plugin.settings.htmlReportFolder = obsidian.normalizePath(v.trim() || DEFAULT_SETTINGS.htmlReportFolder);
-          await this.plugin.saveSettings();
-        }));
-
-    new obsidian.Setting(c).setName(t("Automatically open after generating the HTML report"))
-      .setDesc(t("Open the generated report file in your system's default browser."))
-      .addToggle(v => v
-        .setValue(this.plugin.settings.autoOpenHtmlReportAfterGenerate !== false)
-        .onChange(async v => {
-          this.plugin.settings.autoOpenHtmlReportAfterGenerate = v;
-          await this.plugin.saveSettings();
-        }));
-
-    new obsidian.Setting(c).setName(t("Company name in report footer (optional)"))
-      .setDesc(t("When filled in, used as the company name in the footer of the \"Discussion\" report; if left empty, the \"Company/\" tag from the note is used. The report does not include a company logo."))
-      .addText(txt => txt
-        .setPlaceholder(t("(Leave empty = use the note's Company/ tag)"))
-        .setValue(this.plugin.settings.reportBrandName || "")
-        .onChange(async v => {
-          this.plugin.settings.reportBrandName = v.trim();
-          await this.plugin.saveSettings();
-        }));
-
-    new obsidian.Setting(c)
       .setName(t("Note template"))
       .setDesc(t("Choose the default organizing template, and manage long-term reusable formats, industry rules, and output preferences."))
       .setHeading();

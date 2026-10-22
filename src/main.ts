@@ -5,7 +5,6 @@ import { QNALOG_PLUGIN_ICON_SVG } from "./ui/plugin-icon";
 
 import { QnALogSettingTab } from "./ui/settings-tab";
 
-import { MinutesKanbanView, VIEW_TYPE_MINUTES_KANBAN } from "./ui/minutes-kanban-view";
 
 import {QueueModal, ImportTextModal, ImportAudioModal, BubbleWidget } from "./ui/modals";
 
@@ -16,7 +15,6 @@ import { UpdateService } from "./update/update-service";
 
 
 
-import {DEFAULT_SETTINGS } from "./shared/defaults";
 
 // 设置序列化层已抽到独立模块（src/shared/settings-io.ts）并由 round-trip 测试覆盖（tests/settings-io.test.ts）。
 // 这里 import 回来，保持原有调用点用裸名引用不变。
@@ -67,7 +65,6 @@ import type { DiagnosticsSnapshot } from "./diagnostics/diagnostics-service";
 import { SetupWizardModal } from "./ui/setup-wizard-modal";
 import { needsFirstRunWizard } from "./setup/wizard-controller";
 import { TaskActivityService } from "./tasks/task-activity-service";
-import { DeliveryService } from "./delivery/delivery-service";
 import { NoteWriter, type NoteWriterHost } from "./notes/note-writer";
 import { QueueRetryService } from "./queue/queue-retry-service";
 import { VersionStore } from "./versions/version-store";
@@ -101,7 +98,7 @@ import { SessionFinalizeService } from "./notes/session-finalize-service";
 import { generateTitleTag } from "./notes/note-markdown";
 import { buildSegmentStatusList, getVersionStoreFolder, normalizeVersionId } from "./versions/version-identity";
 import { replaceActiveVersionBlock } from "./versions/active-version-block";
-import { mergeAndPolish, polishTranscript } from "./briefing/merge-pipeline";
+import { mergeAndPolish } from "./briefing/merge-pipeline";
 import { logLlmRequestDiagnostic, requestLlmChatCompletion } from "./llm/core";
 import { clearCommittedBriefingCheckpoint } from "./prompts/briefing-prompts";
 import { getMarkdownFilesUnderRecentRoots, getRecentNoteRoots, getRecentNotes } from "./recent/recent-notes";
@@ -113,7 +110,6 @@ import { RepolishService } from "./notes/repolish-service";
 import { InboxWatcherService } from "./imports/inbox-watcher-service";
 import { KnowledgeExtractionService } from "./indexing/knowledge-extraction-service";
 import { ContinuationService } from "./session/continuation-service";
-import { SemanticCanvasService } from "./canvas/semantic-canvas-service";
 /**
  * 按设置与 Obsidian 的界面语言，决定插件当前使用的语言并记录到 i18n 模块。
  *
@@ -131,7 +127,6 @@ class QnALogPlugin extends obsidian.Plugin {
   // 因此跨模块读取 plugin.<域> 的调用方（如 TaskQueue）需要这里的显式声明。
   declare diagnostics: DiagnosticsService;
   declare sessionStore: SessionStore;
-  declare delivery: DeliveryService;
   declare noteWriter: NoteWriter;
   declare tasks: TaskActivityService;
   /** 装配别名：会话收尾的任务计量视图绑定到任务中心服务（SessionFinalizeHost.taskMeters）。 */
@@ -165,7 +160,6 @@ class QnALogPlugin extends obsidian.Plugin {
   settingsSchemaState: SettingsSchemaState = "current";
   declare vocabulary: VocabularyService;
   declare profiles: TranscribeProfileService;
-  declare semanticCanvas: SemanticCanvasService;
   declare recorder: RecorderService;
   declare queue: TaskQueue;
   /** 当前会话的实时大纲协调器。 */
@@ -225,7 +219,6 @@ class QnALogPlugin extends obsidian.Plugin {
     // 状态栏与录音器晚于 loadAll 建立，所以 tasks.start()/startStatusBar() 仍留在原位调用。
     this.sessionStore = new SessionStore();
     this.diagnostics = new DiagnosticsService(this);
-    this.delivery = new DeliveryService(this);
     const getNoteWriterOwner = () => this;
     const noteWriterHost: NoteWriterHost = {
       get vault() { return getNoteWriterOwner().app.vault; },
@@ -239,7 +232,6 @@ class QnALogPlugin extends obsidian.Plugin {
       confirm: (title: string, body: string, ctaText: string) => qnalogConfirm(getNoteWriterOwner().app, title, body, ctaText),
       getRecentNotes: (limit: number) => getRecentNotes(getNoteWriterOwner(), limit),
       generateTitleTag: (polished: string, mode: string) => generateTitleTag(getNoteWriterOwner(), polished, mode),
-      polishTranscript: (raw: string, mode: string) => polishTranscript(getNoteWriterOwner(), raw, mode, null, null, null),
       mergeAndPolish: (segments, mode, sessionMeta) => mergeAndPolish(getNoteWriterOwner(), segments, mode, null, sessionMeta),
       clearCommittedBriefingCheckpoint: (sessionMeta) => clearCommittedBriefingCheckpoint(getNoteWriterOwner(), sessionMeta),
     };
@@ -506,7 +498,6 @@ class QnALogPlugin extends obsidian.Plugin {
     this.cleanup = new CleanupService(this);
     this.vocabulary = new VocabularyService(this);
     this.profiles = new TranscribeProfileService(this);
-    this.semanticCanvas = new SemanticCanvasService(this);
     // 界面语言要在读取设置之前先按 Obsidian 自己的语言定下来：默认目录名按界面语言取，
     // 而 loadAll 里的 normalizePluginSettings 正在这一步求默认值。设置读回后
     // loadAll 末尾会再按用户在插件里显式选择的语言覆盖一次（applyUiLanguage(this.settings)）。
@@ -607,36 +598,6 @@ class QnALogPlugin extends obsidian.Plugin {
     this.recorder.on(() => this.shell.refreshOutlineView());
 
     this.registerView(VIEW_TYPE_OUTLINE, (leaf) => new OutlineView(leaf, this, this.createTopicsUiPort(), this.createErrataUiPort()));
-    this.registerView(VIEW_TYPE_MINUTES_KANBAN, (leaf) => new MinutesKanbanView(leaf, {
-      getRootPath: () => obsidian.normalizePath(this.settings.mdFolder || DEFAULT_SETTINGS.mdFolder),
-      listItems: () => this.shell.getMinutesKanbanItems(),
-      getModeOptions: () => getVisibleModeEntries(this.settings, false).map(([value]) => ({ value, label: getModeDisplayName(this.settings, value) })),
-      moveItem: (item, folderPath) => this.shell.moveMinutesKanbanItem(item, folderPath),
-      createFolder: (name) => this.shell.createMinutesKanbanFolder(name),
-      inspectFolder: async (path) => {
-        const folder = this.app.vault.getAbstractFileByPath(obsidian.normalizePath(path));
-        if (!(folder instanceof obsidian.TFolder)) throw new Error("Folder not found");
-        const itemByPath = new Map(this.shell.getMinutesKanbanItems().map((item) => [obsidian.normalizePath(item.file.path), item]));
-        const notes = [];
-        let otherFileCount = 0;
-        let childFolderCount = 0;
-        for (const child of folder.children) {
-          if (child instanceof obsidian.TFolder) {
-            childFolderCount++;
-            continue;
-          }
-          const item = child instanceof obsidian.TFile ? itemByPath.get(obsidian.normalizePath(child.path)) : undefined;
-          if (item) notes.push(item);
-          else otherFileCount++;
-        }
-        return { notes, otherFileCount, childFolderCount };
-      },
-      deleteFolder: async (path) => {
-        const folder = this.app.vault.getAbstractFileByPath(obsidian.normalizePath(path));
-        if (!(folder instanceof obsidian.TFolder)) throw new Error("Folder not found");
-        await this.app.fileManager.trashFile(folder);
-      },
-    }));
     this.addRibbonIcon(QNALOG_PLUGIN_ICON_ID, t("QnALog voice notes panel"), () => this.shell.openOutlineView());
     this.registerMarkdownPostProcessor((el, ctx) => this.audioLinks.enhanceAudioTimeLinks(el, ctx));
 
@@ -653,7 +614,6 @@ class QnALogPlugin extends obsidian.Plugin {
       const s = this.recorder.state;
       if (s === "recording") this.recorder.pause(); else if (s === "paused") this.recorder.resume();
     }});
-    this.addCommand({ id: "polish-selection-or-note", name: t("AI: Polish Current Selection or Entire Note"), editorCallback: (editor) => this.noteWriter.polishEditor(editor) });
 
     this.addCommand({
       id: "errata-open-current-note",
@@ -697,33 +657,8 @@ class QnALogPlugin extends obsidian.Plugin {
     this.addCommand({ id: "suggest-people-directory-updates", name: t("AI: Scan Notes Library for People Suggestions"), callback: () => { void this.people.suggestPeopleDirectoryFromLibrary(); } });
     this.addCommand({ id: "open-todo-wall", name: t("Open To-do Wall"), callback: () => { void this.library.openTodoWall(); } });
     this.addCommand({ id: "import-audio", name: t("Import Existing Audio File: Transcribe + Polish"), callback: () => new ImportAudioModal(this.app, this).open() });
-    this.addCommand({
-      id: "generate-html-report",
-      name: t("AI: Generate HTML Report for This Note"),
-      checkCallback: (checking) => {
-        const file = this.app.workspace.getActiveFile();
-        const isMd = file instanceof obsidian.TFile && file.extension === "md";
-        if (!isMd) return false;
-        if (checking) return true;
-        void this.delivery.generateHtmlReportForMarkdownFile(file);
-        return true;
-      },
-    });
-    this.addCommand({
-      id: "generate-pdf-report",
-      name: t("AI: Generate PDF Report for This Note (Full Page, No Truncation)"),
-      checkCallback: (checking) => {
-        const file = this.app.workspace.getActiveFile();
-        const isMd = file instanceof obsidian.TFile && file.extension === "md";
-        if (!isMd) return false;
-        if (checking) return true;
-        void this.delivery.generatePdfReportForMarkdownFile(file);
-        return true;
-      },
-    });
     this.addCommand({ id: "check-updates", name: t("Check for Updates"), callback: () => this.checkForUpdates({ silent: false }) });
     this.addCommand({ id: "open-outline", name: t("Open Voice Notes Panel"), callback: () => this.shell.openOutlineView() });
-    this.addCommand({ id: "open-minutes-kanban", name: t("Open Notes Board"), callback: () => this.shell.openMinutesKanban() });
     this.addCommand({ id: "record-mic-only", name: t("Start Recording · Microphone only"), callback: () => { this.recording._oneShotCaptureMode = "mic"; void this.recording.startRecording(); } });
     this.addCommand({ id: "record-mic-virtual", name: t("Start Recording · Microphone + Computer Audio"), callback: () => { this.recording._oneShotCaptureMode = "mix-virtual"; void this.recording.startRecording(); } });
     this.addCommand({ id: "record-virtual-only", name: t("Start Recording · Computer Audio only"), callback: () => { this.recording._oneShotCaptureMode = "virtualCable"; void this.recording.startRecording(); } });
