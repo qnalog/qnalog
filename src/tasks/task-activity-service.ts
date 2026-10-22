@@ -677,6 +677,7 @@ export class TaskActivityService {
     const q = this.host.queue;
     const maxR = (this.host.settings && this.host.settings.maxRetries) || 3;
     const tasks = q && Array.isArray(q.tasks) ? q.tasks : [];
+    const recoveryCount = q && typeof q.recoveryEntries === "function" ? q.recoveryEntries().length : 0;
     const runnable = tasks.filter((t) => t && t.status !== "running" && t.status !== "missing" && t.status !== "blocked" && (Number(t.retries) || 0) < maxR);
 
     const s = this.host.sessionStore.get();
@@ -759,6 +760,10 @@ export class TaskActivityService {
       show(task.status === "waiting" || task.status === "retrying" ? "clock-3" : "loader-2",
         `${task.title} · ${stateText}`,
         task.status === "running" || task.status === "slow");
+      return;
+    }
+    if (recoveryCount > 0) {
+      show("triangle-alert", `${recoveryCount} · ${t("Paused recovery entries")}`, false);
       return;
     }
     // D) 有待处理任务但空闲（可点重试）

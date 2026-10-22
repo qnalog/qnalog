@@ -1,4 +1,5 @@
 import { describe, expect, it, vi } from "vitest";
+import { setIcon } from "obsidian";
 import {
   TaskActivityStore,
   classifyTaskError,
@@ -172,5 +173,68 @@ describe("session task activity finalization stages", () => {
     session.workProgress = { stage: "done", label: t("Processing complete"), percent: 100 };
     service.syncSessionTaskActivity(session as never);
     expect(service.taskActivityStore.get("finalize:session-finalize")?.status).toBe("done");
+  });
+});
+
+describe("paused queue recovery status", () => {
+  function createRecoveryStatusFixture() {
+    const recoveryEntries: Array<Record<string, unknown>> = [{ issue: "unsupported-type" }];
+    const queue = { tasks: [], recoveryEntries: () => recoveryEntries };
+    const session: Record<string, unknown> = {};
+    const service = new TaskActivityService({
+      sessionStore: { get: () => session },
+      settings: {},
+      queue,
+      recorder: { state: "idle" },
+    } as never);
+    service.taskActivityStore = new TaskActivityStore();
+    const statusText: string[] = [];
+    service.progressStatusEl = {
+      empty: () => { statusText.length = 0; },
+      removeClass: () => undefined,
+      toggleClass: () => undefined,
+      addClass: () => undefined,
+      setAttr: () => undefined,
+      createSpan: ({ text = "" }: { text?: string } = {}) => {
+        statusText.push(text);
+        return {};
+      },
+    } as never;
+    return { service, statusText, recoveryEntries };
+  }
+
+  it("shows a warning and count instead of ready when only retained entries remain", () => {
+    const { service, statusText } = createRecoveryStatusFixture();
+
+    service.updateBusyStatus();
+
+    expect(statusText.join(" ")).toContain(`1 · ${t("Paused recovery entries")}`);
+    expect(statusText.join(" ")).not.toContain(t("QnALog is ready"));
+    expect(setIcon).toHaveBeenCalledWith(expect.anything(), "triangle-alert");
+  });
+
+  it("keeps an ordinary active task ahead of the retained-entry warning", () => {
+    const { service, statusText } = createRecoveryStatusFixture();
+    service.taskActivityStore.start({
+      id: "outline:active",
+      kind: "outline",
+      title: "Live outline",
+      stageLabel: "Generating outline",
+      status: "running",
+    });
+
+    service.updateBusyStatus();
+
+    expect(statusText.join(" ")).toContain("Live outline");
+    expect(statusText.join(" ")).not.toContain(t("Paused recovery entries"));
+  });
+
+  it("returns to ready after retained entries clear", () => {
+    const { service, statusText, recoveryEntries } = createRecoveryStatusFixture();
+    recoveryEntries.length = 0;
+
+    service.updateBusyStatus();
+
+    expect(statusText.join(" ")).toContain(t("QnALog is ready"));
   });
 });
