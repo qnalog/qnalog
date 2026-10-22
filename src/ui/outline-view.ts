@@ -5924,7 +5924,7 @@ export class OutlineView extends obsidian.ItemView {
           const confirmed = await qnalogConfirm(
             this.plugin.app,
             i18nT("Reorganize this note"),
-            i18nT("This will regenerate this note's organized body using the default organizing mode and replace the current content. The original transcript will stay unchanged. The plugin will not save the replaced body. Use Obsidian's file recovery if you need to restore it."),
+            i18nT("This will regenerate this note's organized body in the note's own mode and replace the current content. Before writing, the current note is saved to QnALog's hidden version folder (.versions). The original transcript stays unchanged."),
             i18nT("Reorganize"),
           );
           if (confirmed) void this.plugin.repolish.reorganizeNoteInPlace(file);

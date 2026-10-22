@@ -44,7 +44,7 @@ const generated = "---\ntitle: New title\ntags: new\nqnalog_topic: New topic\n--
 function fixture(overrides: Record<string, unknown> = {}) {
   const file = new obsidian.TFile("QnALog/Minutes/source.md");
   const contents = new Map([[file.path, original]]);
-  const calls: { order: string[]; refresh: unknown[][]; created: unknown[][]; snapshots: unknown[][]; switched: unknown[][] } = { order: [], refresh: [], created: [], snapshots: [], switched: [] };
+  const calls: { order: string[]; refresh: unknown[][]; created: unknown[][]; snapshots: unknown[][]; switched: unknown[][]; saved: unknown[][] } = { order: [], refresh: [], created: [], snapshots: [], switched: [], saved: [] };
   const create = vi.fn();
   const activities = new Map<string, { stage: string; detail?: string }>();
   const port = {
@@ -60,9 +60,11 @@ function fixture(overrides: Record<string, unknown> = {}) {
     getCachedFrontmatter: () => ({ "qnalog_time": "2026-10-13T10:00:00", user_custom: "keep-me", tags: ["old"] }),
     loadErrata: vi.fn(async () => null),
     getDefaultMode: () => "general",
+    detectNoteMode: vi.fn(() => null),
     getModeDisplayName: () => "General",
     getInFlight: () => new Set<string>(),
     mergeAndPolish: vi.fn(async () => { calls.order.push("merge"); return generated; }),
+    saveReorganizeSnapshot: vi.fn(async (...args: unknown[]) => { calls.order.push("save-snapshot"); calls.saved.push(args); }),
     clearCommittedBriefingCheckpoint: vi.fn(async () => { calls.order.push("clear-checkpoint"); }),
     recoverOriginalTranscript: vi.fn(async () => false),
     stripModeSuggestionBlocks: (text: string) => text,
@@ -166,10 +168,39 @@ describe("in-place note reorganization", () => {
     expect(calls.order.indexOf("refresh-index")).toBeLessThan(calls.order.indexOf("done"));
     expect(portRaw.saveVersion).not.toHaveBeenCalled();
     expect(portRaw.refreshNoteIndex).toHaveBeenCalledWith(file, { reason: "reorganize" });
-    expect(portRaw.mergeAndPolish).toHaveBeenCalledWith(expect.any(Array), "general", expect.any(Object), expect.any(Object));
+    expect(portRaw.mergeAndPolish).toHaveBeenCalledWith(expect.any(Array), "general", expect.any(Object), expect.any(Object), null);
+    // 写入前把整篇旧笔记存为「整理前」快照：在模型返回之后、写入之前。
+    expect(calls.order.indexOf("save-snapshot")).toBeGreaterThan(calls.order.indexOf("merge"));
+    expect(calls.order.indexOf("save-snapshot")).toBeLessThan(calls.order.indexOf("write"));
+    expect(calls.saved[0][1]).toBe(original);
+    expect(calls.saved[0][3]).toBe("general");
     expect((vi.mocked(portRaw.mergeAndPolish).mock.calls[0][2] as Record<string, unknown>)).not.toHaveProperty("_errata");
     expect(activities.get(`reorganize-in-place:${file.path}`)?.stage).toBe("done");
     expect(create).not.toHaveBeenCalled();
+  });
+
+  it("does not write the note when the before-reorganize snapshot cannot be saved", async () => {
+    const { port, file, contents, calls, portRaw } = fixture({
+      saveReorganizeSnapshot: vi.fn(async () => { throw new Error("disk full"); }),
+    });
+    await reorganizeNoteInPlace(port, file);
+    expect(contents.get(file.path)).toBe(original);
+    expect(calls.order).not.toContain("write");
+    expect(calls.order).not.toContain("replace-original");
+    expect(portRaw.clearCommittedBriefingCheckpoint).not.toHaveBeenCalled();
+  });
+
+  it("uses the note's own mode and passes the chosen mode and preference through", async () => {
+    const own = fixture({ detectNoteMode: vi.fn(() => "learning") });
+    await reorganizeNoteInPlace(own.port, own.file);
+    expect(vi.mocked(own.portRaw.mergeAndPolish).mock.calls[0][1]).toBe("learning");
+    expect(own.calls.saved[0][3]).toBe("learning");
+
+    const chosen = fixture({ detectNoteMode: vi.fn(() => "learning") });
+    const preference = { label: "Concise" };
+    await reorganizeNoteInPlace(chosen.port, chosen.file, { mode: "meeting", preference });
+    expect(vi.mocked(chosen.portRaw.mergeAndPolish).mock.calls[0][1]).toBe("meeting");
+    expect(vi.mocked(chosen.portRaw.mergeAndPolish).mock.calls[0][4]).toBe(preference);
   });
 
   it("keeps the note unchanged when model generation fails", async () => {

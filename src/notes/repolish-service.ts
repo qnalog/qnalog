@@ -161,12 +161,23 @@ export class RepolishService {
       getCachedFrontmatter: (file) => this.host.app.metadataCache.getFileCache(file)?.frontmatter,
       loadErrata: (file) => this.host.errata.loadForFile(file),
       getDefaultMode: () => getEffectivePolishMode(this.host.settings, this.host.settings.polishMode, "general"),
+      detectNoteMode: (file) => {
+        const mode = detectRecentNoteMode(this.host, file, this.host.app.metadataCache.getFileCache(file)?.frontmatter);
+        return typeof mode === "string" && mode && mode !== "off" ? mode : null;
+      },
       getModeDisplayName: (mode) => getModeDisplayName(this.host.settings, mode),
       getInFlight: () => {
         if (!this._repolishInFlight) this._repolishInFlight = new Set();
         return this._repolishInFlight;
       },
-      mergeAndPolish: (segments, mode, sessionMeta, frontmatter) => mergeAndPolish(this.host, segments, mode, sessionMeta, frontmatter, null),
+      mergeAndPolish: (segments, mode, sessionMeta, frontmatter, preference) => mergeAndPolish(this.host, segments, mode, sessionMeta, frontmatter, preference ?? null),
+      saveReorganizeSnapshot: async (file, content, segments, mode) => {
+        const now = window.moment();
+        await this.host.versions.saveVersion(file, content, segments, {
+          kind: "pre-reorganize", label: `${t("Before reorganize")} ${now.format("YYYY-MM-DD HH:mm")}`, mode,
+          idLabel: `pre-reorganize-${now.format("YYYYMMDD-HHmmss")}`, body: content, activate: false,
+        });
+      },
       clearCommittedBriefingCheckpoint: (sessionMeta) => clearCommittedBriefingCheckpoint(this.host, sessionMeta),
       recoverOriginalTranscript: (file) => this.recoverTranscript(file),
       getModeOptions: () => getVisibleModeEntries(this.host.settings, false)
