@@ -66,7 +66,6 @@ export type NoteIndexReadResult = QnALogNoteIndexCard | FutureNoteIndexSchema;
 
 export interface ResolvedNoteIndex extends QnALogNoteIndexCard {
   filePath: string;
-  semanticCanvasPath: string | null;
 }
 
 export interface BuildNoteIndexOptions {
@@ -575,11 +574,9 @@ export function upsertNoteIndex(markdown: unknown, index: QnALogNoteIndexCard): 
 export function resolveNoteIndex(
   index: QnALogNoteIndexCard,
   filePath: unknown,
-  semanticCanvasPath: unknown,
 ): ResolvedNoteIndex {
   return {
     ...index,
     filePath: textValue(filePath),
-    semanticCanvasPath: textValue(semanticCanvasPath) || null,
   };
 }

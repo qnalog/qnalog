@@ -14,14 +14,12 @@ import {
   NS_TYPE_DERIVED,
   NS_TYPE_VERSION_CACHE,
   NS_VIEW_OUTLINE,
-  NS_FM_SEMANTIC,
   hasNamespaceFrontmatter,
   isNamespaceTag,
   isDerivedVersionType,
   nsMarker,
   nsRe,
   readNamespaceFrontmatter,
-  readSemanticMeta,
   setNamespaceFrontmatter,
 } from "../src/shared/namespace";
 import { QNALOG_BASE_DEFINITIONS } from "../src/views/base-definitions";
@@ -53,13 +51,6 @@ describe("数据层命名空间与 Frontmatter schema", () => {
     expect(isDerivedVersionType(NS_TYPE_DERIVED)).toBe(true);
     expect(isDerivedVersionType("LexVoice派生版本")).toBe(false);
     expect(isDerivedVersionType(NS_TYPE_VERSION_CACHE)).toBe(false);
-  });
-
-  it("Canvas 语义元数据只读 qnalogSemantic 键", () => {
-    expect(NS_FM_SEMANTIC).toBe("qnalogSemantic");
-    expect(readSemanticMeta({ [NS_FM_SEMANTIC]: { sourcePath: "a.md" } })).toEqual({ sourcePath: "a.md" });
-    expect(readSemanticMeta({ lexvoiceSemantic: { sourcePath: "a.md" } })).toBeUndefined();
-    expect(readSemanticMeta(null)).toBeUndefined();
   });
 
   it("frontmatter 与视图类型用的是 QnALog 取值", () => {

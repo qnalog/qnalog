@@ -59,7 +59,7 @@ if ((repolishServiceSource.match(/loadErrata:\s*\(file\)\s*=>\s*this\.host\.erra
 const DOMAIN_FIELDS = [
   "diagnostics", "delivery", "noteWriter", "tasks", "queueRetry", "versions", "people",
   "profiles", "vocabulary", "cleanup", "outline", "meetingWorkbench", "audioLinks", "noteIndex",
-  "topics", "inbox", "knowledgeExtraction", "recorder", "recording", "queue", "bubble", "semanticCanvas", "sessionStore", "continuations", "errata",
+  "topics", "inbox", "knowledgeExtraction", "recorder", "recording", "queue", "bubble", "sessionStore", "continuations", "errata",
 ];
 const PORT_HOST_FIELDS = {
   topics: true,

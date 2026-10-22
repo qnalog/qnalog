@@ -19,7 +19,6 @@
       "repolish",
       "saveAll",
       "saveSettings",
-      "semanticCanvas",
       "settings",
       "shell",
       "tasks",
@@ -89,8 +88,6 @@
     ["RepolishService", "NoteIndexService"],
     ["RepolishService", "TaskActivityService"],
     ["RepolishService", "VersionStore"],
-    ["SemanticCanvasService", "DiagnosticsService"],
-    ["SemanticCanvasService", "NoteIndexService"],
     ["SessionFinalizeService", "ContinuationService"],
     ["SessionFinalizeService", "DiagnosticsService"],
     ["SessionFinalizeService", "LiveAsrPipelineService"],
@@ -149,10 +146,6 @@
     "src/audio/external-inbox-service.ts": [
       "ExternalInboxHost.app:App",
       "ExternalInboxHost.settings:PluginSettings"
-    ],
-    "src/canvas/semantic-canvas-service.ts": [
-      "SemanticCanvasHost.app:App",
-      "SemanticCanvasHost.settings:PluginSettings"
     ],
     "src/delivery/delivery-service.ts": [
       "DeliveryHost.app:App",

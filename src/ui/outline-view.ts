@@ -84,7 +84,7 @@ import { getRecentModePrefixEntries, stripRecentDatePrefix } from "../recent/rec
 
 import { NOTE_ASK_MAX_TOKENS, NOTE_ASK_SUGGESTIONS, NOTE_ASK_TIMEOUT_MS, appendAskEntry, buildAskContext } from "../notes/ask-panel";
 import { ensureVaultFolder, findAvailableVaultPath, findAvailableMarkdownPath } from "../shared/util-vault";
-import { NS_FM_SPEAKERS, QNALOG_PLUGIN_ICON_ID, readSemanticMeta } from "../shared/namespace";
+import { NS_FM_SPEAKERS, QNALOG_PLUGIN_ICON_ID } from "../shared/namespace";
 import { mapAudioTimeToNote, type NoteAudioInterval } from "../notes/note-audio-timeline";
 import {
   appendSedimentDecisionItems as appendSedimentDecisionItemsFlow,
@@ -117,7 +117,6 @@ import { scheduleSedimentAutoAdvance as scheduleSedimentAutoAdvanceFlow } from "
 import { commitSedimentGroupFlow } from "../sediment/sediment-flow/sediment-commit-flow";
 import { restoreSedimentCommitFlow } from "../sediment/sediment-flow/sediment-undo-flow";
 import { OutlinePlaybackController } from "./outline-playback-controller";
-import type { QnALogSemanticDocumentMeta } from "../canvas/semantic-outline-canvas";
 
 // 会后整合 prompt（叙述式自然生长，v2）：整场转写 → 依据实际讨论生长出来的 Markdown 岗位画像。
 // 刻意不再用固定 14 格 JSON 表单填空——那会逼模型抠片段硬套、产出稀薄；14 维只作模型内部的"挖全了没"查漏清单。
@@ -372,20 +371,12 @@ export class OutlineView extends obsidian.ItemView {
     this.containerEl.children[1].empty();
     this._lastSig = "";
     this.render();
-    void this.plugin.semanticCanvas.syncActiveCanvasSourceNote({
-      throttled: () => this.scheduleUpdate(),
-      forced: () => { this._lastSig = ""; this.scheduleUpdate(); },
-    });
     // 节流：recorder 每 500ms 滴答一次。只更新计时文本，结构不变时不重建 DOM。
     this.unsubscribeRecorder = this.plugin.recorder.on(() => this.scheduleUpdate());
     this.registerEvent(this.app.workspace.on("file-open", () => this.syncActiveRows()));
     this.registerEvent(this.app.workspace.on("active-leaf-change", () => {
       this.handleActiveLeafChange();
       this.syncActiveRows();
-      void this.plugin.semanticCanvas.syncActiveCanvasSourceNote({
-      throttled: () => this.scheduleUpdate(),
-      forced: () => { this._lastSig = ""; this.scheduleUpdate(); },
-    });
     }));
     // 文件系统变化需要刷新最近纪要。create 在启动、同步和批量粘贴时可能密集触发，
     // 因此统一进入短延迟合并刷新；metadata changed 负责补上 frontmatter 尚未解析完成的情况。
@@ -430,7 +421,7 @@ export class OutlineView extends obsidian.ItemView {
     if (this.sedimentAdvanceTimer) { window.clearTimeout(this.sedimentAdvanceTimer); this.sedimentAdvanceTimer = 0; }
     this.disposeInlineAudio();
   }
-  // Moves the highlight to the rows of the open file. The minutes list also follows the source note of an open canvas.
+  // Moves the highlight to the rows of the open file.
   syncActiveRows() {
     const root = this.containerEl.children[1];
     if (!root) return;
@@ -529,7 +520,6 @@ export class OutlineView extends obsidian.ItemView {
       askState ? `${askState.running ? 1 : 0}:${askState.multiSelect ? 1 : 0}:${askState.question || ""}:${askState.error || ""}:${(askState.followups || []).join("|")}:${Array.isArray(askState.entries) ? askState.entries.map((e) => `${e.id}${e.expanded ? "1" : "0"}${e.written ? "1" : "0"}${e.selected ? "1" : "0"}`).join(",") : ""}` : "",
       activeNote ? activeNote.path : "",
       activeNote ? activeNote.stat.mtime : 0,
-      this.plugin.semanticCanvas.getActiveCanvasSourceSignature(),
       this.topicsUi ? this.topicsUi.getVersion() : "topics-unavailable",
     ].join("|");
   }
@@ -697,10 +687,6 @@ export class OutlineView extends obsidian.ItemView {
   getActiveNoteFile() {
     const file = this.app.workspace.getActiveFile();
     if (!(file instanceof obsidian.TFile)) return null;
-    if (file.extension === "canvas") {
-      // Canvas → 来源纪要的解析由 SemanticCanvasService 负责（异步），这里只读它已解析出的结果。
-      return this.plugin.semanticCanvas.getCanvasSourceFileFor(file.path);
-    }
     if (file.extension !== "md") return null;
     const mdFolder = obsidian.normalizePath(this.plugin.settings.mdFolder || DEFAULT_SETTINGS.mdFolder);
     const path = obsidian.normalizePath(file.path);
@@ -3607,87 +3593,6 @@ export class OutlineView extends obsidian.ItemView {
     if (file instanceof obsidian.TFile) await this.app.workspace.getLeaf(false).openFile(file);
   }
 
-  renderSemanticCanvasButton(parent, file, outlineMarkdown) {
-    if (!(file instanceof obsidian.TFile)) return null;
-    const nodes = parseRealtimeOutlineStateFromMarkdown(outlineMarkdown);
-    if (!nodes.length) return null;
-    const running = this.plugin.semanticCanvas.runningPaths.has(file.path);
-    const progress = this.plugin.semanticCanvas.progressByPath.get(file.path);
-    const idleLabel = i18nT("Open or update the semantic Canvas");
-    const activeLabel = progress && progress.label ? progress.label : i18nT("Generating semantic Canvas");
-    const button = parent.createEl("button", {
-      cls: `qnalog-outline-canvas-btn${running ? " is-canvas-loading" : ""}`,
-      attr: {
-        type: "button",
-        title: running ? activeLabel : idleLabel,
-        "aria-label": running ? activeLabel : idleLabel,
-      },
-    });
-    try { obsidian.setIcon(button, running ? "loader-2" : "network"); } catch { button.setText("Canvas"); }
-    button.disabled = running;
-    button.onclick = (event) => void this.showSemanticCanvasMenu(event, file, outlineMarkdown);
-    return button;
-  }
-
-  async showSemanticCanvasMenu(event, sourceFile, outlineMarkdown) {
-    const canvas = this.plugin.semanticCanvas;
-    const generate = (options) => void canvas.generateSemanticCanvas(sourceFile, outlineMarkdown, options, {
-      immediate: () => this.render(),
-    });
-    if (!(sourceFile instanceof obsidian.TFile) || canvas.runningPaths.has(sourceFile.path)) return;
-    const state = await canvas.readSemanticCanvas(sourceFile);
-    if (!(state.canvasFile instanceof obsidian.TFile)) {
-      generate({ mode: "full" });
-      return;
-    }
-    if (!state.existing) {
-      new obsidian.Notice(i18nT("The existing semantic Canvas cannot be parsed; please check the file before updating."), 7000);
-      return;
-    }
-    const menu = new obsidian.Menu();
-    menu.addItem((item) => item
-      .setTitle(i18nT("Open Semantic Map"))
-      .setIcon("network")
-      .onClick(() => void this.app.workspace.getLeaf(true).openFile(state.canvasFile)));
-    menu.addItem((item) => item
-      .setTitle(i18nT("Refresh Entire Semantic Map"))
-      .setIcon("refresh-cw")
-      .onClick(() => generate({ mode: "full" })));
-    const existingMeta = readSemanticMeta<QnALogSemanticDocumentMeta>(state.existing);
-    if (existingMeta?.graph) {
-      menu.addItem((item) => item
-        .setTitle(i18nT("Adaptive Layout"))
-        .setIcon("layout-dashboard")
-        .onClick(() => generate({ mode: "layout", layoutMode: "adaptive" })));
-      menu.addItem((item) => item
-        .setTitle(i18nT("Expand Left and Right"))
-        .setIcon("columns-3")
-        .onClick(() => generate({ mode: "layout", layoutMode: "bilateral" })));
-      menu.addItem((item) => item
-        .setTitle(i18nT("Expand to the Right"))
-        .setIcon("arrow-right")
-        .onClick(() => generate({ mode: "layout", layoutMode: "right" })));
-      for (const branch of existingMeta.graph.branches.slice(0, 7)) {
-        menu.addSeparator();
-        menu.addItem((item) => item.setTitle(branch.title).setIsLabel(true));
-        menu.addItem((item) => item
-          .setTitle(i18nT("Refresh This Mainline"))
-          .setIcon("refresh-cw")
-          .onClick(() => generate({ mode: "branch", branchKey: branch.key })));
-        menu.addItem((item) => item
-          .setTitle(i18nT("Drill Down Further"))
-          .setIcon("git-branch-plus")
-          .onClick(() => generate({ mode: "drill", branchKey: branch.key })));
-        if (branch.sourceSections && branch.sourceSections[0]) {
-          menu.addItem((item) => item
-            .setTitle(i18nT("Locate in Source"))
-            .setIcon("text-search")
-            .onClick(() => void canvas.openSemanticSourceSection(sourceFile, branch.sourceSections[0])));
-        }
-      }
-    }
-    this.showMenuAtMouse(menu, event, "qnalog-semantic-canvas-menu");
-  }
   renderRebuildNoteOutlineButton(parent, file) {
     const rebuilding = this.outlineRebuildPaths.has(file.path);
     const button = parent.createEl("button", {
@@ -3805,7 +3710,6 @@ export class OutlineView extends obsidian.ItemView {
     outlineTitle.createSpan({ text: i18nT("AI organizing outline") });
     const outlineActions = outlineHead.createDiv({ cls: "qnalog-outline-head-actions" });
     this.renderRebuildNoteOutlineButton(outlineActions, file);
-    if (data.outline) this.renderSemanticCanvasButton(outlineActions, file, data.outline);
     const outlineBody = outlineSec.createDiv({ cls: "qnalog-outline-ai-body" });
     if (data.outline) {
       const outlineText = normalizeOutlineMarkdownForDisplay(data.outline);

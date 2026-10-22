@@ -2,7 +2,6 @@
 // 由 main.ts 抽出（模块化拆解、纯搬迁、零行为改动）：笔记索引与沉淀自动提取
 
 import * as obsidian from "obsidian";
-import { getSemanticCanvasPath } from "../canvas/semantic-outline-canvas";
 import { buildNoteIndex, resolveNoteIndex, upsertNoteIndex } from "../indexing/note-index";
 import { generateSedimentObjects, writeSedimentObjectCards } from "../sediment";
 import type { PluginSettings } from "../shared/types";
@@ -52,13 +51,7 @@ export class NoteIndexService {
     if (!index) return null;
     const next = upsertNoteIndex(current, index);
     if (next !== current) await this.host.app.vault.modify(file, next);
-    const expectedCanvasPath = obsidian.normalizePath(getSemanticCanvasPath(file.path));
-    const canvasFile = this.host.app.vault.getAbstractFileByPath(expectedCanvasPath);
-    const resolved = resolveNoteIndex(
-      index,
-      file.path,
-      canvasFile instanceof obsidian.TFile ? canvasFile.path : null,
-    );
+    const resolved = resolveNoteIndex(index, file.path);
     if (this.host.onNoteIndexed) {
       void Promise.resolve().then(() => this.host.onNoteIndexed?.(file.path))
         .catch((error) => console.warn("[QnALog] post-index topic prompt refresh failed", error));

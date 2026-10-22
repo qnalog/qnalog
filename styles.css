@@ -8975,26 +8975,6 @@ body .qnalog-menu .menu-item.selected .menu-item-icon {
   flex: 0 0 auto;
 }
 
-.qnalog-outline-ai-head.is-utility .qnalog-outline-canvas-btn {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  width: var(--size-4-6);
-  height: var(--size-4-6);
-  padding: 0;
-  border-radius: var(--radius-s);
-  color: var(--text-muted);
-}
-
-.qnalog-outline-ai-head.is-utility .qnalog-outline-canvas-btn:hover {
-  color: var(--text-accent);
-  background: var(--background-modifier-hover);
-}
-
-.qnalog-outline-canvas-btn.is-canvas-loading svg {
-  animation: qnalog-spin 1s linear infinite;
-}
-
 .qnalog-time-link {
   border: 0;
   background: transparent;

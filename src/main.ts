@@ -111,7 +111,6 @@ import { RepolishService } from "./notes/repolish-service";
 import { InboxWatcherService } from "./imports/inbox-watcher-service";
 import { KnowledgeExtractionService } from "./indexing/knowledge-extraction-service";
 import { ContinuationService } from "./session/continuation-service";
-import { SemanticCanvasService } from "./canvas/semantic-canvas-service";
 /**
  * 按设置与 Obsidian 的界面语言，决定插件当前使用的语言并记录到 i18n 模块。
  *
@@ -163,7 +162,6 @@ class QnALogPlugin extends obsidian.Plugin {
   settingsSchemaState: SettingsSchemaState = "current";
   declare vocabulary: VocabularyService;
   declare profiles: TranscribeProfileService;
-  declare semanticCanvas: SemanticCanvasService;
   declare recorder: RecorderService;
   declare queue: TaskQueue;
   /** 当前会话的实时大纲协调器。 */
@@ -504,7 +502,6 @@ class QnALogPlugin extends obsidian.Plugin {
     this.cleanup = new CleanupService(this);
     this.vocabulary = new VocabularyService(this);
     this.profiles = new TranscribeProfileService(this);
-    this.semanticCanvas = new SemanticCanvasService(this);
     // 界面语言要在读取设置之前先按 Obsidian 自己的语言定下来：默认目录名按界面语言取，
     // 而 loadAll 里的 normalizePluginSettings 正在这一步求默认值。设置读回后
     // loadAll 末尾会再按用户在插件里显式选择的语言覆盖一次（applyUiLanguage(this.settings)）。
