@@ -6,7 +6,11 @@ import { QNALOG_PLUGIN_ICON_SVG } from "./ui/plugin-icon";
 import { QnALogSettingTab } from "./ui/settings-tab";
 
 
-import {QueueModal, ImportTextModal, ImportAudioModal, BubbleWidget } from "./ui/modals";
+import {QueueModal, ImportTextModal, ImportAudioModal, BubbleWidget, PeopleDirectorySuggestionModal } from "./ui/modals";
+import { generatePeopleDirectorySuggestions, loadPeopleDirectory } from "./people";
+import { generateSedimentObjects, upsertSedimentPreExtractionBlockInFile, writeSedimentObjectCards } from "./sediment";
+import { loadVocabularyGroups } from "./vocabulary";
+import type { SedimentUiPort } from "./ui/sediment-ui-port";
 
 import {getModeDisplayName, getVisibleModeEntries } from "./shared/mode-meta";
 
@@ -599,7 +603,7 @@ class QnALogPlugin extends obsidian.Plugin {
     this.ribbonEl = this.addRibbonIcon("mic", t("QnALog: click to start/stop; hover to expand the controls"), () => this.recording.toggleRecording());
     this.recorder.on(() => this.shell.refreshOutlineView());
 
-    this.registerView(VIEW_TYPE_OUTLINE, (leaf) => new OutlineView(leaf, this, this.createTopicsUiPort(), this.createErrataUiPort(), this.createRegenerateActionsPort()));
+    this.registerView(VIEW_TYPE_OUTLINE, (leaf) => new OutlineView(leaf, this, this.createTopicsUiPort(), this.createErrataUiPort(), this.createRegenerateActionsPort(), this.createSedimentUiPort()));
     this.addRibbonIcon(QNALOG_PLUGIN_ICON_ID, t("QnALog voice notes panel"), () => this.shell.openOutlineView());
     this.registerMarkdownPostProcessor((el, ctx) => this.audioLinks.enhanceAudioTimeLinks(el, ctx));
 
@@ -1011,6 +1015,25 @@ class QnALogPlugin extends obsidian.Plugin {
           || this.app.metadataCache.getFirstLinkpathDest(target, "");
         if (file instanceof obsidian.TFile) await openOrRevealFile(this.app, file);
       },
+    };
+  }
+
+  createSedimentUiPort(): SedimentUiPort {
+    return {
+      settings: this.settings,
+      saveSettings: () => this.saveSettings(),
+      tasks: this.tasks,
+      vocabulary: this.vocabulary,
+      people: this.people,
+      knowledgeExtraction: this.knowledgeExtraction,
+      refreshOutlineView: () => this.shell.refreshOutlineView(),
+      loadPeopleDirectory: () => loadPeopleDirectory(this),
+      generatePeopleDirectorySuggestions: (file, markdown) => generatePeopleDirectorySuggestions(this, file, markdown),
+      openPeopleSuggestionModal: (file, items, options) => new PeopleDirectorySuggestionModal(this.app, this, file, items, options).open(),
+      generateSedimentObjects: (file, markdown) => generateSedimentObjects(this, file, markdown),
+      upsertSedimentPreExtractionBlock: (file, objects) => upsertSedimentPreExtractionBlockInFile(this, file, objects),
+      writeSedimentObjectCards: (file, objects) => writeSedimentObjectCards(this, file, objects),
+      loadVocabularyGroups: () => loadVocabularyGroups(this),
     };
   }
 

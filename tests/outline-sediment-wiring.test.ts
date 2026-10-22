@@ -39,7 +39,7 @@ vi.mock("../src/vocabulary", async () => {
 });
 
 import * as obsidian from "obsidian";
-import { OutlineView } from "../src/ui/outline-view";
+import { SedimentPanel } from "../src/ui/sediment-panel";
 import { writeSedimentObjectCards } from "../src/sediment";
 import { loadVocabularyGroups } from "../src/vocabulary";
 
@@ -70,7 +70,7 @@ afterEach(() => {
 });
 
 function makeView(groupKey: string, items = [{ id: "candidate-1", raw: { id: "candidate-1", sectionKey: "general", term: "term" } }]) {
-  const view = Object.create(OutlineView.prototype) as OutlineView;
+  const view = Object.create(SedimentPanel.prototype) as SedimentPanel;
   const bucket = { todos: items, hotwords: { general: ["term"] }, selectedByGroup: { [groupKey]: ["candidate-1"] }, decisionLogByGroup: {} };
   const targetFile = sourceFile;
   const state = { bucket, groups: [], currentPeople: [{ name: "Pat", sourcePath: targetFile.path }] };
@@ -86,8 +86,12 @@ function makeView(groupKey: string, items = [{ id: "candidate-1", raw: { id: "ca
       modify: vi.fn(async () => { throw new Error("  undo failed  "); }),
     },
   };
-  const plugin = {
+  const port = {
     settings: { vocabularyFile: vocabularyFile.path, customVocabulary: "custom before" },
+    // 原先以 helper(plugin, ...) 调用的模块函数，现在是 port 能力；转发给同一份模块 mock。
+    writeSedimentObjectCards: (...args: unknown[]) => vi.mocked(writeSedimentObjectCards)(...(args as Parameters<typeof writeSedimentObjectCards>)),
+    loadVocabularyGroups: (...args: unknown[]) => vi.mocked(loadVocabularyGroups)(...(args as Parameters<typeof loadVocabularyGroups>)),
+    refreshOutlineView: vi.fn(),
     tasks: {
       startTaskActivity: vi.fn(), patchTaskActivity: vi.fn(), cancelTaskActivity: vi.fn(),
       completeTaskActivity: vi.fn(), failTaskActivity: vi.fn(),
@@ -102,7 +106,8 @@ function makeView(groupKey: string, items = [{ id: "candidate-1", raw: { id: "ca
     },
   };
   Object.assign(view, {
-    app, plugin,
+    app, port,
+    view: { render: vi.fn(() => { eventLog.push("render"); }) },
     sedimentScanToken: 0,
     getSedimentPanelState: vi.fn(() => state),
     getSedimentDisplayItems: vi.fn(() => items),
@@ -118,7 +123,6 @@ function makeView(groupKey: string, items = [{ id: "candidate-1", raw: { id: "ca
     markSedimentGroupDone: vi.fn(() => { eventLog.push("mark done"); return true; }),
     markSedimentGroupDoneIfEmpty: vi.fn(() => true),
     persistSedimentCandidateBucket: vi.fn(async () => { eventLog.push("persist"); return true; }),
-    render: vi.fn(() => { eventLog.push("render"); }),
     showSedimentCommitToast: vi.fn((_message: string, undo: unknown) => { eventLog.push("toast"); Object.assign(view, { lastToastUndo: undo }); }),
     showSedimentToast: vi.fn(() => { eventLog.push("toast"); }),
     scheduleSedimentAutoAdvance: vi.fn(() => { eventLog.push("auto advance"); }),
@@ -126,17 +130,17 @@ function makeView(groupKey: string, items = [{ id: "candidate-1", raw: { id: "ca
     applyHotwordRenamesToNote: vi.fn(async () => []),
     removeSedimentPeopleCandidates: vi.fn(),
     applyPeopleRenamesToNote: vi.fn(async () => []),
-    keepPeopleSuggestions: vi.fn((file: unknown, suggestions: unknown[]) => OutlineView.prototype.keepPeopleSuggestions.call(view, file, suggestions)),
+    keepPeopleSuggestions: vi.fn((file: unknown, suggestions: unknown[]) => SedimentPanel.prototype.keepPeopleSuggestions.call(view, file, suggestions)),
   });
   vi.mocked(writeSedimentObjectCards).mockImplementation(async () => {
     eventLog.push("write cards");
     return { entries: [] };
   });
   vi.mocked(loadVocabularyGroups).mockImplementation(async () => ({ general: [] }));
-  return { view, app, plugin, bucket, state, targetFile, vocabularyFile };
+  return { view, app, port, bucket, state, targetFile, vocabularyFile };
 }
 
-describe("OutlineView sediment wiring", () => {
+describe("Sediment panel wiring", () => {
   it.each(["todo", "hotword"] as const)("preserves %s commit ordering", async groupKey => {
     const { view, bucket, targetFile } = makeView(groupKey);
     await view.commitSedimentGroup(targetFile, groupKey);
@@ -231,12 +235,12 @@ describe("OutlineView sediment wiring", () => {
     ["string", "string"],
     [null, "null"],
   ])("keeps scan failure Notice text for %j", async (error, expected) => {
-    const { view, app, plugin, targetFile } = makeView("todo");
+    const { view, app, port, targetFile } = makeView("todo");
     vi.mocked(app.vault.cachedRead).mockRejectedValueOnce(error);
     vi.spyOn(console, "error").mockImplementation(() => undefined);
     await view.extractSedimentForFile(targetFile);
     expect(Notice.messages.at(-1)?.message).toBe(`Failed to scan this note:${expected}`);
-    expect(plugin.tasks.failTaskActivity).toHaveBeenCalledWith(expect.any(String), error, expect.objectContaining({ detail: getTaskErrorMessage(error) }));
+    expect(port.tasks.failTaskActivity).toHaveBeenCalledWith(expect.any(String), error, expect.objectContaining({ detail: getTaskErrorMessage(error) }));
   });
 
   it.each([
@@ -253,23 +257,23 @@ describe("OutlineView sediment wiring", () => {
   });
 
   it("shows the keep-people toast when bucket persistence returns false", async () => {
-    const { view, plugin, targetFile, state } = makeView("person");
+    const { view, port, targetFile, state } = makeView("person");
     vi.mocked(view.persistSedimentCandidateBucket).mockResolvedValueOnce(false);
     await view.keepPeopleSuggestions(targetFile, state.currentPeople);
     expect(view.showSedimentCommitToast).toHaveBeenCalledTimes(1);
-    expect(plugin.saveSettings).toHaveBeenCalledTimes(1);
+    expect(port.saveSettings).toHaveBeenCalledTimes(1);
   });
 
   it("shows the ignore-people toast when bucket persistence returns false", async () => {
-    const { view, plugin, targetFile, state } = makeView("person");
+    const { view, port, targetFile, state } = makeView("person");
     vi.mocked(view.persistSedimentCandidateBucket).mockResolvedValueOnce(false);
     await view.ignorePeopleSuggestions(state.currentPeople, targetFile);
     expect(view.showSedimentToast).toHaveBeenCalledTimes(1);
-    expect(plugin.people.ignorePeopleDirectorySuggestion).toHaveBeenCalledTimes(1);
+    expect(port.people.ignorePeopleDirectorySuggestion).toHaveBeenCalledTimes(1);
   });
 });
 
-describe("OutlineView sediment undo toast", () => {
+describe("Sediment panel undo toast", () => {
   it("uses the Undo label in Chinese and English", () => {
     const { view } = makeView("todo");
     const originalLanguage = getActiveUiLanguage();
@@ -283,7 +287,7 @@ describe("OutlineView sediment undo toast", () => {
     try {
       for (const [language, expected] of [["zh", "撤销"], ["en", "Undo"]] as const) {
         setActiveUiLanguage(resolveUiLanguage(language, null));
-        OutlineView.prototype.showSedimentCommitToast.call(view, "Saved", {});
+        SedimentPanel.prototype.showSedimentCommitToast.call(view, "Saved", {});
         const buttonText = toastOptions?.actions[0]?.text;
         expect(buttonText).toBe(expected);
         expect(buttonText).not.toContain("AI service");
