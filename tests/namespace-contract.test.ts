@@ -14,7 +14,6 @@ import {
   NS_TYPE_DERIVED,
   NS_TYPE_VERSION_CACHE,
   NS_VIEW_OUTLINE,
-  NS_VIEW_MINUTES_KANBAN,
   NS_FM_SEMANTIC,
   hasNamespaceFrontmatter,
   isNamespaceTag,
@@ -66,7 +65,6 @@ describe("数据层命名空间与 Frontmatter schema", () => {
   it("frontmatter 与视图类型用的是 QnALog 取值", () => {
     expect(NS_FM_SPEAKERS).toBe("qnalog_speakers");
     expect(NS_VIEW_OUTLINE).toBe("qnalog-outline-view");
-    expect(NS_VIEW_MINUTES_KANBAN).toBe("qnalog-minutes-kanban-view");
   });
 
   it("业务字段始终使用 qnalog_* canonical 键并读取旧别名", () => {

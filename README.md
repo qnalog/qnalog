@@ -52,7 +52,7 @@ Alibaba Cloud Bailian quick config uses Qwen-Audio-3.1-ASR-Flash over its native
 
 The default **General** template chooses paragraphs, lists, or topic sections from the content without requiring a recording type. Short notes stay direct; longer bodies can include an optional overview. Its organizing rules preserve personal voice, feelings, questions, uncertainty, and speaker attribution where it affects meaning. Only explicit requests, reminders, or committed future actions become tasks. Saved default templates and custom prompts continue to apply.
 
-The sidebar tabs appear in this order: **Notes**, **Outline**, **Distill**, **Q&A**, and **Topics**. They show the note list, live outline and markers, reviewable knowledge candidates, questions about a note, and topic pages. **Minutes Board** is a separate view, opened with its command or the button in the panel. The note list context menu can open a note in Outline or Distill; Distill starts a scan when the note has no scan results.
+The sidebar tabs appear in this order: **Notes**, **Outline**, **Distill**, **Q&A**, and **Topics**. They show the note list, live outline and markers, reviewable knowledge candidates, questions about a note, and topic pages. The note list context menu can open a note in Outline or Distill; Distill starts a scan when the note has no scan results.
 
 In the note list context menu, **Reorganize** regenerates the organized body in place and replaces the current content. The plugin does not save the replaced body; use Obsidian's file recovery if you need to restore it. Reorganization updates an existing **Original** snapshot to the new draft. **Generate derived version** creates a separate derived note and leaves the source note unchanged.
 
@@ -99,9 +99,9 @@ People can be kept, merged, or ignored. Confirmed todos become standalone cards;
 
 Right-click an original minutes note and choose **Create topic** to select related notes by project tags, topic tags, or similar content. Topic pages use note overviews by default; choosing finalized note bodies shows a request estimate and a credit-use notice first. The page opens with a narrative overview, groups progress into threads, cites source notes with footnotes, and shows a program-generated timeline. Updates open a change preview and can be undone when the page has not changed afterward. The page keeps block anchors out of the body; a rebuildable cache stores the block index. Topic integration does not modify source notes.
 
-### Notes, board, and deliverables
+### Notes and deliverables
 
-The note list can group recent notes by folder or time, with search and template filters. **Minutes Board** is a separate view for saved meeting materials.
+The note list can group recent notes by folder or time, with search and template filters.
 
 HTML and PDF reports are generated from a note by calling the configured LLM; they do not modify the original note. HTML and PDF are available from commands and the note list's context menu under **Export**. PDF generation requires desktop Obsidian and very tall single-page reports have a height limit; use HTML for complete reading.
 

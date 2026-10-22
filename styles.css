@@ -1706,7 +1706,6 @@ body .qnalog-bubble-wrap .qnalog-bubble button.qnalog-bubble-btn.is-stop-icon::b
 }
 
 .qnalog-outline-note-btn,
-.qnalog-outline-kanban-btn,
 .qnalog-outline-vocabulary-btn,
 .qnalog-outline-settings-btn {
   width: 28px;
@@ -1717,7 +1716,6 @@ body .qnalog-bubble-wrap .qnalog-bubble button.qnalog-bubble-btn.is-stop-icon::b
 }
 
 .qnalog-outline-note-btn:hover,
-.qnalog-outline-kanban-btn:hover,
 .qnalog-outline-vocabulary-btn:hover,
 .qnalog-outline-settings-btn:hover {
   color: var(--text-normal);
@@ -2639,8 +2637,6 @@ body .qnalog-bubble-wrap .qnalog-bubble button.qnalog-bubble-btn.is-stop-icon::b
 .qnalog-playback-timeline-index.is-error {
   color: var(--text-warning);
 }
-
-
 
 .qnalog-audio-modal {
   max-width: 560px;
@@ -5078,7 +5074,6 @@ body .qnalog-menu .menu-item.selected .menu-item-icon {
   100% { transform: translateX(260%); }
 }
 
-
 .qnalog-outline-recent-filter-empty {
   min-height: 156px;
   display: flex;
@@ -5560,7 +5555,6 @@ body .qnalog-menu .menu-item.selected .menu-item-icon {
   color: var(--text-error);
 }
 
-
 .qnalog-outline-recent-failure-status.is-failed > span:not(.qnalog-outline-recent-failure-icon),
 .qnalog-outline-recent-failure-status.is-raw > span:not(.qnalog-outline-recent-failure-icon),
 .qnalog-outline-recent-failure-status.is-failed .qnalog-outline-recent-status-progress,
@@ -5912,7 +5906,6 @@ body .qnalog-menu .menu-item.selected .menu-item-icon {
   cursor: pointer;
   flex-shrink: 0;
 }
-
 
 /* ============================================================
    6. 设置页 Tab Bar
@@ -6772,7 +6765,6 @@ body .qnalog-menu .menu-item.selected .menu-item-icon {
   justify-content: flex-start;
 }
 
-
 /* ============================================================
    6.2. 设置页 · 音频路径诊断面板
    ============================================================ */
@@ -7156,7 +7148,6 @@ body .qnalog-menu .menu-item.selected .menu-item-icon {
   border-top: 1px solid var(--background-modifier-border);
 }
 
-
 .qnalog-home {
   display: flex;
   flex-direction: column;
@@ -7199,7 +7190,6 @@ body .qnalog-menu .menu-item.selected .menu-item-icon {
   line-height: var(--line-height-normal);
   font-size: var(--font-ui-small);
 }
-
 
 .qnalog-risk-notice {
   margin: var(--size-2-2) 0 var(--size-4-2);
@@ -7310,9 +7300,6 @@ body .qnalog-menu .menu-item.selected .menu-item-icon {
   flex-direction: column;
   border-top: 1px solid var(--background-modifier-border);
 }
-
-
-
 
 /* 一行摘要：名称 / 服务名 / 模型名，整行可点。项目之间只用极低对比度的分隔线，
    不画表格、不加卡片背景。
@@ -7581,7 +7568,6 @@ body .qnalog-menu .menu-item.selected .menu-item-icon {
     justify-content: flex-start;
   }
 }
-
 
 /* .modal 默认宽 560px（--dialog-width），内容区自己定宽会横向溢出；宽度加在 .modal 上，内容区跟随其内部宽度。 */
 .modal.qnalog-tpl-modal-shell {
@@ -8544,7 +8530,6 @@ body .qnalog-menu .menu-item.selected .menu-item-icon {
 }
 
 .qnalog-outline-head.is-active-session .qnalog-outline-note-btn,
-.qnalog-outline-head.is-active-session .qnalog-outline-kanban-btn,
 .qnalog-outline-head.is-active-session .qnalog-outline-vocabulary-btn,
 .qnalog-outline-head.is-active-session .qnalog-outline-settings-btn {
   color: var(--qnalog-text-secondary, var(--text-muted));
@@ -11067,7 +11052,6 @@ body .qnalog-menu .menu-item.selected .menu-item-icon {
     row-gap: 8px;
   }
 }
-.qnalog-kanban-view,
 .qnalog-recent-filter-popover {
   --qnalog-kanban-gap: 14px;
   --qnalog-kanban-column-width: 262px;
@@ -11085,147 +11069,6 @@ body .qnalog-menu .menu-item.selected .menu-item-icon {
   --qnalog-text-tertiary: var(--text-muted);
 }
 
-.qnalog-kanban-view {
-  container-name: qnalog-kanban;
-  container-type: inline-size;
-  display: flex;
-  flex-direction: column;
-  box-sizing: border-box;
-  width: 100%;
-  min-width: 0;
-  height: 100%;
-  overflow-x: hidden;
-  overflow-y: auto;
-  padding: 20px;
-  background: var(--qnalog-bg-muted);
-  color: var(--qnalog-text-primary);
-}
-
-.qnalog-kanban-header,
-.qnalog-kanban-filters {
-  display: flex;
-  align-items: center;
-  gap: var(--size-4-3, 12px);
-}
-
-.qnalog-kanban-header {
-  justify-content: space-between;
-  min-height: 34px;
-  padding: 0 2px;
-}
-
-.qnalog-kanban-heading {
-  display: flex;
-  align-items: baseline;
-  gap: 11px;
-  min-width: 0;
-}
-
-.qnalog-kanban-heading h2 {
-  margin: 0;
-  font-size: 22px;
-  font-weight: 600;
-  line-height: 1.25;
-  letter-spacing: 0;
-}
-
-.qnalog-kanban-heading span,
-.qnalog-kanban-column-count {
-  color: var(--qnalog-text-tertiary);
-  font-size: var(--font-ui-smaller, 12px);
-  font-weight: 600;
-  font-variant-numeric: tabular-nums;
-}
-
-.qnalog-kanban-header-actions {
-  display: flex;
-  align-items: center;
-}
-
-.qnalog-kanban-new-group {
-  display: inline-flex;
-  align-items: center;
-  gap: 6px;
-  height: 30px;
-  padding: 0 11px;
-  border: 1px solid var(--qnalog-border-line);
-  border-radius: 8px;
-  background: var(--qnalog-bg-base);
-  box-shadow: none;
-  color: var(--qnalog-text-secondary);
-  font-size: var(--font-ui-small, 13px);
-  font-weight: 550;
-  white-space: nowrap;
-}
-
-.qnalog-kanban-new-group:hover {
-  border-color: var(--qnalog-primary);
-  background: var(--qnalog-bg-base);
-  color: var(--qnalog-primary-soft);
-}
-
-.qnalog-kanban-new-group svg {
-  width: 13px;
-  height: 13px;
-}
-
-.qnalog-kanban-filters {
-  flex: 0 0 auto;
-  flex-wrap: nowrap;
-  gap: 6px;
-  min-width: 0;
-  margin-top: 16px;
-  padding: 0 2px;
-}
-
-.qnalog-kanban-search {
-  display: flex;
-  align-items: center;
-  flex: 0 1 230px;
-  min-width: 150px;
-  max-width: 230px;
-  height: 30px;
-  gap: 7px;
-  padding: 0 10px;
-  border: 1px solid var(--qnalog-border-line);
-  border-radius: 8px;
-  background: var(--qnalog-bg-base);
-  box-shadow: none;
-}
-
-.qnalog-kanban-search > span {
-  display: inline-flex;
-  color: var(--qnalog-text-tertiary);
-}
-
-.qnalog-kanban-search svg {
-  width: 13px;
-  height: 13px;
-}
-
-.qnalog-kanban-search input {
-  flex: 1;
-  min-width: 0;
-  height: 100%;
-  border: 0;
-  box-shadow: none;
-  background: transparent;
-  color: var(--qnalog-text-primary);
-  font-size: var(--font-ui-small, 13px);
-  padding: 0;
-}
-
-.qnalog-kanban-search input:focus,
-.qnalog-kanban-search input:focus-visible {
-  box-shadow: none;
-  outline: 0;
-}
-
-.qnalog-kanban-search:focus-within {
-  border-color: var(--qnalog-primary);
-}
-
-.qnalog-kanban-grouping,
 .qnalog-segmented {
   display: inline-flex;
   align-items: stretch;
@@ -11238,21 +11081,6 @@ body .qnalog-menu .menu-item.selected .menu-item-icon {
   box-shadow: none;
 }
 
-.qnalog-kanban-grouping-label,
-.qnalog-kanban-grouping-option {
-  display: inline-flex;
-  align-items: center;
-  height: 100%;
-  white-space: nowrap;
-}
-
-.qnalog-kanban-grouping-label {
-  padding: 0 9px 0 10px;
-  color: var(--qnalog-text-tertiary);
-  font-size: var(--font-ui-smaller, 12px);
-}
-
-.qnalog-kanban-grouping-option,
 .qnalog-segmented-option {
   padding: 0 11px;
   border: 0;
@@ -11265,336 +11093,16 @@ body .qnalog-menu .menu-item.selected .menu-item-icon {
   font-weight: 500;
 }
 
-.qnalog-kanban-grouping-option:hover,
 .qnalog-segmented-option:hover {
   background: var(--qnalog-bg-hover);
   color: var(--qnalog-text-primary);
 }
 
-.qnalog-kanban-grouping-option.is-active,
-.qnalog-kanban-grouping-option[aria-pressed="true"],
 .qnalog-segmented-option.is-active,
 .qnalog-segmented-option[aria-pressed="true"] {
   background: var(--qnalog-bg-active);
   color: var(--qnalog-primary-soft);
   font-weight: 700;
-}
-
-.qnalog-kanban-toggle {
-  display: inline-flex;
-  align-items: center;
-  flex: 0 0 auto;
-  gap: 9px;
-  height: 30px;
-  padding: 0 5px 0 11px;
-  border: 1px solid var(--qnalog-border-line);
-  border-radius: 8px;
-  background: var(--qnalog-bg-base);
-  box-shadow: none;
-  white-space: nowrap;
-  color: var(--qnalog-text-secondary);
-  font-size: var(--font-ui-small, 13px);
-  font-weight: 550;
-}
-
-.qnalog-kanban-toggle:hover {
-  border-color: var(--background-modifier-border-hover);
-  background: var(--qnalog-bg-base);
-}
-
-.qnalog-kanban-toggle-track {
-  display: inline-flex;
-  align-items: center;
-  width: 31px;
-  height: 18px;
-  padding: 0 2px;
-  border-radius: 999px;
-  background: var(--background-modifier-border);
-  transition: background-color 160ms ease;
-}
-
-.qnalog-kanban-toggle-knob {
-  width: 14px;
-  height: 14px;
-  border-radius: 50%;
-  background: var(--qnalog-bg-base);
-  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.24);
-  transition: transform 160ms ease;
-}
-
-.qnalog-kanban-toggle.is-active .qnalog-kanban-toggle-track {
-  background: var(--qnalog-primary);
-}
-
-.qnalog-kanban-toggle.is-active .qnalog-kanban-toggle-knob {
-  transform: translateX(13px);
-}
-
-.qnalog-kanban-hint {
-  min-width: 0;
-  margin-left: auto;
-  overflow: hidden;
-  color: var(--qnalog-text-tertiary);
-  font-size: var(--font-ui-smaller, 12px);
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-
-.qnalog-kanban-board {
-  display: flex;
-  flex: 0 0 auto;
-  align-items: flex-start;
-  gap: var(--qnalog-kanban-gap);
-  box-sizing: border-box;
-  width: 100%;
-  max-width: 100%;
-  height: auto;
-  min-height: 0;
-  margin-top: 18px;
-  padding: 0 2px 10px;
-  overflow-x: auto;
-  overflow-y: hidden;
-  scroll-snap-type: x proximity;
-}
-
-.qnalog-kanban-column {
-  display: flex;
-  flex: 1 1 var(--qnalog-kanban-column-width);
-  flex-direction: column;
-  width: auto;
-  min-width: var(--qnalog-kanban-column-min-width);
-  max-width: none;
-  min-height: 0;
-  border: 1px solid var(--qnalog-border-line);
-  border-radius: var(--radius-m);
-  background: var(--qnalog-bg-base);
-  box-shadow: none;
-  scroll-snap-align: start;
-  transition: border-color 120ms ease, background-color 120ms ease;
-}
-
-.qnalog-kanban-column.is-drop-target {
-  border-color: var(--interactive-accent);
-  background: var(--qnalog-bg-active);
-}
-
-.qnalog-kanban-column-head {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 8px;
-  padding: 13px 14px 9px;
-}
-
-.qnalog-kanban-column-label {
-  display: flex;
-  align-items: center;
-  flex: 1;
-  min-width: 0;
-  font-size: var(--font-ui-medium, 14px);
-  font-weight: 500;
-}
-
-.qnalog-kanban-column-label span:last-child {
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-
-.qnalog-kanban-column-menu {
-  width: 20px;
-  min-width: 20px;
-  height: 20px;
-  padding: 0;
-  border-radius: 6px;
-  color: var(--qnalog-text-tertiary);
-}
-
-.qnalog-kanban-column-menu:hover {
-  background: var(--qnalog-bg-hover);
-  color: var(--qnalog-primary-soft);
-}
-
-.qnalog-kanban-column-menu svg {
-  width: 13px;
-  height: 13px;
-}
-
-.qnalog-kanban-cards {
-  display: flex;
-  flex: 0 0 auto;
-  flex-direction: column;
-  gap: 6px;
-  min-height: 0;
-  padding: 0 10px 10px;
-  overflow: visible;
-}
-
-.qnalog-kanban-card {
-  display: grid;
-  grid-template-columns: 24px minmax(0, 1fr);
-  align-items: start;
-  gap: 9px;
-  min-height: 50px;
-  padding: 10px;
-  border: 1px solid var(--qnalog-border-line);
-  border-radius: 8px;
-  background: var(--qnalog-bg-card);
-  box-shadow: none;
-  cursor: pointer;
-}
-
-.qnalog-kanban-card:hover {
-  background: var(--background-modifier-hover);
-  box-shadow: none;
-}
-
-.qnalog-kanban-card.is-dragging {
-  opacity: var(--icon-opacity-hover, 0.65);
-}
-
-.qnalog-kanban-card.is-canvas {
-  color: var(--qnalog-text-secondary);
-}
-
-.qnalog-kanban-card-icon {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  width: 24px;
-  height: 24px;
-  border: 1px solid var(--background-modifier-border);
-  border-radius: 50%;
-  color: var(--text-muted);
-}
-
-.qnalog-kanban-card-icon svg {
-  width: 12px;
-  height: 12px;
-}
-
-.qnalog-kanban-card-content {
-  min-width: 0;
-}
-
-.qnalog-kanban-card-title {
-  overflow: hidden;
-  display: -webkit-box;
-  -webkit-box-orient: vertical;
-  -webkit-line-clamp: 2;
-  color: var(--qnalog-text-primary);
-  font-size: 13px;
-  font-weight: 500;
-  line-height: 1.4;
-}
-
-.qnalog-kanban-card-meta {
-  display: block;
-  margin-top: 3px;
-  overflow: hidden;
-  color: var(--qnalog-text-tertiary);
-  font-size: 11px;
-  line-height: 1.35;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-
-.qnalog-kanban-more {
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  gap: 5px;
-  min-height: 32px;
-  padding: 8px;
-  border: 0;
-  border-radius: 8px;
-  background: transparent;
-  box-shadow: none;
-  color: var(--qnalog-text-tertiary);
-  font-size: var(--font-ui-smaller, 12px);
-  font-weight: 600;
-}
-
-.qnalog-kanban-more:hover {
-  background: var(--qnalog-bg-hover);
-  color: var(--qnalog-primary-soft);
-}
-
-.qnalog-kanban-more svg {
-  width: 11px;
-  height: 11px;
-}
-
-.qnalog-kanban-empty {
-  display: grid;
-  min-height: 38px;
-  place-items: center;
-  color: var(--qnalog-text-tertiary);
-  font-size: var(--font-ui-smaller, 12px);
-  border: 1px dashed var(--qnalog-border-line);
-  border-radius: 8px;
-}
-
-.qnalog-kanban-folder-modal {
-  max-width: 420px;
-}
-
-.qnalog-kanban-folder-input {
-  width: 100%;
-}
-
-.qnalog-kanban-folder-actions {
-  display: flex;
-  justify-content: flex-end;
-  gap: var(--size-4-2, 8px);
-  margin-top: var(--size-4-4, 16px);
-}
-
-@container qnalog-kanban (max-width: 600px) {
-  .qnalog-kanban-header,
-  .qnalog-kanban-filters {
-    flex-wrap: wrap;
-  }
-
-  .qnalog-kanban-heading {
-    flex: 1 1 100%;
-  }
-
-  .qnalog-kanban-header-actions {
-    margin-left: auto;
-  }
-
-  .qnalog-kanban-search {
-    flex: 1 1 100%;
-    max-width: none;
-  }
-}
-
-@media (max-width: 600px) {
-  .qnalog-kanban-view {
-    --qnalog-kanban-column-width: min(82vw, 300px);
-    --qnalog-kanban-column-min-width: min(82vw, 300px);
-    padding: 16px 16px 12px;
-  }
-
-  .qnalog-kanban-heading h2 {
-    font-size: 22px;
-  }
-
-  .qnalog-kanban-heading > span,
-  .qnalog-kanban-hint,
-  .qnalog-kanban-grouping-label {
-    display: none;
-  }
-
-  .qnalog-kanban-filters {
-    flex-wrap: wrap;
-  }
-
-  .qnalog-kanban-search {
-    flex: 1 1 100%;
-    max-width: none;
-  }
 }
 
 /* ============================================================
@@ -11683,7 +11191,6 @@ body .qnalog-menu .menu-item.selected .menu-item-icon {
   white-space: nowrap;
 }
 
-.qnalog-outline.is-idle-view .qnalog-outline-kanban-btn,
 .qnalog-outline.is-idle-view .qnalog-outline-vocabulary-btn,
 .qnalog-outline.is-idle-view .qnalog-outline-settings-btn {
   display: inline-flex;
@@ -11701,14 +11208,12 @@ body .qnalog-menu .menu-item.selected .menu-item-icon {
   color: var(--qnalog-text-tertiary, var(--text-muted));
 }
 
-.qnalog-outline.is-idle-view .qnalog-outline-kanban-btn:hover,
 .qnalog-outline.is-idle-view .qnalog-outline-vocabulary-btn:hover,
 .qnalog-outline.is-idle-view .qnalog-outline-settings-btn:hover {
   background: var(--background-modifier-hover);
   color: var(--qnalog-text-primary, var(--text-normal));
 }
 
-.qnalog-outline.is-idle-view .qnalog-outline-kanban-btn svg,
 .qnalog-outline.is-idle-view .qnalog-outline-vocabulary-btn svg,
 .qnalog-outline.is-idle-view .qnalog-outline-settings-btn svg {
   width: 15px;
@@ -13090,7 +12595,6 @@ body.is-mobile .qnalog-recent-filter-popover-templates {
   display: none;
 }
 .qnalog-outline :is(button, summary, [role="button"]):focus-visible,
-.qnalog-kanban-view :is(button, summary, [role="button"]):focus-visible,
 .qnalog-recent-filter-popover :is(button, summary, [role="button"]):focus-visible,
 .qnalog-settings-root :is(button, summary, [role="button"]):focus-visible,
 .qnalog-utility-modal :is(button, summary, [role="button"]):focus-visible,
@@ -13107,8 +12611,7 @@ body.is-mobile .qnalog-recent-filter-popover-templates {
   outline-offset: 2px;
 }
 
-.qnalog-outline .qnalog-outline-recent-search-box:focus-within,
-.qnalog-kanban-view .qnalog-kanban-search:focus-within {
+.qnalog-outline .qnalog-outline-recent-search-box:focus-within{
   outline: 2px solid var(--interactive-accent);
   outline-offset: 2px;
 }
@@ -13141,8 +12644,6 @@ body.is-mobile .qnalog-recent-filter-popover-templates {
 .qnalog-utility-modal p {
   overflow-wrap: anywhere;
 }
-
-
 
 /* 成品纪要面板顶部的「追加录音」按钮：与 idle 头的主按钮同视觉语言，
    但不挂在 .qnalog-outline-head.is-idle 下，需要独立作用域。 */

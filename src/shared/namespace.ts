@@ -318,7 +318,6 @@ export function isDerivedVersionType(value: unknown): boolean {
 
 /** 视图类型。 */
 export const NS_VIEW_OUTLINE = "qnalog-outline-view";
-export const NS_VIEW_MINUTES_KANBAN = "qnalog-minutes-kanban-view";
 
 /** Custom icon shared by the ribbon entry, sidebar title and live-minutes view. */
 export const QNALOG_PLUGIN_ICON_ID = nsRe("plugin-icon");

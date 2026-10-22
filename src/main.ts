@@ -5,7 +5,6 @@ import { QNALOG_PLUGIN_ICON_SVG } from "./ui/plugin-icon";
 
 import { QnALogSettingTab } from "./ui/settings-tab";
 
-import { MinutesKanbanView, VIEW_TYPE_MINUTES_KANBAN } from "./ui/minutes-kanban-view";
 
 import {QueueModal, ImportTextModal, ImportAudioModal, BubbleWidget } from "./ui/modals";
 
@@ -16,7 +15,6 @@ import { UpdateService } from "./update/update-service";
 
 
 
-import {DEFAULT_SETTINGS } from "./shared/defaults";
 
 // 设置序列化层已抽到独立模块（src/shared/settings-io.ts）并由 round-trip 测试覆盖（tests/settings-io.test.ts）。
 // 这里 import 回来，保持原有调用点用裸名引用不变。
@@ -607,36 +605,6 @@ class QnALogPlugin extends obsidian.Plugin {
     this.recorder.on(() => this.shell.refreshOutlineView());
 
     this.registerView(VIEW_TYPE_OUTLINE, (leaf) => new OutlineView(leaf, this, this.createTopicsUiPort(), this.createErrataUiPort()));
-    this.registerView(VIEW_TYPE_MINUTES_KANBAN, (leaf) => new MinutesKanbanView(leaf, {
-      getRootPath: () => obsidian.normalizePath(this.settings.mdFolder || DEFAULT_SETTINGS.mdFolder),
-      listItems: () => this.shell.getMinutesKanbanItems(),
-      getModeOptions: () => getVisibleModeEntries(this.settings, false).map(([value]) => ({ value, label: getModeDisplayName(this.settings, value) })),
-      moveItem: (item, folderPath) => this.shell.moveMinutesKanbanItem(item, folderPath),
-      createFolder: (name) => this.shell.createMinutesKanbanFolder(name),
-      inspectFolder: async (path) => {
-        const folder = this.app.vault.getAbstractFileByPath(obsidian.normalizePath(path));
-        if (!(folder instanceof obsidian.TFolder)) throw new Error("Folder not found");
-        const itemByPath = new Map(this.shell.getMinutesKanbanItems().map((item) => [obsidian.normalizePath(item.file.path), item]));
-        const notes = [];
-        let otherFileCount = 0;
-        let childFolderCount = 0;
-        for (const child of folder.children) {
-          if (child instanceof obsidian.TFolder) {
-            childFolderCount++;
-            continue;
-          }
-          const item = child instanceof obsidian.TFile ? itemByPath.get(obsidian.normalizePath(child.path)) : undefined;
-          if (item) notes.push(item);
-          else otherFileCount++;
-        }
-        return { notes, otherFileCount, childFolderCount };
-      },
-      deleteFolder: async (path) => {
-        const folder = this.app.vault.getAbstractFileByPath(obsidian.normalizePath(path));
-        if (!(folder instanceof obsidian.TFolder)) throw new Error("Folder not found");
-        await this.app.fileManager.trashFile(folder);
-      },
-    }));
     this.addRibbonIcon(QNALOG_PLUGIN_ICON_ID, t("QnALog voice notes panel"), () => this.shell.openOutlineView());
     this.registerMarkdownPostProcessor((el, ctx) => this.audioLinks.enhanceAudioTimeLinks(el, ctx));
 
@@ -723,7 +691,6 @@ class QnALogPlugin extends obsidian.Plugin {
     });
     this.addCommand({ id: "check-updates", name: t("Check for Updates"), callback: () => this.checkForUpdates({ silent: false }) });
     this.addCommand({ id: "open-outline", name: t("Open Voice Notes Panel"), callback: () => this.shell.openOutlineView() });
-    this.addCommand({ id: "open-minutes-kanban", name: t("Open Notes Board"), callback: () => this.shell.openMinutesKanban() });
     this.addCommand({ id: "record-mic-only", name: t("Start Recording · Microphone only"), callback: () => { this.recording._oneShotCaptureMode = "mic"; void this.recording.startRecording(); } });
     this.addCommand({ id: "record-mic-virtual", name: t("Start Recording · Microphone + Computer Audio"), callback: () => { this.recording._oneShotCaptureMode = "mix-virtual"; void this.recording.startRecording(); } });
     this.addCommand({ id: "record-virtual-only", name: t("Start Recording · Computer Audio only"), callback: () => { this.recording._oneShotCaptureMode = "virtualCable"; void this.recording.startRecording(); } });

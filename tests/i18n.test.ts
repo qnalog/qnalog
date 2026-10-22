@@ -28,7 +28,6 @@ describe("界面语言解析", () => {
     expect(zh.table["Open notes list"]).toBe("打开笔记列表");
     expect(zh.table["No notes opened yet"]).toBe("还没有打开笔记");
     expect(zh.table["QnALog voice notes panel"]).toBe("QnALog 语音笔记面板");
-    expect(zh.table["Open Notes Board"]).toBe("打开笔记看板");
   });
   it("认得出带地区的语言标识（Obsidian 会返回 zh-TW、en-GB 这类值）", () => {
     expect(matchUiLanguage("zh")?.id).toBe("zh");

@@ -4252,12 +4252,6 @@ export class OutlineView extends obsidian.ItemView {
       try { obsidian.setIcon(noteBtn, "file-text"); } catch { noteBtn.setText(i18nT("Notes")); }
       noteBtn.onclick = () => this.app.workspace.getLeaf(false).openFile(noteFile);
     }
-    const kanbanBtn = actions.createEl("button", {
-      cls: "clickable-icon qnalog-outline-kanban-btn",
-      attr: { "aria-label": i18nT("Open notes board"), title: i18nT("Open notes board") },
-    });
-    try { obsidian.setIcon(kanbanBtn, "layout-dashboard"); } catch { kanbanBtn.setText(i18nT("Board")); }
-    kanbanBtn.onclick = () => { void this.plugin.shell.openMinutesKanban(); };
     const vocabularyBtn = actions.createEl("button", {
       cls: "clickable-icon qnalog-outline-vocabulary-btn",
       attr: { "aria-label": i18nT("Open transcription glossary"), title: i18nT("Open transcription glossary") },
