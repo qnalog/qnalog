@@ -29,12 +29,6 @@
     ["CleanupService", "SessionStore"],
     ["CleanupService", "TaskQueue"],
     ["DiagnosticsService", "SessionStore"],
-    ["ExternalInboxService", "DiagnosticsService"],
-    ["ExternalInboxService", "ImportService"],
-    ["ExternalInboxService", "LiveAsrPipelineService"],
-    ["ExternalInboxService", "SessionStore"],
-    ["ExternalInboxService", "RecorderService"],
-    ["ExternalInboxService", "TaskActivityService"],
     ["ImportService", "ContinuationService"],
     ["ImportService", "DiagnosticsService"],
     ["ImportService", "LiveAsrPipelineService"],
@@ -45,7 +39,6 @@
     ["ImportService", "TaskQueue"],
     ["ImportService", "TranscribeProfileService"],
     ["ImportService", "ViewShellService"],
-    ["InboxWatcherService", "ExternalInboxService"],
     ["InboxWatcherService", "ImportService"],
     ["LibraryViewService", "PeopleDirectoryService"],
     ["LiveAsrPipelineService", "DiagnosticsService"],
@@ -138,10 +131,6 @@
   "hostCapabilities": {
     "src/asr/transcribe-profile-service.ts": [
       "TranscribeProfileHost.settings:PluginSettings"
-    ],
-    "src/audio/external-inbox-service.ts": [
-      "ExternalInboxHost.app:App",
-      "ExternalInboxHost.settings:PluginSettings"
     ],
     "src/diagnostics/diagnostics-service.ts": [
       "DiagnosticsHost.app:App",

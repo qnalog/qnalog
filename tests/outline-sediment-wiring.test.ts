@@ -159,6 +159,18 @@ describe("OutlineView sediment wiring", () => {
     if (groupKey === "todo") expect(bucket.todos).toEqual([]);
   });
 
+  it("keeps to-do candidates and explains why when the daily note cannot be written", async () => {
+    const { view, bucket, targetFile } = makeView("todo");
+    vi.mocked(writeSedimentObjectCards).mockImplementation(async () => {
+      throw new Error("Turn on the Daily notes core plugin to add confirmed to-dos.");
+    });
+    await view.commitSedimentGroup(targetFile, "todo");
+    expect(bucket.todos).toHaveLength(1);
+    expect(eventLog).not.toContain("mark done");
+    expect(eventLog).not.toContain("toast");
+    expect(Notice.messages.at(-1)?.message).toContain("Daily notes core plugin");
+  });
+
   it("does not defer synchronous bucket snapshots or decision logs", async () => {
     const { view, targetFile } = makeView("todo");
     vi.mocked(view.cloneSedimentBucket).mockImplementation(() => {

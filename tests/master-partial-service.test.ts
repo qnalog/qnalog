@@ -332,7 +332,7 @@ describe("LiveAsrPipelineService master audio save", () => {
     io.files.set(cachePath, new Uint8Array([9, 8, 7]).buffer);
     const expected = new Uint8Array([1, 2, 3, 4]);
     const pipeline = new LiveAsrPipelineService({
-      getSettings: () => ({ audioFolder: AUDIO_FOLDER, keepSegmentAudioFiles: false, consolidatedLayout: true }) as never,
+      getSettings: () => ({ audioFolder: AUDIO_FOLDER, keepSegmentAudioFiles: false }) as never,
       vault: {
         adapter: {
           exists: (path: string) => io.exists(path),

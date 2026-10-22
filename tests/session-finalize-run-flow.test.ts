@@ -31,7 +31,7 @@ function deferred<T>() {
   return { promise, resolve };
 }
 
-function setup(options: { layout?: boolean; configIssue?: string; segments?: Segment[]; source?: string } = {}) {
+function setup(options: { configIssue?: string; segments?: Segment[]; source?: string } = {}) {
   const file = new obsidian.TFile("Notes/session.md");
   const session: RecordingSession = {
     id: "session-1", sessionStamp: "stamp", startedAt: "2026-10-09T10:00:00.000Z", mdPath: file.path,
@@ -42,7 +42,7 @@ function setup(options: { layout?: boolean; configIssue?: string; segments?: Seg
   const queue: unknown[] = [];
   let noteBody = "A note body";
   const readMarkdown = vi.fn(async () => noteBody);
-  const settings = { autoOpenNoteAfterFinish: false, sedimentAutoExtract: false, llmEndpoint: "", llmModel: "", consolidatedLayout: options.layout ?? true };
+  const settings = { autoOpenNoteAfterFinish: false, sedimentAutoExtract: false, llmEndpoint: "", llmModel: "" };
   const port: SessionFinalizeRunPort = {
     hasQueue: () => true,
     updateQueueTask: vi.fn(async () => undefined), removeQueueTask: vi.fn(async () => undefined),
@@ -290,7 +290,7 @@ describe("session finalization flow consumer contract", () => {
   });
 
   it("archives the prior draft before appending and skips rename for an append session", async () => {
-    const fixture = setup({ layout: true });
+    const fixture = setup();
     fixture.session.continuationSourcePath = "Notes/prior.md";
     fixture.session.continuationBaseSegments = [{ index: 9, startOffsetMs: 0, endOffsetMs: 500, text: "Previous text." }];
     vi.mocked(fixture.port.saveVersion).mockImplementation(async () => { fixture.events.push("archive"); });
@@ -304,7 +304,7 @@ describe("session finalization flow consumer contract", () => {
   });
 
   it("saves a hidden pre-polish snapshot of the note before the rewrite replaces it", async () => {
-    const fixture = setup({ layout: true });
+    const fixture = setup();
     vi.mocked(fixture.port.saveVersion).mockImplementation(async () => { fixture.events.push("snapshot"); });
     await runSessionFinalization(fixture.port, fixture.session);
     expect(fixture.port.saveVersion).toHaveBeenCalledWith(fixture.file, "A note body", expect.any(Array), expect.objectContaining({ kind: "pre-polish", activate: false, body: "A note body" }));
@@ -347,7 +347,7 @@ describe("session finalization flow consumer contract", () => {
   });
 
   it("still rewrites the note and finishes when the pre-polish snapshot fails", async () => {
-    const fixture = setup({ layout: true });
+    const fixture = setup();
     vi.mocked(fixture.port.saveVersion).mockRejectedValue(new Error("disk full"));
     await runSessionFinalization(fixture.port, fixture.session);
     expect(fixture.port.rewriteConsolidated).toHaveBeenCalledWith(fixture.session, "Polished note", "A note body");
@@ -358,7 +358,7 @@ describe("session finalization flow consumer contract", () => {
   });
 
   it("does not add a pre-polish snapshot when the pre-append snapshot already ran", async () => {
-    const fixture = setup({ layout: true });
+    const fixture = setup();
     fixture.session.continuationSourcePath = "Notes/prior.md";
     fixture.session.continuationBaseSegments = [{ index: 9, startOffsetMs: 0, endOffsetMs: 500, text: "Previous text." }];
     await runSessionFinalization(fixture.port, fixture.session);

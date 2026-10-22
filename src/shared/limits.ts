@@ -34,9 +34,7 @@ export const SEGMENT_CACHE_RETENTION_MS = 7 * 24 * 60 * 60 * 1000;
  */
 export const MASTER_FLUSH_INTERVAL_MS = 20 * 1000;
 
-export const EXTERNAL_INBOX_SCAN_INTERVAL_MS = 30 * 1000;
 
-export const EXTERNAL_INBOX_RETRY_DELAYS_MS = [60 * 1000, 5 * 60 * 1000, 15 * 60 * 1000];
 
 // 「一个 Key 通用」供应商：同一把 Key 同时支持语音转写 + 大模型对话。首页快速配置一处填 Key + 选供应商即可两边都配好。
 // asrProvider 对应 transcribeProviders 里的 id；llmPreset 对应 LLM_SERVICE_PRESETS 里的 id。

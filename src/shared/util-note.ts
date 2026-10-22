@@ -1,11 +1,8 @@
 /* eslint-disable @typescript-eslint/no-unsafe-assignment, @typescript-eslint/no-unsafe-member-access, @typescript-eslint/no-unsafe-call, @typescript-eslint/no-unsafe-argument, @typescript-eslint/no-unsafe-return -- QnALog's settings/data layer is intentionally dynamically typed (files use @ts-nocheck and read untyped JSON from loadData); these type-only rules yield no actionable findings here and are tracked for incremental typing */
 // 由 main.ts 抽出（模块化拆解，提升工程稳定性；纯搬迁、零行为改动）。
 import * as obsidian from "obsidian";
-import { sanitizeFilename } from './util-common';
 import { isPrivateNetworkHost } from './util-llm-endpoint';
-import { ensureVaultFolder, findAvailableVaultPath } from "./util-vault";
-import { NS_TAG_PREFIX } from "./namespace";
-import { t } from "./i18n";
+import { ensureVaultFolder } from "./util-vault";
 
 
 export async function readFileFrontmatter(plugin, file) {
@@ -29,23 +26,6 @@ export function upsertFrontmatterInMarkdown(markdown, frontmatter) {
   const match = text.match(/^---\r?\n[\s\S]*?\r?\n---\r?\n?/);
   if (match) return "---\n" + yaml + "---\n" + text.slice(match[0].length).replace(/^\n+/, "");
   return "---\n" + yaml + "---\n" + text;
-}
-
-export const TODO_CARD_TAG = `${NS_TAG_PREFIX}todo-card`;
-
-export async function upsertObjectNote(plugin, folder, name, content) {
-  await ensureVaultFolder(plugin.app, folder);
-  const path = obsidian.normalizePath(`${folder}/${sanitizeFilename(name) || "未命名"}.md`);
-  const file = plugin.app.vault.getAbstractFileByPath(path);
-  if (file instanceof obsidian.TFile) {
-    const previousContent = await plugin.app.vault.read(file);
-    await plugin.app.vault.modify(file, content);
-    return { file, path: file.path, created: false, previousContent };
-  }
-  const target = findAvailableVaultPath(plugin.app, path);
-  if (!target) throw new Error(t("Could not generate a usable object file path."));
-  const createdFile = await plugin.app.vault.create(target, content);
-  return { file: createdFile, path: createdFile.path, created: true, previousContent: "" };
 }
 
 export function getTodayDailyNoteInfo(app) {

@@ -27,10 +27,19 @@ function slug(value) {
   return String(value || "").replace(/[^A-Za-z0-9.-]+/g, "-").replace(/^-+|-+$/g, "").slice(0, 40);
 }
 
+// 开发版的基础版本取下一个补丁号：semver 里 1.0.0-dev.x 低于 1.0.0，
+// BRAT 与 Obsidian 的插件更新会把已发布的 1.0.0 当成新版本，覆盖正在验证的开发构建。
+// 1.0.1-dev.x 高于 1.0.0、低于正式的 1.0.1，只有真正发出更新的版本时才会被替换。
+export function nextPatchVersion(version) {
+  const match = /^(\d+)\.(\d+)\.(\d+)/.exec(String(version || ""));
+  if (!match) return "0.0.1";
+  return `${match[1]}.${match[2]}.${Number(match[3]) + 1}`;
+}
+
 /**
  * 纯函数：由版本、分支、提交、脏标记算出构建身份。独立出来便于单测。
  * - channel："release"（在 main 上、无未提交改动）或 "dev"
- * - displayVersion：release 时等于 version；dev 时形如 1.0.0-dev.<分支>.<提交>[.dirty]
+ * - displayVersion：release 时等于 version；dev 时形如 1.0.1-dev.<分支>.<提交>[.dirty]（补丁号加一）
  */
 export function computeBuildIdentity(input) {
   const version = String(input.version || "0.0.0");
@@ -51,7 +60,7 @@ export function computeBuildIdentity(input) {
   return {
     version,
     channel: "dev",
-    displayVersion: `${version}-${parts.join(".")}`,
+    displayVersion: `${nextPatchVersion(version)}-${parts.join(".")}`,
     branch: detached ? "detached" : branch,
     sha,
     dirty,

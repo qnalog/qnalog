@@ -25,7 +25,7 @@ QnALog does not include analytics, advertising, or telemetry. It may make networ
 - Update checks request `manifest.json` only, from this repository's `main` branch (raw GitHub source and jsDelivr mirrors). They run only after the user clicks **Check for updates** in Settings > About or runs **Check for Updates** from the command palette. The plugin compares the version and, if a newer one exists, points the user at the GitHub release page. It never downloads or installs plugin files, and it does not update itself. The update source is a fixed constant and is not user-configurable.
 - Documentation links in settings open external web pages in the system browser.
 
-If recording is enabled, audio files are saved to the local Obsidian vault path chosen by the user. The optional desktop external-import feature reads audio from the selected external directory, copies audio into the vault's QnALog cache, and stores import state in the plugin directory. It leaves source files in place. Transcription and organization of imported audio use the configured services.
+If recording is enabled, audio files are saved to the local Obsidian vault path chosen by the user. The optional watched folder reads audio only from a user-selected folder inside the vault and, after processing, moves the files to an archive subfolder of that folder. Transcription and organization of imported audio use the configured services.
 
 The current version has no QnALog-operated backend: QnALog does not operate its own cloud storage service and does not upload recordings, transcripts, or notes to a server of its own. If you configure a third-party API provider, that provider's own terms and privacy policy apply to the content you send to it.
 

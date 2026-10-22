@@ -330,7 +330,7 @@ describe("continuation queue lifecycle", () => {
     const continuations = new ContinuationService({
       vault: { getAbstractFileByPath: (path: string) => path === target.path ? target : null } as never,
       fileManager: {} as never,
-      getSettings: () => ({ mdFolder: "QnALog", noteFileNameFormatNew: "YYYY-MM-DD", consolidatedLayout: false, polishMode: "meeting" }),
+      getSettings: () => ({ mdFolder: "QnALog", noteFileNameFormatNew: "YYYY-MM-DD", polishMode: "meeting" }),
       detectModeFromMarkdown: () => "meeting",
       queueTasks: () => queue.snapshot(),
       queueRecoveryEntries: () => queue.recoveryEntries(),

@@ -22,7 +22,7 @@ import { DEFAULT_SETTINGS } from "../shared/defaults";
 import type { DiagnosticsService } from "../diagnostics/diagnostics-service";
 
 export interface LiveAsrPipelineHost {
-  getSettings(): Pick<PluginSettings, "audioFolder" | "segmentCacheFolder" | "keepSegmentAudioFiles" | "consolidatedLayout" | "audioChannelMode" | "activeTranscribeProvider" | "transcribeProviders" | "transcribeEndpoint" | "transcribeApiKey" | "transcribeModel" | "transcribeLanguage">;
+  getSettings(): Pick<PluginSettings, "audioFolder" | "segmentCacheFolder" | "keepSegmentAudioFiles" | "audioChannelMode" | "activeTranscribeProvider" | "transcribeProviders" | "transcribeEndpoint" | "transcribeApiKey" | "transcribeModel" | "transcribeLanguage">;
   vault: {
     adapter: {
       exists(path: string): Promise<boolean>;
@@ -148,7 +148,6 @@ export class LiveAsrPipelineService implements LiveAsrPipeline {
 
   async cleanupSuccessfulSegmentAudio(session) {
     if (!session || this.host.getSettings().keepSegmentAudioFiles === true) return;
-    if (this.host.getSettings().consolidatedLayout === false) return;
     if (!getSessionMasterAudioName(session)) return;
     for (const s of session.segments || []) {
       if (!s || s.error) continue;

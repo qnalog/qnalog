@@ -1,6 +1,5 @@
 import type { RecordingSession, Segment } from "../shared/types";
-import { NS_CONTINUATION_COMMITTED_MARKER, nsMarker, nsMarkerAnyRe } from "../shared/namespace";
-import { findFirstNoteBoundary } from "./note-document";
+import { NS_CONTINUATION_COMMITTED_MARKER, nsMarker } from "../shared/namespace";
 import { getCurrentTranscript, type TranscriptSegmentRecord } from "../transcript/session-transcript";
 import { readTranscriptBlocks } from "../transcript/transcript-markdown";
 
@@ -8,10 +7,7 @@ export type ContinuationTranscriptSegment = Segment & { transcript: TranscriptSe
 
 export interface ContinuationCommitFlowHost {
   readTarget(mdPath: string): Promise<string>;
-  shouldRewrite(session: RecordingSession): boolean;
-  serializeIncomingSegment(segment: ContinuationTranscriptSegment): string;
   rewrite(session: RecordingSession, polished: string, continuationSessionId: string): Promise<void>;
-  append(session: RecordingSession, polished: string, continuationSessionId: string, initialMarkdown: string): Promise<void>;
 }
 
 function hasContinuationTranscript(segment: Segment, sessionId: string): segment is ContinuationTranscriptSegment {
@@ -68,24 +64,5 @@ export async function commitContinuationFlow(
       throw new Error(`Previously committed continuation marker is missing for ${id}`);
     }
   }
-  if (host.shouldRewrite(session)) {
-    await host.rewrite(session, polished, session.id);
-    return;
-  }
-  const freshBlocks: string[] = [];
-  for (const segment of incoming) {
-    if (existingById.has(segment.transcript.id)) continue;
-    freshBlocks.push(host.serializeIncomingSegment(segment));
-  }
-  let withFreshBlocks = current;
-  if (freshBlocks.length) {
-    const markerAt = findFirstNoteBoundary(current, [nsMarkerAnyRe("segments-end")]);
-    const insertionAt = markerAt < current.length
-      ? markerAt
-      : blocks.length ? blocks[blocks.length - 1].end : -1;
-    if (insertionAt < 0) throw new Error("Continuation target has no transcript insertion marker");
-    const insertion = `\n${freshBlocks.join("\n")}\n`;
-    withFreshBlocks = current.slice(0, insertionAt) + insertion + current.slice(insertionAt);
-  }
-  await host.append(session, polished, session.id, withFreshBlocks);
+  await host.rewrite(session, polished, session.id);
 }

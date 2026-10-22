@@ -45,7 +45,7 @@ export interface ContinuationPreparation {
 export interface ContinuationServiceHost {
   vault: Pick<obsidian.Vault, "read" | "create" | "getAbstractFileByPath" | "createFolder">;
   fileManager: Pick<obsidian.FileManager, "trashFile">;
-  getSettings(): Pick<PluginSettings, "mdFolder" | "noteFileNameFormatNew" | "consolidatedLayout" | "polishMode">;
+  getSettings(): Pick<PluginSettings, "mdFolder" | "noteFileNameFormatNew" | "polishMode">;
   detectModeFromMarkdown(file: obsidian.TFile): string | null | undefined;
   queueTasks(): readonly QueueTask[];
   queueRecoveryEntries(): readonly QueueRecoveryEntrySummary[];

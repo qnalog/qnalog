@@ -26,7 +26,7 @@ import { ApiKeyStorageError, createApiKeyStorageNamespace, isValidApiKeyStorageN
 import type {PluginSettings, RecordingSession, PreparedLiveSegment } from "./shared/types";
 import { SessionStore } from "./session/session-store";
 
-import { describeBuildSource, normalizePluginBuildInfo, resolveDisplayVersion, type PluginBuildInfo } from "./shared/build-info";
+import { buildInfoMatchesManifest, describeBuildSource, normalizePluginBuildInfo, resolveDisplayVersion, type PluginBuildInfo } from "./shared/build-info";
 
 import {AUDIO_EXT } from "./shared/catalog-import";
 
@@ -36,10 +36,8 @@ import { getDesktopModule } from "./shared/desktop-runtime";
 
 import {RealtimeOutlineCoordinator } from "./notes/outline-coordinator";
 
-import {ExternalInboxScanner, isAbsoluteExternalInboxPath } from "./audio/external-inbox";
 
 // 以下 8 个声明已抽到 ./shared/limits（纯搬迁、零行为改动），这里 import 回来保持裸名调用点不变。
-import {EXTERNAL_INBOX_SCAN_INTERVAL_MS } from "./shared/limits";
 
 // 以下 9 个声明已抽到 ./notes/recording-issues（纯搬迁、零行为改动），这里 import 回来保持裸名调用点不变。
 import {transformApiKeyFieldsDeep } from "./notes/recording-issues";
@@ -105,7 +103,6 @@ import { getMarkdownFilesUnderRecentRoots, getRecentNoteRoots, getRecentNotes } 
 import { isPathUnderRecentNoteRoots } from "./recent/recent-note-paths";
 import { pickAudioFile, qnalogConfirm } from "./ui/helpers";
 import { ImportService } from "./imports/import-service";
-import { ExternalInboxService } from "./audio/external-inbox-service";
 import { RepolishService } from "./notes/repolish-service";
 import { InboxWatcherService } from "./imports/inbox-watcher-service";
 import { KnowledgeExtractionService } from "./indexing/knowledge-extraction-service";
@@ -120,6 +117,9 @@ export function applyUiLanguage(settings: { uiLanguage?: string } | null | undef
   const configured = settings && typeof settings === "object" ? settings.uiLanguage : "";
   setActiveUiLanguage(resolveUiLanguage(configured, obsidian.getLanguage()));
 }
+
+// esbuild.config.mjs 在构建时把仓库 manifest 的版本注入为常量；未经打包运行时不存在。
+declare const QNALOG_BUILD_VERSION: string | undefined;
 
 class QnALogPlugin extends obsidian.Plugin {
   declare settings: PluginSettings;
@@ -137,7 +137,6 @@ class QnALogPlugin extends obsidian.Plugin {
   declare knowledgeExtraction: KnowledgeExtractionService;
   declare inbox: InboxWatcherService;
   declare repolish: RepolishService;
-  declare externalInbox: ExternalInboxService;
   declare imports: ImportService;
   declare sessionFinalize: SessionFinalizeService;
   declare continuations: ContinuationService;
@@ -208,7 +207,9 @@ class QnALogPlugin extends obsidian.Plugin {
       const path = obsidian.normalizePath(`${dir}/build-info.json`);
       if (!(await this.app.vault.adapter.exists(path))) return;
       const raw = await this.app.vault.adapter.read(path);
-      this.buildInfo = normalizePluginBuildInfo(JSON.parse(raw));
+      const info = normalizePluginBuildInfo(JSON.parse(raw));
+      // BRAT / Obsidian 更新会替换 manifest 与 main.js，但留下旧的 build-info.json。
+      this.buildInfo = buildInfoMatchesManifest(info, this.manifest && this.manifest.version) ? info : null;
     } catch (e) {
       console.warn("[QnALog] build-info read failed", e);
     }
@@ -281,7 +282,6 @@ class QnALogPlugin extends obsidian.Plugin {
       confirm: (title, body, ctaText) => qnalogConfirm(this.app, title, body, ctaText),
       pickAudioFile: (files) => pickAudioFile(this.app, files),
     }, (file, polished, mode) => this.noteWriter.renameMarkdownWithGeneratedTitle(file, polished, mode));
-    this.externalInbox = new ExternalInboxService(this);
     this.imports = new ImportService(this);
     this.sessionFinalize = new SessionFinalizeService(this);
     this.masterPartials = new MasterPartialService({
@@ -527,7 +527,8 @@ class QnALogPlugin extends obsidian.Plugin {
       },
       now: () => Date.now(),
       normalizePath: (path) => obsidian.normalizePath(path),
-      buildVersion: this.manifest && this.manifest.version ? this.manifest.version : "",
+      buildVersion: typeof QNALOG_BUILD_VERSION === "string" ? QNALOG_BUILD_VERSION : "",
+      getBuildInfo: () => this.buildInfo,
     });
     this.tasks.start();
     this.recorder = new RecorderService({
@@ -655,7 +656,6 @@ class QnALogPlugin extends obsidian.Plugin {
     this.addCommand({ id: "retry-queue-all", name: t("Retry All Failed Tasks"), callback: () => this.queueRetry.retryQueue() });
     this.addCommand({ id: "copy-diagnostic-report", name: t("Copy Diagnostic Report"), callback: () => this.diagnostics.copyDiagnosticReport() });
     this.addCommand({ id: "suggest-people-directory-updates", name: t("AI: Scan Notes Library for People Suggestions"), callback: () => { void this.people.suggestPeopleDirectoryFromLibrary(); } });
-    this.addCommand({ id: "open-todo-wall", name: t("Open To-do Wall"), callback: () => { void this.library.openTodoWall(); } });
     this.addCommand({ id: "import-audio", name: t("Import Existing Audio File: Transcribe + Polish"), callback: () => new ImportAudioModal(this.app, this).open() });
     this.addCommand({ id: "check-updates", name: t("Check for Updates"), callback: () => this.checkForUpdates({ silent: false }) });
     this.addCommand({ id: "open-outline", name: t("Open Voice Notes Panel"), callback: () => this.shell.openOutlineView() });
@@ -708,11 +708,6 @@ class QnALogPlugin extends obsidian.Plugin {
     }));
 
     this.addCommand({ id: "scan-inbox", name: t("Scan Watched Folder"), callback: () => this.inbox.scanInboxFolder() });
-    this.externalInbox.externalInboxScanner = new ExternalInboxScanner();
-    this.registerInterval(window.setInterval(() => {
-      if (!this.settings.inboxAutoImport || !isAbsoluteExternalInboxPath(this.settings.inboxFolder)) return;
-      void this.externalInbox.scanExternalInboxFolder({ manual: false, source: "poll" });
-    }, EXTERNAL_INBOX_SCAN_INTERVAL_MS));
 
     this.addCommand({ id: "cleanup-empty-short-recordings", name: t("Clean Up Blank Short Recordings"), callback: () => this.cleanup.cleanupEmptyShortRecordings() });
     this.addCommand({ id: "cleanup-expired-segment-cache", name: t("Clean Up Expired Segmented Audio Cache"), callback: async () => {
@@ -903,13 +898,7 @@ class QnALogPlugin extends obsidian.Plugin {
     this.app.workspace.onLayoutReady(() => {
       void this.masterPartials.recoverInterrupted();
       this.warnIfBuildManifestSkew();
-      this.externalInbox.refreshExternalInboxWatcher();
-      const inboxTimer = window.setTimeout(() => {
-        if (this.settings.inboxAutoImport && isAbsoluteExternalInboxPath(this.settings.inboxFolder)) {
-          void this.externalInbox.scanExternalInboxFolder({ manual: false, source: "startup" });
-        }
-      }, 4000);
-      this.register(() => window.clearTimeout(inboxTimer));
+      this.inbox.warnIfWatchedFolderOutsideVault();
       const cleanupTimer = window.setTimeout(() => {
         void this.asrPipeline.cleanupExpiredSegmentCacheFiles().catch((e) => console.error("[QnALog] startup segment cache cleanup failed", e));
       }, 6000);
@@ -1038,7 +1027,6 @@ class QnALogPlugin extends obsidian.Plugin {
 
   onunload() {
     try { if (this.outlineCoordinator) this.outlineCoordinator.dispose(); } catch { /* intentionally empty */ }
-    this.externalInbox.closeExternalInboxWatcher();
     try { if (this.queueRetry) this.queueRetry.dispose(); } catch { /* intentionally empty */ }
     try { this.recording.endScreenLifecycle(); } catch { /* intentionally empty */ }
     void (async () => {

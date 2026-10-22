@@ -238,7 +238,6 @@ export function normalizePluginSettings(savedData: unknown): PluginSettings {
   s.noteFileNameFormatNew = firstString(defaults.noteFileNameFormatNew, noteNaming.sessionPattern, raw.noteFileNameFormatNew);
   s.autoOpenNoteAfterFinish = firstBoolean(defaults.autoOpenNoteAfterFinish, noteNaming.openAfterFinish, raw.autoOpenNoteAfterFinish);
   s.autoRenameWithTitle = firstBoolean(defaults.autoRenameWithTitle, noteNaming.renameWithTitle, raw.autoRenameWithTitle);
-  s.consolidatedLayout = firstBoolean(defaults.consolidatedLayout, noteNaming.consolidatedLayout, raw.consolidatedLayout);
   s.sedimentAutoExtract = firstBoolean(defaults.sedimentAutoExtract, noteNaming.sedimentAutoExtract, raw.sedimentAutoExtract);
 
   const capture = asRecord(raw.capture);
@@ -335,7 +334,6 @@ export function normalizePluginSettings(savedData: unknown): PluginSettings {
   s.vocabularyFile = firstString(defaults.vocabularyFile, vocabulary.notePath, raw.vocabularyFile);
   s.peopleDirectoryFolder = obsidian.normalizePath(firstNonBlankString(defaults.peopleDirectoryFolder, vocabulary.peopleFolder, raw.peopleDirectoryFolder));
   s.peopleBaseFile = obsidian.normalizePath(firstNonBlankString(defaults.peopleBaseFile, vocabulary.peopleBasePath, raw.peopleBaseFile));
-  s.todoCardsFolder = obsidian.normalizePath(firstNonBlankString(defaults.todoCardsFolder, vocabulary.todoCardsFolder, raw.todoCardsFolder));
   s.peopleContextMode = normalizePeopleContextMode(firstDefined(vocabulary.peopleContextMode, raw.peopleContextMode, defaults.peopleContextMode));
   s.peopleHotwordsConsentAt = firstString(defaults.peopleHotwordsConsentAt, vocabulary.peopleHotwordsConsentAt, raw.peopleHotwordsConsentAt);
   s.peopleSuggestionIgnores = normalizePeopleSuggestionIgnores(firstDefined(vocabulary.peopleSuggestionIgnores, raw.peopleSuggestionIgnores, defaults.peopleSuggestionIgnores));
@@ -450,7 +448,6 @@ export function serializePluginSettings(s: PluginSettings): PersistedPluginSetti
       sessionPattern: s.noteFileNameFormatNew,
       openAfterFinish: s.autoOpenNoteAfterFinish,
       renameWithTitle: s.autoRenameWithTitle,
-      consolidatedLayout: s.consolidatedLayout,
       // 曾因未登记而在每次保存时静默丢失（白名单脚枪第三例）——serialize 是重建式白名单，新增设置键必须在此登记
       sedimentAutoExtract: !!s.sedimentAutoExtract,
     },
@@ -510,7 +507,6 @@ export function serializePluginSettings(s: PluginSettings): PersistedPluginSetti
       notePath: s.vocabularyFile || "",
       peopleFolder: s.peopleDirectoryFolder || DEFAULT_SETTINGS.peopleDirectoryFolder,
       peopleBasePath: s.peopleBaseFile || DEFAULT_SETTINGS.peopleBaseFile,
-      todoCardsFolder: s.todoCardsFolder || DEFAULT_SETTINGS.todoCardsFolder,
       peopleContextMode: normalizePeopleContextMode(s.peopleContextMode),
       peopleHotwordsConsentAt: s.peopleHotwordsConsentAt || "",
       peopleSuggestionIgnores: normalizePeopleSuggestionIgnores(s.peopleSuggestionIgnores),

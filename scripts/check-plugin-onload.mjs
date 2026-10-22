@@ -10,6 +10,9 @@ import path from "node:path";
 import { fileURLToPath } from "node:url";
 import vm from "node:vm";
 
+// 宿主 manifest 用仓库的真实版本；与打包进 main.js 的版本不一致会触发版本错位告警。
+const PLUGIN_VERSION = JSON.parse(readFileSync(new URL("../manifest.json", import.meta.url), "utf8")).version;
+
 const usage = "[plugin-onload] Usage: node scripts/check-plugin-onload.mjs [--bundle <path>]";
 const saveAllFailureModes = new Set([
   "--save-all-secret-failure",
@@ -288,7 +291,7 @@ async function main() {
   const PluginClass = sandbox.module.exports?.default || sandbox.module.exports;
   expect(typeof PluginClass === "function", "main.js 没有导出插件类");
 
-  const plugin = new PluginClass(app, { id: "qnalog", version: "1.0.0", dir: ".obsidian/plugins/qnalog", name: "QnALog", minAppVersion: "1.11.4" });
+  const plugin = new PluginClass(app, { id: "qnalog", version: PLUGIN_VERSION, dir: ".obsidian/plugins/qnalog", name: "QnALog", minAppVersion: "1.11.4" });
   try {
     await plugin.onload();
   } catch (error) {
@@ -552,7 +555,7 @@ async function main() {
   // 用独立实例驱动真实的 loadAll——复用主实例会把它的域服务状态搅乱，
   // 导致后面的装配断言误报（实测过）。
   try {
-    const probe = new PluginClass(app, { id: "qnalog", version: "1.0.0", dir: ".obsidian/plugins/qnalog", name: "QnALog", minAppVersion: "1.11.4" });
+    const probe = new PluginClass(app, { id: "qnalog", version: PLUGIN_VERSION, dir: ".obsidian/plugins/qnalog", name: "QnALog", minAppVersion: "1.11.4" });
     await probe.onload();
     const settingsSource = readFileSync(new URL("../src/shared/settings-io.ts", import.meta.url), "utf8");
     const versionMatch = settingsSource.match(/SETTINGS_SCHEMA_VERSION\s*=\s*(\d+)/);
