@@ -2,7 +2,7 @@
 // 由 main.ts 抽出（模块化拆解、纯搬迁、零行为改动）：笔记索引与沉淀自动提取
 
 import * as obsidian from "obsidian";
-import { buildNoteIndex, resolveNoteIndex, upsertNoteIndex } from "../indexing/note-index";
+import { buildNoteIndex, foldNoteMachineData, resolveNoteIndex } from "../indexing/note-index";
 import { generateSedimentObjects, writeSedimentObjectCards } from "../sediment";
 import type { PluginSettings } from "../shared/types";
 import { diagnosticError } from "../shared/util-key-diag";
@@ -18,13 +18,13 @@ export interface NoteIndexHost {
   diagnostics: DiagnosticsService;
   /** 设置对象本身，不拷贝；服务直接读字段。 */
   settings: PluginSettings;
-  /** Composition-root callback used to refresh in-memory suggestions after a note index is written. */
+  /** Composition-root callback used to refresh in-memory suggestions after a note has been written. */
   onNoteIndexed?(path: string): void | Promise<void>;
 }
 
 /** 刷新纪要索引时可选的补充信息；调用方在少数场景才提供，两者都缺省为空串。 */
 export interface RefreshNoteIndexOptions {
-  /** 纪要的会议日期，写入索引块。 */
+  /** 纪要的会议日期，用于返回的索引卡。 */
   meetingDate?: string;
   /** 触发原因，仅用于诊断日志。 */
   reason?: string;
@@ -44,13 +44,15 @@ export class NoteIndexService {
     if (!(file instanceof obsidian.TFile) || file.extension !== "md" || isErrataPath(file.path)
       || isTopicErrataFrontmatter(this.host.app.metadataCache.getFileCache(file)?.frontmatter || {})) return null;
     const current = await this.host.app.vault.read(file);
+    // 索引卡不再写进笔记：读取方（相关笔记、主题概要卡）按需从当前正文计算（indexing/note-index.ts 的 computeNoteIndex）。
+    // 写入只整理机器数据（会话注释收进折叠块、移除旧索引卡），再算出返回值并在笔记写入后触发主题提示。
+    const next = foldNoteMachineData(current);
+    if (next !== current) await this.host.app.vault.modify(file, next);
     const index = buildNoteIndex(current, {
       noteTitle: file.basename,
       meetingDate: options.meetingDate || "",
     });
     if (!index) return null;
-    const next = upsertNoteIndex(current, index);
-    if (next !== current) await this.host.app.vault.modify(file, next);
     const resolved = resolveNoteIndex(index, file.path);
     if (this.host.onNoteIndexed) {
       void Promise.resolve().then(() => this.host.onNoteIndexed?.(file.path))

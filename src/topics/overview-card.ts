@@ -1,4 +1,4 @@
-import { readNoteIndex, resolveNoteIndex } from "../indexing/note-index";
+import { computeNoteIndex, resolveNoteIndex } from "../indexing/note-index";
 import type { RelatedNoteDocument } from "../indexing/related-notes";
 import { readNamespaceFrontmatter } from "../shared/namespace";
 
@@ -64,7 +64,7 @@ function abstract(markdown: string): string {
 
 export function buildOverviewCard(input: OverviewCardInput): OverviewCard {
   const { document, markdown, frontmatter, mtime, ctime } = input;
-  const index = readNoteIndex(markdown);
+  const index = computeNoteIndex(markdown, { path: document.path, mtime, noteTitle: (document.path.split("/").pop() || "").replace(/\.md$/i, "") });
   const resolved = index ? resolveNoteIndex(index, document.path) : null;
   const abstractText = abstract(markdown);
   const indexText = document.summary || resolved?.core.summary || "";

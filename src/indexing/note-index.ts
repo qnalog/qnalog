@@ -417,6 +417,46 @@ function isIndexTopic(value: unknown): value is QnALogNoteIndexTopic {
   return Number.isFinite(Number(row.order)) && typeof row.title === "string" && typeof row.heading === "string";
 }
 
+export interface ComputeNoteIndexOptions {
+  /** 笔记路径：缓存键。 */
+  path: string;
+  /** 笔记修改时间：与正文长度一起判断缓存是否仍有效。 */
+  mtime?: number;
+  /** 文件名（不含扩展名），用作标题候选，与写入时的 noteTitle 相同。 */
+  noteTitle?: string;
+}
+
+const QNALOG_NOTE_MARKER_RE = new RegExp(`<!--\\s*${nsRe("(?:note-index|session|transcript-start)")}\\b`, "i");
+
+// 读取方按需从当前正文计算索引卡，不再依赖笔记里写的索引块（可能过期）。
+// 缓存键：路径 + mtime + 正文长度；正文一变即重算。条目数以知识库笔记数为上限。
+const computedNoteIndexCache = new Map<string, { mtime: number; length: number; card: QnALogNoteIndexCard | null }>();
+
+export function computeNoteIndex(markdown: unknown, options: ComputeNoteIndexOptions): QnALogNoteIndexCard | null {
+  const text = textValue(markdown);
+  const mtime = Number.isFinite(options.mtime) ? Number(options.mtime) : -1;
+  const cached = computedNoteIndexCache.get(options.path);
+  if (cached && mtime >= 0 && cached.mtime === mtime && cached.length === text.length) return cached.card;
+  // 只为 QnALog 写过的笔记计算：它们带会话、转写或旧索引标记。这与以前写入索引卡的范围一致，
+  // 普通笔记照旧没有索引卡（标题取文件名、精度为 body-only）。
+  let card: QnALogNoteIndexCard | null = null;
+  if (QNALOG_NOTE_MARKER_RE.test(text)) {
+    try {
+      card = buildNoteIndex(text, { noteTitle: options.noteTitle || "" });
+    } catch {
+      // 转写块损坏等情况会让计算失败；读取方不能因一篇笔记中断，退回笔记里已存的索引卡（若有）。
+      card = readNoteIndex(text);
+    }
+  }
+  if (mtime >= 0) computedNoteIndexCache.set(options.path, { mtime, length: text.length, card });
+  return card;
+}
+
+/** 测试用：清空计算缓存。 */
+export function clearComputedNoteIndexCache(): void {
+  computedNoteIndexCache.clear();
+}
+
 export function readNoteIndex(markdown: unknown): QnALogNoteIndexCard | null;
 export function readNoteIndex(markdown: unknown, options: { includeFuture: true }): NoteIndexReadResult | null;
 export function readNoteIndex(
@@ -542,6 +582,36 @@ function placeIndexInRawMaterials(markdown: string): string {
   return `${base.trimEnd()}\n\n${block}`;
 }
 
+/**
+ * 写笔记后整理机器数据：把会话元数据注释收进唯一的「索引数据」折叠块，并放到原始材料末尾。
+ * 不再写索引卡（读取方用 computeNoteIndex 按当前正文计算）；被写入的笔记里已有的旧索引卡一并移除，
+ * 其中夹带的会话注释保留。磁盘索引卡来自更新版本（future schema）时整篇不动。
+ */
+export function foldNoteMachineData(markdown: unknown): string {
+  const original = textValue(markdown);
+  const originalIndex = readNoteIndex(original, { includeFuture: true });
+  if (originalIndex && "status" in originalIndex) return original;
+  const keepComments = (block: string) => (block.match(FOLDABLE_SESSION_COMMENT_RE) || []).join("\n");
+  const active = findActiveVersionBlock(original);
+  const prepared = active
+    ? original.slice(0, active.bodyStart)
+      + active.body.replace(NOTE_INDEX_FENCED_PATTERN, keepComments)
+      + original.slice(active.bodyEnd)
+    : original;
+  const activeKnowledge = protectActiveSessionKnowledge(prepared);
+  const folded = foldSessionMetadata(activeKnowledge.markdown);
+  const withoutCards = folded.markdown
+    .replace(NOTE_INDEX_FENCED_PATTERN, keepComments)
+    .replace(NOTE_INDEX_PREVIOUS_FENCED_PATTERN, "")
+    .replace(NOTE_INDEX_LEGACY_PATTERN, "")
+    .replace(/\n{3,}/g, "\n\n");
+  return activeKnowledge.restore(placeIndexInRawMaterials(placeSessionMetadataInIndex(withoutCards, folded.comments)));
+}
+
+/**
+ * 旧版写法：把索引卡写进笔记。生产写入已改用 foldNoteMachineData；这里保留，用于构造旧版本写出的笔记
+ * （真实知识库里仍有这类笔记，读取与整理逻辑要能处理它们）。
+ */
 export function upsertNoteIndex(markdown: unknown, index: QnALogNoteIndexCard): string {
   const original = textValue(markdown);
   const originalIndex = readNoteIndex(original, { includeFuture: true });
