@@ -98,7 +98,7 @@ import { SessionFinalizeService } from "./notes/session-finalize-service";
 import { generateTitleTag } from "./notes/note-markdown";
 import { buildSegmentStatusList, getVersionStoreFolder, normalizeVersionId } from "./versions/version-identity";
 import { replaceActiveVersionBlock } from "./versions/active-version-block";
-import { mergeAndPolish, polishTranscript } from "./briefing/merge-pipeline";
+import { mergeAndPolish } from "./briefing/merge-pipeline";
 import { logLlmRequestDiagnostic, requestLlmChatCompletion } from "./llm/core";
 import { clearCommittedBriefingCheckpoint } from "./prompts/briefing-prompts";
 import { getMarkdownFilesUnderRecentRoots, getRecentNoteRoots, getRecentNotes } from "./recent/recent-notes";
@@ -232,7 +232,6 @@ class QnALogPlugin extends obsidian.Plugin {
       confirm: (title: string, body: string, ctaText: string) => qnalogConfirm(getNoteWriterOwner().app, title, body, ctaText),
       getRecentNotes: (limit: number) => getRecentNotes(getNoteWriterOwner(), limit),
       generateTitleTag: (polished: string, mode: string) => generateTitleTag(getNoteWriterOwner(), polished, mode),
-      polishTranscript: (raw: string, mode: string) => polishTranscript(getNoteWriterOwner(), raw, mode, null, null, null),
       mergeAndPolish: (segments, mode, sessionMeta) => mergeAndPolish(getNoteWriterOwner(), segments, mode, null, sessionMeta),
       clearCommittedBriefingCheckpoint: (sessionMeta) => clearCommittedBriefingCheckpoint(getNoteWriterOwner(), sessionMeta),
     };
@@ -615,7 +614,6 @@ class QnALogPlugin extends obsidian.Plugin {
       const s = this.recorder.state;
       if (s === "recording") this.recorder.pause(); else if (s === "paused") this.recorder.resume();
     }});
-    this.addCommand({ id: "polish-selection-or-note", name: t("AI: Polish Current Selection or Entire Note"), editorCallback: (editor) => this.noteWriter.polishEditor(editor) });
 
     this.addCommand({
       id: "errata-open-current-note",

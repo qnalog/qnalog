@@ -1,44 +1,31 @@
-import { beforeEach, describe, expect, it, vi } from "vitest";
+import { readFileSync, readdirSync, statSync } from "node:fs";
+import { join } from "node:path";
+import { describe, expect, it } from "vitest";
 
-const llm = vi.hoisted(() => ({ callLlm: vi.fn(async () => "polished body") }));
-
-vi.mock("obsidian", () => ({
-  TFile: class TFile {},
-  TFolder: class TFolder {},
-  Notice: class Notice {},
-  normalizePath: (path: string) => String(path || "").replace(/\\/g, "/"),
-}));
-// 人员通讯录与本用例无关，桩为空上下文，避免读取真实宿主状态。
-vi.mock("../src/people", async (importOriginal) => ({
-  ...(await importOriginal<typeof import("../src/people")>()),
-  buildPeopleContextForLlm: async () => "",
-}));
-vi.mock("../src/llm/core", async (importOriginal) => ({
-  ...(await importOriginal<typeof import("../src/llm/core")>()),
-  callLlm: llm.callLlm,
-}));
-
-import { polishTranscript } from "../src/briefing/merge-pipeline";
-import { POLISH_PROMPTS } from "../src/prompts/briefing-prompts";
-
-// 后处理读取 window.moment；vitest 跑在 Node 环境，这里只提供空对象。
-beforeEach(() => {
-  llm.callLlm.mockClear();
-  vi.stubGlobal("window", { moment: null });
-});
+// String.prototype.replace expands `$&`, `` $` ``, `$'` and `$$` in a string
+// replacement. Transcript text is user content, so every substitution of a
+// transcript placeholder must pass a function replacer (or a fixed literal).
+function sourceFiles(dir: string): string[] {
+  return readdirSync(dir).flatMap((name) => {
+    const path = join(dir, name);
+    if (statSync(path).isDirectory()) return name === "locales" ? [] : sourceFiles(path);
+    return path.endsWith(".ts") ? [path] : [];
+  });
+}
 
 describe("transcript prompt substitution", () => {
-  it("inserts a transcript containing $ patterns exactly once and duplicates no template text", async () => {
-    const transcript = "First line costs $& and $` and $' then $$ and 100% sure.";
-    const plugin = { settings: { briefingStructureLevel: "balanced" } };
-    await polishTranscript(plugin, transcript, "meeting", { durationMs: 60_000 }, {}, null);
-    expect(llm.callLlm).toHaveBeenCalledTimes(1);
-    const userPrompt = String(llm.callLlm.mock.calls[0][2]);
-    expect(userPrompt.split(transcript).length - 1).toBe(1);
-    expect(userPrompt).not.toContain("{{TRANSCRIPT}}");
-    // 模板开头的固定文字只能出现一次：字符串替换若把 $ 序列展开，模板会被整段重复。
-    const templateHead = POLISH_PROMPTS.meeting.slice(0, 30);
-    expect(templateHead).not.toMatch(/\{\{/);
-    expect(userPrompt.split(templateHead).length - 1).toBe(1);
+  it("inserts runtime transcript text into {{TRANSCRIPT}} only through function replacers", () => {
+    const offenders: string[] = [];
+    let functionReplacers = 0;
+    for (const file of sourceFiles(join(__dirname, "../src"))) {
+      const text = readFileSync(file, "utf8");
+      for (const match of text.matchAll(/\.replace\(\s*"\{\{TRANSCRIPT\}\}"\s*,\s*(.{0,40})/g)) {
+        const replacement = match[1].trim();
+        if (/^\(\)\s*=>/.test(replacement)) functionReplacers++;
+        else if (!/^["'`]/.test(replacement)) offenders.push(`${file}: ${match[0]}`);
+      }
+    }
+    expect(offenders).toEqual([]);
+    expect(functionReplacers).toBeGreaterThan(0);
   });
 });

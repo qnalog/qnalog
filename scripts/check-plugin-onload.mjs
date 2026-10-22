@@ -387,7 +387,7 @@ async function main() {
       if (field === "noteWriter") {
         const methods = [
           "getFileFrontmatter", "ensureFolder", "findAvailableMarkdownPath", "renameFile", "openFile",
-          "confirm", "getRecentNotes", "generateTitleTag", "polishTranscript", "mergeAndPolish",
+          "confirm", "getRecentNotes", "generateTitleTag", "mergeAndPolish",
           "clearCommittedBriefingCheckpoint",
         ];
         if (service.host === plugin

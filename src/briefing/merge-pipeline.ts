@@ -10,7 +10,7 @@ import { mergeUniqueStrings } from "../people/person-text";
 
 import { appendSedimentPreExtractionBlock, extractSedimentPreExtractionBlock } from "../sediment";
 
-import { callBriefingMergeLlm, callLlm, logLlmRequestDiagnostic } from "../llm/core";
+import { callBriefingMergeLlm, logLlmRequestDiagnostic } from "../llm/core";
 import { isLlmContextLimitError } from "../llm/failure-policy";
 
 import { getBriefingMergeMaxTokens } from "../llm/config";
@@ -165,45 +165,6 @@ async function logKnowledgeProtocolIssues(plugin, knowledge, part, allowedCount)
     allowedEvidenceCount: allowedCount,
   });
 }
-export async function polishTranscript(plugin, transcript, mode, sessionMeta, originalFrontmatter, repolishOptions) {
-  if (!transcript || !transcript.trim()) return "";
-  if (mode === "off") return transcript;
-  const sourceLanguage = mode === "general" ? detectGeneralSourceLanguage(transcript) : "other";
-  const tpl = resolveTemplatePromptForMode(plugin, mode, false, sourceLanguage);
-  const sys = mode === "general" && sourceLanguage !== "zh"
-    ? GENERAL_OTHER_LANGUAGE_PROMPTS.part
-    : "你是一位专业的文字编辑助手，擅长整理访谈、会议与口述的录音转写。";
-  let userPrompt = applyStructureLevelInstruction(tpl, plugin.settings, repolishOptions && repolishOptions.structureLevel).replace("{{TRANSCRIPT}}", () => transcript);
-  userPrompt = applyRepolishPreferenceInstruction(userPrompt, repolishOptions, plugin.settings);
-  if (mode !== "general") userPrompt = applyBriefingLanguageInstruction(userPrompt, plugin.settings);
-  userPrompt = userPrompt.replace("{{STRUCTURE_INSTRUCTION}}", "");
-  const adaptiveLength = buildAdaptiveBriefingLengthInstruction(mode, {
-    durationMs: getSessionMetaDurationMs(sessionMeta),
-    transcriptChars: transcript.length,
-    segmentCount: 1,
-  }, sourceLanguage);
-  if (adaptiveLength) userPrompt = adaptiveLength + "\n\n---\n\n" + userPrompt;
-  // 自适应 max_tokens：长材料能产出更长纪要，不被 API 默认上限（~4096）一刀切。
-  const briefingMergeMaxTokens = getBriefingMergeMaxTokens({
-    durationMs: getSessionMetaDurationMs(sessionMeta),
-    transcriptChars: transcript.length,
-    segmentCount: 1,
-  }, plugin.settings, getLearnedLlmOutputCeiling(plugin.settings));
-  const metaPrefix = buildSessionMetaPrefix(sessionMeta, mode);
-  if (metaPrefix) userPrompt = metaPrefix + "\n\n---\n\n" + userPrompt;
-  const meetingWorkbenchPrompt = buildMeetingWorkbenchPrompt(sessionMeta && sessionMeta.meetingWorkbench);
-  if (meetingWorkbenchPrompt) userPrompt = meetingWorkbenchPrompt + "\n\n---\n\n" + userPrompt;
-  const peopleContext = await buildPeopleContextForLlm(plugin);
-  if (peopleContext) userPrompt = peopleContext + "\n\n---\n\n" + userPrompt;
-  if (mode === "general") userPrompt = `${userPrompt}\n\n${buildGeneralSourceLanguageInstruction(transcript)}`;
-  // 流式：merge 是最长、最贵、跑一次的调用。流式 + 空闲超时确保服务端只要在持续输出就不会被
-  // 客户端总超时 abort，避免"扣了钱却因超时拿不到结果"的浪费（符合总纲：不因工程缺陷浪费）。
-  const raw = await callLlm(plugin, sys, userPrompt, { stream: true, payload: { max_tokens: briefingMergeMaxTokens } });
-  const sedimentPreExtraction = extractSedimentPreExtractionBlock(raw);
-  const polished = postProcessBriefingOutput(sanitizeBriefingModelOutput(sedimentPreExtraction.cleaned), mode, sessionMeta, originalFrontmatter, frontmatterBaseModeKey(plugin.settings, mode), "", transcript);
-  return sedimentPreExtraction.objects ? appendSedimentPreExtractionBlock(polished, sedimentPreExtraction.objects) : polished;
-}
-
 // 清稿：把母本 raw 分段转写整理成高保真可读稿（非纪要、不以缩短为目标）。
 // 清稿的输出体量接近有效原文，因此输入块必须给输出留足空间；块过大会在逐块整理时截断并真实丢失内容。
 export async function cleanTranscript(plugin, segments, ceiling, errataPrompt = "") {
