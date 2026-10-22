@@ -291,10 +291,12 @@ const BARE_EXCEPTIONS: Record<string, Array<[string, string]>> = {
     ["【当前实时大纲】\\n", "prompt"],
     ["【该记录前的转写片段】\\n", "prompt"],
     ["【该记录后的转写片段】\\n", "prompt"],
-    ["未指定", "match"],
     ["电脑音频", "match"],
     ["麦克风", "match"],
     ["？", "data"],
+  ],
+  "src/ui/sediment-panel.ts": [
+    ["未指定", "match"],
   ],
   "src/ui/settings-tab.ts": [
     ["日本語", "data"],

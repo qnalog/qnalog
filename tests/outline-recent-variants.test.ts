@@ -24,6 +24,7 @@ vi.mock("../src/recent/recent-notes", async () => {
 });
 
 import { OutlineView } from "../src/ui/outline-view";
+import { SedimentPanel } from "../src/ui/sediment-panel";
 
 type Handler = (event?: { preventDefault(): void; stopPropagation(): void }) => void;
 class FakeElement {
@@ -199,13 +200,13 @@ describe("recent note variant rows", () => {
   });
   it.each(["zh", "en"] as const)("formats sediment labels with title-prefix rules in %s", (language) => {
     setActiveUiLanguage(resolveUiLanguage(language, language));
-    const view = Object.create(OutlineView.prototype) as OutlineView;
+    const view = Object.create(SedimentPanel.prototype) as SedimentPanel;
     const templates = {
       "custom-a": { id: "custom-a", mode: "custom-a", customMode: true, name: "Alpha", prompt: "fixture" },
       "custom-long": { id: "custom-long", mode: "custom-long", customMode: true, name: "Alpha Extended", prompt: "fixture" },
       "custom-special": { id: "custom-special", mode: "custom-special", customMode: true, name: "A.+(B)", prompt: "fixture" },
     };
-    Object.assign(view, { plugin: { settings: { ...DEFAULT_SETTINGS, promptTemplates: templates } } });
+    Object.assign(view, { port: { settings: { ...DEFAULT_SETTINGS, promptTemplates: templates } } });
     expect(view.formatSedimentNoteLabel({ path: "Notes/a.md", basename: "2026-10-09 0930 · Work notes-Topic" }))
       .toBe("10-09 09:30 · Topic");
     expect(view.formatSedimentNoteLabel({ path: "Notes/a.md", basename: "2026-10-09 0930 · Alpha Extended-Topic" }))

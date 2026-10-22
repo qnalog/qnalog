@@ -14,8 +14,8 @@ describe("outline topic UI wiring", () => {
   });
 
   it("injects a topic port through the view constructor without adding plugin service access", () => {
-    expect(main).toContain("new OutlineView(leaf, this, this.createTopicsUiPort(), this.createErrataUiPort(), this.createRegenerateActionsPort())");
-    expect(outline).toContain("constructor(leaf, plugin, topicsUi: TopicsUiPort | null = null, errataUi: ErrataUiPort | null = null, regenerateUi: RegenerateActionsPort | null = null)");
+    expect(main).toContain("new OutlineView(leaf, this, this.createTopicsUiPort(), this.createErrataUiPort(), this.createRegenerateActionsPort(), this.createSedimentUiPort())");
+    expect(outline).toContain("constructor(leaf, plugin, topicsUi: TopicsUiPort | null = null, errataUi: ErrataUiPort | null = null, regenerateUi: RegenerateActionsPort | null = null, sedimentUi: SedimentUiPort | null = null)");
     expect(outline).not.toMatch(/this\.plugin\.topics\b/);
   });
 

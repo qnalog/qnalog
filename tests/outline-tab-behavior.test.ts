@@ -179,8 +179,7 @@ describe("recent note sidebar context actions", () => {
     Object.assign(view, {
       plugin: { noteWriter: { detectModeFromMarkdown: () => "" }, repolish: { reorganizeNoteInPlace }, settings: {}, app: {} },
       app: { vault: { cachedRead }, workspace: { getActiveFile: () => null, getLeaf: () => ({ openFile }) } },
-      getSedimentPanelState: () => ({ hasPipelineStarted, scanning: false }),
-      requestSedimentExtraction,
+      sediment: { getSedimentPanelState: () => ({ hasPipelineStarted, scanning: false }), requestSedimentExtraction },
       errataUi: withErrataUi ? { openForFile: vi.fn(async () => undefined) } : null,
       regenerateUi: {
         app: { vault: { cachedRead } },
