@@ -112,6 +112,8 @@ The note list's **Export** menu can also create an `.eml` email draft. It can co
 - Level meters help check microphone and system audio input before and during recording. Device checks are available in settings.
 - Inputs remain user-selectable. Compatible independent multichannel inputs can be transcribed by channel; separation stays off when independent channels cannot be verified.
 - Deleting a transcript offers to delete its audio file too.
+- During recording, audio is written in parts to a `.partial` folder inside the recordings folder. If Obsidian quits or crashes before a recording is saved, the next start merges the parts into a recording whose file name ends in `-recovered`, deletes the parts only after a byte-for-byte check, and offers **Import and transcribe**. Parts are kept when the result cannot be verified.
+- On mobile, the screen stays awake while recording. Recorded audio is saved before the app moves to the background, and the recording input is checked when it returns.
 - Short-recording filtering is on by default. Recordings under 1 second are discarded without transcription. Recordings from 1 to under 10 seconds are transcribed once: blank results are discarded, complete text creates a note, and shorter text keeps the audio without a note. An anomalous result whose text volume far exceeds the recording duration keeps the audio and creates no note. A transcription failure keeps the audio and a retry task. Turn filtering off to process short recordings normally. Imported audio bypasses this filter.
 
 ## Files and folders
