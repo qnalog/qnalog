@@ -20,6 +20,13 @@ describe("getThinkingControl", () => {
     expect(getThinkingControl("https://api.openai.com/v1", "gpt-4o")).toBeNull();
   });
 
+  it("treats the gpt-6 series on api.openai.com as controllable, but not a same-named model elsewhere", () => {
+    for (const model of ["gpt-6-luna", "gpt-6-astra", "gpt-6.1-sol"]) {
+      expect(getThinkingControl("https://api.openai.com/v1", model)?.family).toBe("reasoning_effort");
+    }
+    expect(getThinkingControl("https://api.example.com/v1", "gpt-6-luna")).toBeNull();
+  });
+
   it("does not expose thinking controls for unknown services", () => {
     expect(getThinkingControl("https://api.example.com/v1", "some-model")).toBeNull();
     expect(getThinkingControl("", "")).toBeNull();
@@ -48,6 +55,15 @@ describe("applyThinkingParam", () => {
   it("injects reasoning_effort params", () => {
     expect(applyThinkingParam({}, "fast", oai, "gpt-5.5")).toEqual({ reasoning_effort: "low" });
     expect(applyThinkingParam({}, "reasoning", oai, "gpt-5.5")).toEqual({ reasoning_effort: "high" });
+  });
+
+  it("injects low/high reasoning_effort for gpt-6 and leaves auto alone", () => {
+    for (const model of ["gpt-6-luna", "gpt-6-astra", "gpt-6.1-sol"]) {
+      expect(applyThinkingParam({}, "fast", oai, model)).toEqual({ reasoning_effort: "low" });
+      expect(applyThinkingParam({}, "reasoning", oai, model)).toEqual({ reasoning_effort: "high" });
+      expect(applyThinkingParam({ model }, "auto", oai, model)).toEqual({ model });
+    }
+    expect(applyThinkingParam({ model: "gpt-6-luna" }, "fast", "https://api.example.com/v1", "gpt-6-luna")).toEqual({ model: "gpt-6-luna" });
   });
 
   it("does not change payload in auto mode", () => {
