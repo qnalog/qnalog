@@ -1,0 +1,79 @@
+{
+  "text": "Let's start with the login screen mockup. I think the button color is too light. We can darken it and keep the contrast ratio. Okay, and what about the error messages? They should appear below the field. Agreed, I will update the prototype today. Great, send it over when it's ready. Sounds good, thanks everyone.",
+  "rawText": null,
+  "providerId": "fixture",
+  "units": [
+    {
+      "rawText": "Let's start with the login screen mockup.",
+      "normalizedText": "Let's start with the login screen mockup.",
+      "speakerId": "A",
+      "speakerName": null,
+      "startMs": 40,
+      "endMs": 3500,
+      "timing": "provider"
+    },
+    {
+      "rawText": "I think the button color is too light.",
+      "normalizedText": "I think the button color is too light.",
+      "speakerId": "B",
+      "speakerName": null,
+      "startMs": 3820,
+      "endMs": 7000,
+      "timing": "provider"
+    },
+    {
+      "rawText": "We can darken it and keep the contrast ratio.",
+      "normalizedText": "We can darken it and keep the contrast ratio.",
+      "speakerId": "C",
+      "speakerName": null,
+      "startMs": 7240,
+      "endMs": 11000,
+      "timing": "provider"
+    },
+    {
+      "rawText": "Okay, and what about the error messages?",
+      "normalizedText": "Okay, and what about the error messages?",
+      "speakerId": "A",
+      "speakerName": null,
+      "startMs": 11320,
+      "endMs": 14000,
+      "timing": "provider"
+    },
+    {
+      "rawText": "They should appear below the field.",
+      "normalizedText": "They should appear below the field.",
+      "speakerId": "B",
+      "speakerName": null,
+      "startMs": 14240,
+      "endMs": 17000,
+      "timing": "provider"
+    },
+    {
+      "rawText": "Agreed, I will update the prototype today.",
+      "normalizedText": "Agreed, I will update the prototype today.",
+      "speakerId": "C",
+      "speakerName": null,
+      "startMs": 17320,
+      "endMs": 20500,
+      "timing": "provider"
+    },
+    {
+      "rawText": "Great, send it over when it's ready.",
+      "normalizedText": "Great, send it over when it's ready.",
+      "speakerId": "A",
+      "speakerName": null,
+      "startMs": 20740,
+      "endMs": 24000,
+      "timing": "provider"
+    },
+    {
+      "rawText": "Sounds good, thanks everyone.",
+      "normalizedText": "Sounds good, thanks everyone.",
+      "speakerId": "B",
+      "speakerName": null,
+      "startMs": 24320,
+      "endMs": 27000,
+      "timing": "provider"
+    }
+  ]
+}

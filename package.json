@@ -26,7 +26,8 @@
     "verify": "npm run lint && npm run build && npm test && npm run check:mainline-isolation && npm run check:legacy-prefixes && npm run check:settings-map",
     "verify:push": "npm run verify && npm run check:bundle-consistency",
     "test:watch": "vitest",
-    "version": "node version-bump.mjs && git add manifest.json versions.json"
+    "version": "node version-bump.mjs && git add manifest.json versions.json",
+    "eval:accuracy": "node scripts/accuracy-baseline.mjs"
   },
   "keywords": [
     "obsidian",

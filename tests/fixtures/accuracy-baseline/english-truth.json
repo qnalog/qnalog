@@ -1,0 +1,54 @@
+{
+  "title": "Design review (English)",
+  "language": "en",
+  "utterances": [
+    {
+      "speaker": "Dana",
+      "text": "Let's start with the login screen mockup.",
+      "startMs": 0,
+      "endMs": 3500
+    },
+    {
+      "speaker": "Evan",
+      "text": "I think the button color is too light.",
+      "startMs": 3700,
+      "endMs": 7000
+    },
+    {
+      "speaker": "Fay",
+      "text": "We can darken it and keep the contrast ratio.",
+      "startMs": 7200,
+      "endMs": 11000
+    },
+    {
+      "speaker": "Dana",
+      "text": "Okay, and what about the error messages?",
+      "startMs": 11200,
+      "endMs": 14000
+    },
+    {
+      "speaker": "Evan",
+      "text": "They should appear below the field.",
+      "startMs": 14200,
+      "endMs": 17000
+    },
+    {
+      "speaker": "Fay",
+      "text": "Agreed, I will update the prototype today.",
+      "startMs": 17200,
+      "endMs": 20500
+    },
+    {
+      "speaker": "Dana",
+      "text": "Great, send it over when it's ready.",
+      "startMs": 20700,
+      "endMs": 24000
+    },
+    {
+      "speaker": "Evan",
+      "text": "Sounds good, thanks everyone.",
+      "startMs": 24200,
+      "endMs": 27000
+    }
+  ]
+}
