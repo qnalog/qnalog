@@ -45,6 +45,7 @@ import {
   setupServiceIssue,
   SETUP_STATE_LABELS,
 } from '../setup';
+import { isQuickSetupVisible, resolvePanelOpen, resolveScrollTop } from '../setup/settings-view-state';
 
 function pickChannelProbeMime() {
   const candidates = ["audio/webm;codecs=opus", "audio/webm", "audio/ogg;codecs=opus"];
@@ -107,9 +108,16 @@ export class QnALogSettingTab extends obsidian.PluginSettingTab {
     // 最近一次检测结果，按服务标识索引；只存在内存里，不落盘。
     // 界面据此区分「未测试」与「已通过 / 未通过」。
     this._probeResults = Object.create(null);
-    // 快速配置面板是否可见。null 表示「还没判定」——由首次渲染按配置完整度决定。
-    // 已配好的用户点「快速配置」并确认覆盖后才会重新显示。
-    this._quickSetupVisible = null;
+    // 快速配置卡片的显示由每次渲染按当前配置判定（isQuickSetupVisible）。
+    // 两个标志只存在内存里：用户确认「快速配置」后强制显示；点卡片 × 后隐藏到再次打开。
+    this._quickSetupOpenedByUser = false;
+    this._quickSetupDismissed = false;
+    // 上一次渲染时卡片是否可见，供「快速配置」按钮决定要不要先确认。
+    this._quickSetupShown = false;
+    // 服务商面板的展开状态与上次渲染的标签页，用于重画后保持界面位置。
+    this._providerPanelOpen = Object.create(null);
+    this._providerPanelSeq = 0;
+    this._lastRenderedTab = null;
     this._audioDeviceInfo = null;
   }
   getVisibleSettingsTabs() {
@@ -118,6 +126,7 @@ export class QnALogSettingTab extends obsidian.PluginSettingTab {
     return QNALOG_SETTINGS_TABS.map((tab) => ({ id: tab.id, label: t(tab.label) }));
   }
   display() {
+    this._lastRenderedTab = null;
     this.renderSettings();
     void this.refreshAudioDeviceInfo();
   }
@@ -138,7 +147,22 @@ export class QnALogSettingTab extends obsidian.PluginSettingTab {
     if (this.activeTab === "home") this.renderSettings();
   }
 
+  /** 设置页实际滚动的元素：containerEl 自身或向上第一个可纵向滚动的祖先。 */
+  findSettingsScroller() {
+    let el = this.containerEl;
+    while (el) {
+      const overflowY = typeof getComputedStyle === "function" ? getComputedStyle(el).overflowY : "";
+      if ((overflowY === "auto" || overflowY === "scroll") && el.scrollHeight > el.clientHeight) return el;
+      el = el.parentElement;
+    }
+    return this.containerEl;
+  }
+
   renderSettings() {
+    // 重画前记下滚动位置：empty() 之后内容变短，浏览器会把位置夹到顶部。
+    const scroller = this.findSettingsScroller();
+    const previousScrollTop = scroller ? scroller.scrollTop : 0;
+    this._providerPanelSeq = 0;
     this.containerEl.addClass("qnalog-settings-root");
     this.containerEl.empty();
 
@@ -164,6 +188,9 @@ export class QnALogSettingTab extends obsidian.PluginSettingTab {
       case "about":     this.renderAbout(content); break;
     }
     this.applySettingsSections(content);
+    const nextScrollTop = resolveScrollTop(this._lastRenderedTab, this.activeTab, previousScrollTop);
+    this._lastRenderedTab = this.activeTab;
+    if (scroller) scroller.scrollTop = nextScrollTop;
   }
 
   applySettingsSections(content) {
@@ -367,12 +394,24 @@ export class QnALogSettingTab extends obsidian.PluginSettingTab {
     //
     // 面板只在两种情况下出现：① 还没配好（缺转写或 AI 整理）；② 用户点了「快速配置」并确认覆盖。
     // 已经配好的用户不该在首页看到一块要他重新填密钥的面板。
-    if (!this._quickSetupVisible) {
-      const allReady = transcribeState !== "missing" && llmState !== "missing";
-      this._quickSetupVisible = !allReady;
-    }
-    if (this._quickSetupVisible) {
+    this._quickSetupShown = isQuickSetupVisible({
+      transcribeState,
+      llmState,
+      openedByUser: this._quickSetupOpenedByUser,
+      dismissed: this._quickSetupDismissed,
+    });
+    if (this._quickSetupShown) {
     const oneCard = page.createDiv({ cls: "qnalog-home-block qnalog-home-onecard" });
+    const closeBtn = oneCard.createEl("button", {
+      cls: "qnalog-icon-button qnalog-onecard-close",
+      attr: { type: "button", "aria-label": t("Close"), title: t("Close") },
+    });
+    obsidian.setIcon(closeBtn, "x");
+    closeBtn.onclick = () => {
+      this._quickSetupDismissed = true;
+      this._quickSetupOpenedByUser = false;
+      this.renderSettings();
+    };
     oneCard.createEl("h3", { text: t("Quick setup") });
     oneCard.createDiv({
       cls: "qnalog-home-prep-desc",
@@ -1040,7 +1079,9 @@ export class QnALogSettingTab extends obsidian.PluginSettingTab {
     if (needsKey && !p.apiKey) missing.push(t("Access Key"));
 
     const panel = c.createEl("details", { cls: "qnalog-provider-panel" });
-    panel.open = !ready;
+    const panelKey = `${this.activeTab}:${this._providerPanelSeq++}:${activeId}`;
+    panel.open = resolvePanelOpen(this._providerPanelOpen, panelKey, !ready);
+    panel.addEventListener("toggle", () => { this._providerPanelOpen[panelKey] = !!panel.open; });
     const head = panel.createEl("summary", { cls: "qnalog-provider-head" });
     const titleWrap = head.createDiv({ cls: "qnalog-provider-title-wrap" });
     titleWrap.createDiv({ cls: "qnalog-provider-title", text: t(profile.title) });
@@ -1088,7 +1129,7 @@ export class QnALogSettingTab extends obsidian.PluginSettingTab {
    */
   async startQuickSetup() {
     // 初次配置（面板本来就该显示）直接滚动过去，不弹确认。
-    if (this._quickSetupVisible) {
+    if (this._quickSetupShown) {
       this.scrollToQuickSetup();
       return;
     }
@@ -1101,7 +1142,8 @@ export class QnALogSettingTab extends obsidian.PluginSettingTab {
       t("Continue setup"),
     );
     if (!ok) return;
-    this._quickSetupVisible = true;
+    this._quickSetupOpenedByUser = true;
+    this._quickSetupDismissed = false;
     this.renderSettings();
     this.scrollToQuickSetup();
   }

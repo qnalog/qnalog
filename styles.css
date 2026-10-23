@@ -9897,6 +9897,12 @@ body .qnalog-menu .menu-item.selected .menu-item-icon {
   background: color-mix(in srgb, var(--interactive-accent) 5%, transparent);
   border-radius: var(--radius-m);
   padding: var(--size-4-3);
+  position: relative;
+}
+.qnalog-onecard-close {
+  position: absolute;
+  top: var(--size-4-2);
+  right: var(--size-4-2);
 }
 
 /* 模型选择 Modal：搜索框 + 可点列表 */
