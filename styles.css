@@ -49,8 +49,11 @@ button.qnalog-text-action.is-muted:hover {
   --text-color: var(--text-normal);
 }
 
+/* 与插件其他按钮的键盘焦点样式一致（见文件末尾的 :focus-visible 规则），不用 Obsidian 默认的阴影圈。 */
 button.qnalog-text-action:focus-visible {
-  box-shadow: 0 0 0 2px var(--background-modifier-border-focus);
+  outline: 2px solid var(--interactive-accent);
+  outline-offset: 2px;
+  box-shadow: none;
 }
 
 /* 移动端扩大点按区域，负外边距让行高保持不变。 */
@@ -5157,21 +5160,6 @@ button.qnalog-sediment-button {
   flex-wrap: wrap;
   justify-content: center;
   gap: 12px;
-}
-
-.qnalog-outline-recent-filter-empty-actions button {
-  padding: 0;
-  border: 0;
-  background: transparent;
-  box-shadow: none;
-  color: var(--text-accent);
-  font-size: inherit;
-  cursor: pointer;
-}
-
-.qnalog-outline-recent-filter-empty-actions button:hover {
-  text-decoration: underline;
-  background: transparent;
 }
 
 .qnalog-outline-recent {
