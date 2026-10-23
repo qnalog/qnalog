@@ -2200,6 +2200,8 @@ export const ZH: MessageTable = {
   "The original transcript has been kept; the background queue will retry with backoff": "原始转写已保留；后台队列会按退避规则再次尝试",
   "Archiving the previous draft before the append failed; the append itself is unaffected": "续录覆盖前旧稿留档失败，续录本身不受影响",
   "Archiving the note before AI polish failed; the note write is unaffected": "AI 润色覆盖前笔记留档失败，笔记写入本身不受影响",
+  "Could not save the organizing task before the model call; a reload during organizing would not be recovered": "调用模型前未能保存整理任务；整理期间重载 Obsidian 将无法自动恢复",
+  "The note was written, but the saved organizing task could not be removed": "笔记已写入，但保存的整理任务未能移除",
   "The note body was generated, but writing the Markdown failed": "笔记正文已生成，但写入 Markdown 失败",
   "Failed to write the notes: {0}": "笔记写入失败：{0}",
   "The AI result was saved; the model will not be called again and only the write will be retried later": "AI 整理结果已保存，不会重复调用模型；稍后只重试写入",

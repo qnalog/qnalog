@@ -279,6 +279,7 @@ git tag X.Y.Z && git push origin X.Y.Z
 
 1. **主题层后续**（暂缓）。近似重复要点（措辞不同、事实相同）仍可能同时加入，目前靠预览里取消勾选处理；纪要列表可考虑「展开概要」；已合并的聚类建议暂不使用。
 2. **长录音转写异常的真实来源**（取证中）。写入母本前的拦截已实现（阈值见 `audio/long-recording-anomaly.ts`）；真实转写服务是否会产生此类输出仍未证实，阈值是否调整取决于取证结果。
+3. **API 设置页重构**（待规格）。现状：语音转写、AI 整理、说话人识别各自展开面板；服务预设、已保存方案（`llmProfiles`）与兼容兜底字段（`transcribe*`）并存，用户难以判断哪一项实际生效；字段修改触发整页重绘（`settings-tab.ts` 的 `renderSettings`）。专项先定规格：每类服务按「选服务 → 填地址/模型/密钥 → 检测」组织并显示实际生效的配置；改为局部更新而非整页重绘；不改存储结构（§9.2），涉及 schema 时按 §4.5。
 
 ### 6.2 待决定、待确认与暂停项
 
@@ -614,11 +615,11 @@ HTTP 分段转写支持桌面与移动端；实时 WebSocket 需要浏览器不�
 
 - 用户可见的重新生成只有两个动作，入口集中在 `ui/regenerate-actions.ts`（右键子菜单与命令共用）。
 - **另存为新版本**（`RepolishService.repolishMarkdownFile`）不改母本正文：先确保原稿快照与 manifest 可读写，再创建派生 Markdown，最后以 `activate:false` 写 `minutes` 缓存。原稿快照验证失败时停止，不创建派生文件。清稿是其中一种，生成后经 `switchVersion` 激活。
-- **重新整理**（`RepolishService.reorganizeNoteInPlace`）改写母本：模式依次取用户所选、笔记自身、默认模式；写入前把整篇母本存为不激活的 `pre-reorganize` 快照，快照失败则不写入；写入前后比对母本并核对转写段数不减；写入后把已有原稿快照更新为新稿。不在笔记列表显示「整理前」行，也不写 frontmatter 字段。
+- **重新整理**（`RepolishService.reorganizeNoteInPlace`）改写母本：模式依次取用户所选、笔记自身、默认模式；写入前把整篇母本存为不激活的 `pre-reorganize` 快照，快照失败则不写入；写入前后比对母本并核对转写段数不减；写入后把已有原稿快照更新为新稿。不在笔记列表显示「整理前」行，也不写 frontmatter 字段。调用方未指定是否首次整理时由笔记决定：没有整理正文的按首次整理处理（补缺失的会话键、按 `autoRenameWithTitle` 改名）。标题中的「（录音中…）」占位换成录音时长（取最后一段的结束时间，取不到时去掉占位）。已有正文但文件名仍是按 `noteFileNameFormatNew` 对会话时间生成的原始名称时，也按 `autoRenameWithTitle` 改名；已有标题或用户改过的文件名不改。
 - **清稿**（`RepolishService.generateCleanScript`）首次生成前先确保原稿快照，再经 `switchVersion` 切换母本；类型为 `clean`，不另存隐藏缓存。
 - **版本切换**（`VersionStore.switchVersion`）：缺失或损坏的类型、清单或原稿快照必须在改母本前拒绝；母本写入成功但活动 ID 写入失败属于部分提交，缓存保留且可再次切换。
 - **续录**：新音频与逐字稿写入独立暂存；队列凭保存的 `targetPath` 与 `targetSourceId` 和完整 v2 转写账本提交，不根据当前活动笔记改写目标；账本损坏、来源冲突或目标变化时拒绝提交并保留恢复材料。`pre-append` 快照以 `activate:false` 保存。只有目标提交路径写入续录成功标记。
-- **转写重试补齐后的自动整理**（`queue-transcribe-retry-flow.ts` 的 `maybeAutoRepolish`）一律原地重新整理：笔记没有整理正文时作为首次整理（补缺失的会话键、不覆盖已有键，按 `autoRenameWithTitle` 改名）；已有正文时按普通重新整理（存 `pre-reorganize` 快照，不补键、不改名）。失败记录 `queue.auto_repolish_failed`，已补齐的转写不回滚。
+- **转写重试补齐后的自动整理**（`queue-transcribe-retry-flow.ts` 的 `maybeAutoRepolish`）一律原地重新整理：笔记没有整理正文时作为首次整理（补缺失的会话键、不覆盖已有键，按 `autoRenameWithTitle` 改名）；已有正文时按普通重新整理（存 `pre-reorganize` 快照，不补键；文件名仍是原始名称时按上条规则改名）。失败记录 `queue.auto_repolish_failed`，已补齐的转写不回滚。
 - **首次 AI 整理与后台合并重试**在模型调用前读取完整母本 Markdown，并在重写提交前比较；内容变化时保留当前母本、转写、录音和整理检查点。首次整理与后台重试都将冲突任务标为仅手动重试，不安排自动重试；“Retry all”和启动重试跳过该任务，用户检查母本后可在进度面板单项重试。单项重试按当前母本重新整理，不复用冲突前的已完成整理检查点。两种重写都在写入前尝试保存不激活的 `pre-polish` 快照；续录已保存 `pre-append` 快照时，首次整理不重复保存。快照保存失败只记录日志，不单独阻止未冲突的写入。
 - 同一插件实例按来源 ID 串行执行 manifest 读改写；不协调 Obsidian 同步或其他插件对同一文件的写入，仅凭磁盘状态无法归因外部修改。
 - 删除带衍生版本的笔记：确认后复核派生稿集合与正文，变化时保留文件并要求重新确认。

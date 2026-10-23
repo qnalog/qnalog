@@ -148,6 +148,22 @@ export function buildPolishAppendBlock(input: PolishAppendBlockInput): string {
   ].filter(value => value !== null).join("\n");
 }
 
+/**
+ * 把标题里的「（录音中…）」/「(recording…)」占位换成已录时长，括号样式保持不变。
+ * `totalMs` 为 null（取不到时长）时直接去掉占位及其前面的空白，不留下假时长。
+ */
+export function replaceRecordingPlaceholder(text: string, totalMs: number | null): string {
+  const known = totalMs !== null;
+  const re = known
+    ? /([\uFF08(])?(?:录音中|recording)…[)\uFF09]?/g
+    : /[ \t]*[\uFF08(]?(?:录音中|recording)…[)\uFF09]?/g;
+  return text.replace(re, (_match, open: string | undefined) => {
+    if (!known) return "";
+    const prefix = open || "";
+    return `${prefix}${formatElapsed(totalMs)}${open === "(" ? ")" : String.fromCharCode(0xff09)}`;
+  });
+}
+
 export function appendPolishNoteContent(input: PolishAppendContentInput): string {
   let currentMarkdown = input.currentMarkdown;
   if (input.polishedFrontmatter && !input.hasMergeError) {
@@ -157,10 +173,7 @@ export function appendPolishNoteContent(input: PolishAppendContentInput): string
   const separator = currentMarkdown.endsWith("\n") ? "" : "\n";
   let next = currentMarkdown + separator + input.block;
   if (!input.textImport) {
-    next = next.replace(/([\uFF08(])?(?:录音中|recording)…[)\uFF09]?/g, (_match, open: string | undefined) => {
-      const prefix = open || "";
-      return `${prefix}${formatElapsed(input.totalMs)}${open === "(" ? ")" : String.fromCharCode(0xff09)}`;
-    });
+    next = replaceRecordingPlaceholder(next, input.totalMs);
   }
   if (input.continuationSessionId) next = `${next.replace(/\s*$/, "")}\n<details><summary>${labelText("indexData")}</summary>${nsMarker(NS_CONTINUATION_COMMITTED_MARKER, input.continuationSessionId)}</details>\n`;
   return normalizeTranscriptDataPlacement(next);

@@ -306,6 +306,7 @@ describe("clean transcript storage", () => {
       loadErrata: async () => null,
       getDefaultMode: () => "general",
       detectNoteMode: () => null,
+      formatNoteFileName: () => null,
       getModeDisplayName: () => "General",
       getInFlight: () => inFlight,
       mergeAndPolish: async () => "---\ntitle: Updated title\n---\nNew organized body.",

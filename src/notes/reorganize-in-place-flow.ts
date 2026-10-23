@@ -1,5 +1,6 @@
 import * as obsidian from "obsidian";
-import { buildEmptyLlmOutputFallback } from "./note-write-content";
+import { buildEmptyLlmOutputFallback, replaceRecordingPlaceholder } from "./note-write-content";
+import { hasOrganizedBody } from "./organized-body";
 import { AI_FAILURE_PLACEHOLDER_RE, findActiveVersionBlock, splitLeadingFrontmatter } from "./note-document";
 import { readRepolishInput } from "./repolish-input";
 import { extractTranscriptSegments } from "./note-transcript-ledger";
@@ -9,7 +10,7 @@ import type { Segment } from "../shared/types";
 import type { TaskActivity, TaskActivityInput } from "../shared/task-activity";
 import type { OriginalSnapshotBodyUpdate } from "../versions/original-snapshot-store";
 import { buildVersionPayload } from "../versions/version-content";
-import { NS_FM } from "../shared/namespace";
+import { NS_FM, readNamespaceFrontmatter } from "../shared/namespace";
 import { normalizeSessionKnowledgeMarkers } from "../briefing/session-knowledge";
 import type { ErrataRules } from "../errata/errata-apply";
 import { buildAbsentSessionFrontmatter, readSessionFieldsFromNote, type SessionModeOption } from "./first-organizing-session";
@@ -22,7 +23,7 @@ const DRAFT_IMPORT_TITLE_SUFFIX_RE = new RegExp(
 
 /**
  * `firstOrganizing`：笔记首次整理（转写补齐后的自动整理）。为 true 时补齐会话 frontmatter 并按标题改名，
- * 使结果与首次整理一致。默认 false，即手动「重新整理」。
+ * 使结果与首次整理一致。未指定时按笔记判断：还没有整理正文即为首次整理。
  * `mode`：用户在菜单里选的模式；缺省时用笔记自己的模式，取不到再用默认模式。
  * `preference`：可选的整理偏好，与「另存为新版本」相同。
  */
@@ -57,6 +58,8 @@ export interface ReorganizeInPlacePort {
   getModeOptions(): SessionModeOption[];
   /** 首次整理：按笔记中的链接文件名解析库内完整路径；无法解析时返回 null。 */
   resolveLinkPath(link: string, sourcePath: string): string | null;
+  /** 按笔记文件名格式设置，把会话时间格式化成未加标题的文件名（不含扩展名）；时间无法解析时返回 null。 */
+  formatNoteFileName(time: string): string | null;
   /** 首次整理：自动标题改名开关（设置项）。 */
   getAutoRenameWithTitle(): boolean;
   /** 首次整理：按整理正文与模式生成标题并改名；改名失败由调用方记录，不影响整理结果。 */
@@ -141,17 +144,20 @@ export function removeOrganizedFailureSections(text: string): string {
 
 /**
  * `leadingFrontmatter`：放在现有 frontmatter 之前的键（首次整理的会话键，调用方保证它们在现有 frontmatter 中不存在）。
+ * `elapsedMs`：标题里「（录音中…）」占位换成的时长；null 表示取不到，占位直接去掉。
  */
 export function buildReorganizedNote(
   snapshot: string,
   generated: string,
   stripModeSuggestions: (text: string) => string,
   leadingFrontmatter: Record<string, unknown> = {},
+  elapsedMs: number | null = null,
 ): string {
   const current = splitLeadingFrontmatter(snapshot);
   const generatedParts = splitLeadingFrontmatter(stripModeSuggestions(generated || buildEmptyLlmOutputFallback()).trim());
   const boundary = findOriginalMaterialBoundary(current.body);
-  const retainedTitle = (current.body.match(/^\s*(#\s+[^\r\n]+)(?:\r?\n|$)/)?.[1] || "").replace(DRAFT_IMPORT_TITLE_SUFFIX_RE, "");
+  const retainedTitleRaw = (current.body.match(/^\s*(#\s+[^\r\n]+)(?:\r?\n|$)/)?.[1] || "").replace(DRAFT_IMPORT_TITLE_SUFFIX_RE, "");
+  const retainedTitle = replaceRecordingPlaceholder(retainedTitleRaw, elapsedMs);
   const rewrittenBody = [retainedTitle, generatedParts.body.trim() || buildEmptyLlmOutputFallback()]
     .filter(Boolean).join("\n\n");
   const frontmatter = mergeFrontmatter(current.frontmatter, generatedParts.frontmatter, leadingFrontmatter);
@@ -159,6 +165,29 @@ export function buildReorganizedNote(
   const preservedRaw = rawTail ? `---\n\n${rawTail}\n\n` : "";
   const keptTail = removeOrganizedFailureSections(current.body.slice(boundary.index));
   return normalizeSessionKnowledgeMarkers(`${frontmatter}${rewrittenBody}\n\n${preservedRaw}${keptTail}`);
+}
+
+function lastSegmentEndMs(segments: Segment[]): number | null {
+  const end = Math.max(0, ...segments.map((segment) => Number(segment.endOffsetMs) || 0));
+  return end > 0 ? end : null;
+}
+
+/** 会话时间：frontmatter 的 qnalog_time，其次「录音信息」的时间行，最后是标题里的日期时间。 */
+function readSessionTime(snapshot: string): string | null {
+  const parts = splitLeadingFrontmatter(snapshot);
+  const fromFrontmatter = readNamespaceFrontmatter(parseFrontmatter(parts.frontmatter), "time");
+  if (typeof fromFrontmatter === "string" && fromFrontmatter.trim()) return fromFrontmatter.trim();
+  const fromInfo = readSessionFieldsFromNote(snapshot, []).time;
+  if (fromInfo) return fromInfo;
+  return /^\s*#\s+(\d{4}-\d{2}-\d{2}\s+\d{2}:\d{2})/.exec(parts.body)?.[1] ?? null;
+}
+
+/** 文件名仍是按文件名格式生成的原始名称（没有标题后缀，用户也没改过）。 */
+function hasBareFileName(port: ReorganizeInPlacePort, file: obsidian.TFile, snapshot: string): boolean {
+  const time = readSessionTime(snapshot);
+  if (!time) return false;
+  const bare = port.formatNoteFileName(time);
+  return !!bare && file.basename === bare;
 }
 
 export async function reorganizeNoteInPlace(port: ReorganizeInPlacePort, file: unknown, options: ReorganizeInPlaceOptions = {}): Promise<boolean> {
@@ -183,7 +212,7 @@ export async function reorganizeNoteInPlace(port: ReorganizeInPlacePort, file: u
       input = readRepolishInput(snapshot, port.getCachedFrontmatter(file) || null, errata);
     }
     if (!input.segments.length) throw new Error(t("No QnALog original transcript found. Use this on a note Markdown that contains \"Segmented raw transcript\" or recording segments."));
-    const firstOrganizing = options.firstOrganizing === true;
+    const firstOrganizing = options.firstOrganizing ?? !hasOrganizedBody(snapshot);
     const noteFields = firstOrganizing ? readSessionFieldsFromNote(snapshot, port.getModeOptions()) : null;
     const mode = noteFields?.mode || options.mode || port.detectNoteMode(file) || port.getDefaultMode();
     const leadingFrontmatter = noteFields
@@ -194,6 +223,7 @@ export async function reorganizeNoteInPlace(port: ReorganizeInPlacePort, file: u
         audioPath: noteFields.audioLink ? port.resolveLinkPath(noteFields.audioLink, file.path) : null,
       })
       : {};
+    const renameBareName = !firstOrganizing && hasBareFileName(port, file, snapshot);
     port.tasks.startTaskActivity({
       id: taskId, kind: "repolish", title: t("Reorganize note in place"), subject: file.path,
       status: "running", stage: "preparing", stageLabel: t("Preparing"),
@@ -203,7 +233,7 @@ export async function reorganizeNoteInPlace(port: ReorganizeInPlacePort, file: u
     port.tasks.patchTaskActivity(taskId, { stage: "llm", stageLabel: t("AI reorganizing"), detail: t("Generating a new note body"), progress: 10 });
     const sessionMeta = { ...input.sessionMeta, _freshBriefing: true };
     const generated = await port.mergeAndPolish(input.segments, mode, sessionMeta, input.originalFrontmatter, options.preference ?? null);
-    const next = buildReorganizedNote(snapshot, generated, (text) => port.stripModeSuggestionBlocks(text), leadingFrontmatter);
+    const next = buildReorganizedNote(snapshot, generated, (text) => port.stripModeSuggestionBlocks(text), leadingFrontmatter, lastSegmentEndMs(input.segments));
     if (extractTranscriptSegments(next).length < input.segments.length) {
       throw new Error(t("The reorganized note would lose original transcript segments; the note was not changed."));
     }
@@ -246,7 +276,7 @@ export async function reorganizeNoteInPlace(port: ReorganizeInPlacePort, file: u
     succeeded = true;
     await port.clearCommittedBriefingCheckpoint(sessionMeta);
     let target = file;
-    if (firstOrganizing && mode !== "off" && port.getAutoRenameWithTitle()) {
+    if ((firstOrganizing || renameBareName) && mode !== "off" && port.getAutoRenameWithTitle()) {
       try {
         const renamed = await port.renameWithGeneratedTitle(file, generated, mode);
         if (renamed instanceof obsidian.TFile) target = renamed;
