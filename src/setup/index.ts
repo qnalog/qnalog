@@ -571,7 +571,12 @@ export interface SetupStatusInput {
   transcribe: SetupStatusLineInput;
   /** AI 整理：服务名与模型标识。 */
   llm: SetupStatusLineInput;
-  /** 说话人识别：是否启用、服务名与模型标识。 */
+  /**
+   * 说话人识别是否启用（settings.importSpeakerDiarization）。
+   * 未启用时总览不列这一行：它不拦住开始使用，关着的功能不占首页位置。
+   */
+  speakerEnabled: boolean;
+  /** 说话人识别：服务名与模型标识；仅在 speakerEnabled 时使用。 */
   speaker: SetupStatusLineInput;
   /** 音频输入：真实设备状态，不是配置模式。 */
   audio: SetupStatusLineInput;
@@ -602,7 +607,9 @@ export function buildSetupStatus(input: SetupStatusInput): SetupStatusReport {
   const lines: SetupStatusLine[] = [
     toLine({ stage: "transcribe", label: t("Speech transcription"), target: "api", ...input.transcribe }),
     toLine({ stage: "llm", label: t("AI Organize"), target: "api", ...input.llm }),
-    toLine({ stage: "speaker", label: t("Speaker recognition"), target: "api", ...input.speaker }),
+    ...(input.speakerEnabled
+      ? [toLine({ stage: "speaker", label: t("Speaker recognition"), target: "api", ...input.speaker })]
+      : []),
     // 目标必须是 settings-tab.ts 里真实存在的选项卡 id。
     // 曾写作 "general"，而该页已改名 "recording"，导致这一行点了没反应。
     toLine({ stage: "audio", label: t("Audio input"), target: "recording", ...input.audio }),

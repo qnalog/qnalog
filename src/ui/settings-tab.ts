@@ -350,6 +350,11 @@ export class QnALogSettingTab extends obsidian.PluginSettingTab {
     let statusList;
     const jump = (tab, stage) => {
       this.activeTab = tab;
+      // 说话人识别已移入 API 页的「进阶设置」（默认折叠）：跳过去时先展开它。
+      if (tab === "api" && stage === "speaker") {
+        if (!this._apiTabUiState) this._apiTabUiState = { advancedOpen: false, guideOpen: Object.create(null) };
+        this._apiTabUiState.advancedOpen = true;
+      }
       this.renderSettings();
       if (tab !== "api" || stage !== "llm") return;
       const modelRow = this.containerEl.querySelector(".qnalog-ai-model-setting");
@@ -525,6 +530,7 @@ export class QnALogSettingTab extends obsidian.PluginSettingTab {
         : setupServiceIssue(buildServiceView(speakerProvider, !!speakerProfile.requiresKey && !canOmitServiceApiKey(speakerProvider.endpoint)));
 
     const status = buildSetupStatus({
+      speakerEnabled,
       transcribe: {
         value: transcribeServiceIssue || (transcribeProfile.title || transcribeProviderId),
         detail: transcribeServiceIssue ? "" : (transcribeProvider.model || ""),

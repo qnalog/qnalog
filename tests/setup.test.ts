@@ -7,6 +7,7 @@ import {
   applyPresetPlan,
   buildProbeHost,
   buildServiceView,
+  buildSetupStatus,
   configSignature,
   deriveSetupState,
   formatDetectionReport,
@@ -485,5 +486,53 @@ describe("OpenAI 一站式方案与 AI 整理记忆", () => {
     const snapshot = JSON.stringify(before);
     planPresetApplication(before, { providerId: "openai", apiKey: "sk-x" });
     expect(JSON.stringify(before)).toBe(snapshot);
+  });
+});
+
+describe("首页使用状态：说话人识别行只在启用时出现", () => {
+  const ready = {
+    transcribe: { value: "Alibaba Cloud Bailian real-time transcription", detail: "qwen-audio-3.0-asr-flash-streaming" },
+    llm: { value: "Alibaba Cloud Bailian / DashScope", detail: "qwen3.8-flash" },
+    audio: { value: "MacBook Pro 麦克风 · 可用", detail: "系统默认" },
+  };
+  const speaker = { value: "Enabled", detail: "qwen-audio-3.0-asr-flash-filetrans", target: "api" };
+  const labels = (r: ReturnType<typeof buildSetupStatus>) => r.lines.map((l) => l.label);
+
+  it("未启用时不列说话人识别行，其余三行保持原顺序", () => {
+    const r = buildSetupStatus({ ...ready, speakerEnabled: false, speaker: { value: "Disabled" } });
+    expect(labels(r)).toEqual(["Speech transcription", "AI Organize", "Audio input"]);
+    expect(r.lines.some((l) => l.stage === "speaker")).toBe(false);
+  });
+
+  it("启用时列出说话人识别行，点击目标是 API 页", () => {
+    const r = buildSetupStatus({ ...ready, speakerEnabled: true, speaker });
+    expect(labels(r)).toEqual(["Speech transcription", "AI Organize", "Speaker recognition", "Audio input"]);
+    const row = r.lines.find((l) => l.stage === "speaker");
+    expect(row?.value).toBe("Enabled");
+    expect(row?.target).toBe("api");
+  });
+
+  it("启用与否都不影响 ready：转写与整理齐全时都是可以开始使用", () => {
+    expect(buildSetupStatus({ ...ready, speakerEnabled: false, speaker: { value: "Disabled" } }).ready).toBe(true);
+    const enabledBroken = buildSetupStatus({
+      ...ready,
+      speakerEnabled: true,
+      speaker: { value: "当前服务不支持", issue: "当前导入音频服务不做说话人识别" },
+    });
+    expect(enabledBroken.ready).toBe(true);
+    expect(enabledBroken.blockerCount).toBe(0);
+    expect(enabledBroken.warnings).toEqual(["Speaker recognition"]);
+  });
+
+  it("未启用时缺转写仍然拦住开始使用，计数只算转写", () => {
+    const r = buildSetupStatus({
+      ...ready,
+      transcribe: { value: "访问密钥未填写", issue: "访问密钥未填写" },
+      speakerEnabled: false,
+      speaker: { value: "Disabled" },
+    });
+    expect(r.ready).toBe(false);
+    expect(r.blockerCount).toBe(1);
+    expect(r.warnings).toEqual([]);
   });
 });

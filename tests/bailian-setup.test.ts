@@ -219,6 +219,7 @@ describe("使用状态总览", () => {
   const base = {
     transcribe: { value: "Alibaba Cloud Bailian real-time transcription", detail: "qwen-audio-3.0-asr-flash-streaming" },
     llm: { value: "Alibaba Cloud Bailian / DashScope", detail: "qwen3.8-flash" },
+    speakerEnabled: true,
     speaker: { value: "Enabled", detail: "qwen-audio-3.0-asr-flash-filetrans" },
     audio: { value: "MacBook Pro 麦克风 · 可用", detail: "系统默认" },
   };
