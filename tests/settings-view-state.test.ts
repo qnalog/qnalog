@@ -3,6 +3,7 @@ import { canOmitServiceApiKey } from "../src/shared/util-llm-endpoint";
 import { buildServiceView, deriveSetupState } from "../src/setup";
 import {
   isQuickSetupVisible,
+  quickSetupNeedsConfirm,
   resolvePanelOpen,
   resolveScrollTop,
 } from "../src/setup/settings-view-state";
@@ -75,5 +76,15 @@ describe("scroll position across re-renders", () => {
   it("resets on tab switch and first open", () => {
     expect(resolveScrollTop("api", "home", 420)).toBe(0);
     expect(resolveScrollTop(null, "api", 420)).toBe(0);
+  });
+});
+
+describe("quick config button confirm", () => {
+  it("skips the confirm when either service is missing", () => {
+    expect(quickSetupNeedsConfirm({ transcribeState: "missing", llmState: "success" })).toBe(false);
+    expect(quickSetupNeedsConfirm({ transcribeState: "untested", llmState: "missing" })).toBe(false);
+  });
+  it("confirms only when both services are configured", () => {
+    expect(quickSetupNeedsConfirm({ transcribeState: "untested", llmState: "failure" })).toBe(true);
   });
 });

@@ -45,7 +45,7 @@ import {
   setupServiceIssue,
   SETUP_STATE_LABELS,
 } from '../setup';
-import { isQuickSetupVisible, resolvePanelOpen, resolveScrollTop } from '../setup/settings-view-state';
+import { isQuickSetupVisible, quickSetupNeedsConfirm, resolvePanelOpen, resolveScrollTop } from '../setup/settings-view-state';
 
 function pickChannelProbeMime() {
   const candidates = ["audio/webm;codecs=opus", "audio/webm", "audio/ogg;codecs=opus"];
@@ -327,21 +327,8 @@ export class QnALogSettingTab extends obsidian.PluginSettingTab {
   // 已移除 chooseRealMicrophone：插件不再"按名字自动挑一只真实麦克风"。
   // 麦克风选择完全交给用户（设置里的下拉），没选则用系统默认。
 
-  renderHome(c) {
-    const page = c.createDiv({ cls: "qnalog-home" });
-    let statusList;
-    const jump = (tab, stage) => {
-      this.activeTab = tab;
-      this.renderSettings();
-      if (tab !== "api" || stage !== "llm") return;
-      const modelRow = this.containerEl.querySelector(".qnalog-ai-model-setting");
-      if (!modelRow) return;
-      const section = modelRow.closest("details.qnalog-settings-section");
-      if (section) section.open = true;
-      modelRow.scrollIntoView({ block: "center" });
-    };
-    // 三处服务的状态都按「缺配置 / 未测试 / 已通过 / 未通过」四态呈现，
-    // 而不是只看字段在不在：字段填了但没测过，与测过并通过是两回事。
+  /** 转写与 AI 整理两项服务当前的四态（首页与「快速配置」按钮共用）。 */
+  computeServiceStates() {
     const transcribeState = (() => {
       const id = this.plugin.settings.activeTranscribeProvider || "siliconflow";
       const p = (this.plugin.settings.transcribeProviders || {})[id] || {};
@@ -361,6 +348,25 @@ export class QnALogSettingTab extends obsidian.PluginSettingTab {
       }, !canOmitServiceApiKey(this.plugin.settings.llmEndpoint)),
       this._probeResults["llm:active"],
     );
+    return { transcribeState, llmState };
+  }
+
+  renderHome(c) {
+    const page = c.createDiv({ cls: "qnalog-home" });
+    let statusList;
+    const jump = (tab, stage) => {
+      this.activeTab = tab;
+      this.renderSettings();
+      if (tab !== "api" || stage !== "llm") return;
+      const modelRow = this.containerEl.querySelector(".qnalog-ai-model-setting");
+      if (!modelRow) return;
+      const section = modelRow.closest("details.qnalog-settings-section");
+      if (section) section.open = true;
+      modelRow.scrollIntoView({ block: "center" });
+    };
+    // 三处服务的状态都按「缺配置 / 未测试 / 已通过 / 未通过」四态呈现，
+    // 而不是只看字段在不在：字段填了但没测过，与测过并通过是两回事。
+    const { transcribeState, llmState } = this.computeServiceStates();
 
     const head = page.createDiv({ cls: "qnalog-home-head" });
     const titleLine = head.createDiv({ cls: "qnalog-home-title-line" });
@@ -1128,8 +1134,14 @@ export class QnALogSettingTab extends obsidian.PluginSettingTab {
    * 这样默认状态下面板不占位置，用户明确表示要重配时才出现。
    */
   async startQuickSetup() {
-    // 初次配置（面板本来就该显示）直接滚动过去，不弹确认。
+    // 卡片已显示：直接滚动过去。配置缺失时不弹「已配好」的确认，直接重新显示。
     if (this._quickSetupShown) {
+      this.scrollToQuickSetup();
+      return;
+    }
+    if (!quickSetupNeedsConfirm(this.computeServiceStates())) {
+      this._quickSetupDismissed = false;
+      this.renderSettings();
       this.scrollToQuickSetup();
       return;
     }

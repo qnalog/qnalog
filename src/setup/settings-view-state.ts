@@ -43,3 +43,11 @@ export function resolveScrollTop(
   if (previousTab === null || previousTab !== nextTab) return 0;
   return previousScrollTop > 0 ? previousScrollTop : 0;
 }
+
+/** 「快速配置」按钮要不要先确认覆盖：只有两项服务都已配好时才确认。 */
+export function quickSetupNeedsConfirm(input: {
+  transcribeState: SetupStateName;
+  llmState: SetupStateName;
+}): boolean {
+  return input.transcribeState !== "missing" && input.llmState !== "missing";
+}
