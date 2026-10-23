@@ -292,6 +292,8 @@ export class TaskActivityService {
     const tasks = this.host.queue && Array.isArray(this.host.queue.tasks) ? this.host.queue.tasks : [];
     const activeIds = new Set<string>();
     for (const task of tasks) {
+      // The live finalize run already reports its own progress; a queue row would show the same work twice.
+      if (task && task.type === "merge" && task.liveFinalize === true && task.status === "running") continue;
       const activity = this.syncQueueTaskActivity(task);
       if (activity) activeIds.add(activity.id);
     }

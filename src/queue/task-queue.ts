@@ -270,6 +270,9 @@ export class TaskQueue {
     // Re-resolve by id: callers may retain a stale row after it was removed or replaced.
     const queuedTask = this.tasks.find(candidate => candidate.id === task.id);
     if (!queuedTask || this.hasUnresolvedDependencies(queuedTask)) return;
+    // A merge the live session-finalize run is still executing in this process: the run owns it until it
+    // finishes or rewrites the task as pending/blocked. Retrying it here would call the model a second time.
+    if (queuedTask.type === "merge" && queuedTask.liveFinalize === true && queuedTask.status === "running") return;
     task = queuedTask;
     // per-task 在途锁：processAll / 手动逐篇重试 / 队列面板逐条重试 / 启动自动重试 多条入口可能选中同一任务，
     // 若并发进入会对同一段音频发两次 ASR = 重复扣费。这个内存级 Set 同步闭合"选中→标 running"的竞态窗口。

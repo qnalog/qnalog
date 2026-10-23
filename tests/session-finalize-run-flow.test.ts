@@ -45,7 +45,7 @@ function setup(options: { configIssue?: string; segments?: Segment[]; source?: s
   const settings = { autoOpenNoteAfterFinish: false, sedimentAutoExtract: false, llmEndpoint: "", llmModel: "" };
   const port: SessionFinalizeRunPort = {
     hasQueue: () => true,
-    updateQueueTask: vi.fn(async () => undefined), removeQueueTask: vi.fn(async () => undefined),
+    updateQueueTask: vi.fn(async () => undefined), removeQueueTask: vi.fn(async (id: string) => { const at = queue.findIndex((row) => (row as { id?: string }).id === id); if (at >= 0) queue.splice(at, 1); }),
     discardShortRecordingNote: vi.fn(async () => undefined), discardShortRecordingAudio: vi.fn(async () => undefined),
     logDiagnostic: vi.fn(async (_level, code) => { events.push(`diag:${code}`); }),
     endSession: vi.fn(() => { events.push("end"); }), requestOutlineRefresh: vi.fn(() => { events.push("refresh-outline"); }),
@@ -60,7 +60,14 @@ function setup(options: { configIssue?: string; segments?: Segment[]; source?: s
     syncTranscriptAudioSource: vi.fn(async () => undefined), confirmSpeakerNames: vi.fn(async (_session, segments) => ({ segments, frontmatter: null })),
     processMeetingWorkbench: vi.fn(async () => undefined), ensureRealtimeOutline: vi.fn(async () => undefined),
     mergeAndPolish: vi.fn(async () => { events.push("merge"); return "Polished note"; }), clearCommittedBriefingCheckpoint: vi.fn(async () => undefined),
-    addQueueTask: vi.fn(async (task) => { queue.push(task); }), requestDeferredAsrRetry: vi.fn(), requestTaskQueueRetry: vi.fn(),
+    // Upsert by session, like TaskQueue.add: the in-flight task and a later failure task are one row.
+    addQueueTask: vi.fn(async (task) => {
+      const existing = queue.find((row) => (row as { sessionId?: string }).sessionId === task.sessionId);
+      if (existing) { Object.assign(existing as object, task); return existing as { id: string }; }
+      const row = { ...task, id: `task-${queue.length + 1}` };
+      queue.push(row);
+      return row;
+    }), requestDeferredAsrRetry: vi.fn(), requestTaskQueueRetry: vi.fn(),
     beginTaskMeter: vi.fn(() => null), endTaskMeter: vi.fn(() => null), logCompletedWork: vi.fn(() => { events.push("completed-log"); }),
     saveVersion: vi.fn(async () => undefined), formatNow: (format) => `M:${format}`, buildTitleSource: () => "Fallback title",
   };
@@ -245,7 +252,7 @@ describe("session finalization flow consumer contract", () => {
     vi.mocked(fixture.port.rewriteConsolidated).mockRejectedValueOnce(new Error("disk is read-only"));
     await runSessionFinalization(fixture.port, fixture.session);
     expect(fixture.queue[0]).toMatchObject({ type: "merge", lastError: t("Failed to write the notes: {0}").replace("{0}", "disk is read-only") });
-    expect(fixture.queue[0]).not.toHaveProperty("status");
+    expect(fixture.queue[0]).toMatchObject({ status: "pending" });
     expect(fixture.port.requestTaskQueueRetry).toHaveBeenCalledWith(1500, "briefing-write-failure");
     expect(fixture.port.refreshNoteIndex).not.toHaveBeenCalled();
     expect(fixture.session.finalizationError).toBe("disk is read-only");
@@ -354,7 +361,7 @@ describe("session finalization flow consumer contract", () => {
     expect(fixture.events).toContain("diag:session.pre_polish_archive_failed");
     expect(fixture.events).not.toContain("diag:briefing.commit_failed");
     expect(fixture.events.indexOf("rewrite")).toBeLessThan(fixture.events.indexOf("end"));
-    expect(fixture.port.addQueueTask).not.toHaveBeenCalled();
+    expect(fixture.queue).toEqual([]);
   });
 
   it("does not add a pre-polish snapshot when the pre-append snapshot already ran", async () => {

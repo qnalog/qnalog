@@ -178,7 +178,7 @@ export function restoreQueue(saved: unknown, options: RestoreQueueOptions): Queu
     else if (nonempty(r.id)) id = r.id;
     else { retain(raw, index, "invalid-field", "id"); return; }
     const task = normalizeLifecycle(r, id, () => options.nowIso());
-    if (task.status === "running" || task.status === "processing" || task.status === "live") { task.status = "pending"; task.lastError = task.lastError || t("Interrupted during the last run; restored to pending"); }
+    if (task.status === "running" || task.status === "processing" || task.status === "live") { task.status = "pending"; task.lastError = task.lastError || t("Interrupted during the last run; restored to pending"); delete task.liveFinalize; }
     if (!isRestoredTask(task)) { retain(raw, index, "invalid-field", "payload"); return; }
     if (task.type === "merge" && task.continuation !== undefined) task.continuation = cleanContinuation(task.continuation);
     const maxRetries = options.getMaxRetries() || 3;
