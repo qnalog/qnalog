@@ -227,6 +227,48 @@ describe("API tab layout", () => {
   });
 });
 
+describe("API tab thinking row", () => {
+  const thinkingRows = (root: any) => {
+    const rows: Fake[] = [];
+    walk(root, (el) => { if (el.setting && el.setting.name === "Thinking") rows.push(el.setting); });
+    return rows;
+  };
+
+  it("is absent for a service that cannot adjust thinking", () => {
+    expect(thinkingRows(render(makeHost(freshSettings())))).toHaveLength(0);
+  });
+
+  it("shows for a supported service, keeps the stored value, and saves without rebuilding", async () => {
+    const settings = freshSettings();
+    settings.llmModel = "gpt-6-luna";
+    settings.thinkingMode = "fast";
+    const host = makeHost(settings);
+    const root = render(host);
+    const rows = thinkingRows(root);
+    expect(rows).toHaveLength(1);
+    expect(rows[0].dropdown!.options).toEqual(["auto", "fast", "reasoning"]);
+    expect(rows[0].dropdown!.value).toBe("fast");
+    const [recording, ai] = findByClass(root, "qnalog-api-card");
+    const before = [...recording.children, ...ai.children];
+    await rows[0].dropdown!.onChange!("reasoning");
+    expect(settings.thinkingMode).toBe("reasoning");
+    expect(host.saves).toBe(1);
+    sameNodes([...recording.children, ...ai.children], before);
+  });
+
+  it("follows the model field: appears and disappears without rebuilding the card", async () => {
+    const settings = freshSettings();
+    const host = makeHost(settings);
+    const root = render(host);
+    const ai = findByClass(root, "qnalog-api-card")[1];
+    await rowIn(ai, "Model ID").texts[0].onChange!("gpt-6.1-sol");
+    expect(thinkingRows(root)).toHaveLength(1);
+    await rowIn(ai, "Model ID").texts[0].onChange!("gpt-4.1-mini");
+    expect(thinkingRows(root)).toHaveLength(0);
+    expect(settings.thinkingMode).toBe("auto");
+  });
+});
+
 describe("API tab re-render scope", () => {
   it("switching the AI service rebuilds only the AI card", async () => {
     const settings = freshSettings();

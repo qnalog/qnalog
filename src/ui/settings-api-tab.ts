@@ -19,6 +19,7 @@ import {
   normalizeLlmProfiles,
   syncWorkingConfigToLlmProfile,
 } from "../llm/config";
+import { THINKING_MODE_OPTIONS, normalizeThinkingModeValue, shouldShowThinkingRow } from "../llm/thinking-row";
 import { fetchLlmModelList } from "../llm/core";
 import { syncWorkingAsrToActiveScheme } from "../llm/asr-scheme";
 import { resolveBailianAsrRoute } from "../asr/bailian-asr-registry";
@@ -84,6 +85,7 @@ export type ApiTabSettings = Pick<
   | "llmServiceMemory"
   | "llmProfiles"
   | "activeLlmProfile"
+  | "thinkingMode"
 >;
 
 /** API 标签需要的宿主能力；不暴露插件对象与完整设置。 */
@@ -495,6 +497,25 @@ function renderAiCard(el: HTMLElement, host: ApiTabHost, refresh: Refreshers): v
     });
   }
 
+  // 「思考」行只在当前服务与模型支持调节时存在；改服务地址或模型后就地重建，不重画整张卡片。
+  let thinkingHost: HTMLElement | null = null;
+  const renderThinkingRow = (): void => {
+    if (!thinkingHost) return;
+    thinkingHost.empty();
+    if (!shouldShowThinkingRow(settings.llmEndpoint, settings.llmModel)) return;
+    new obsidian.Setting(thinkingHost)
+      .setName(t("Thinking"))
+      .setDesc(t("Quick: faster replies, less thorough analysis. Reasoning: slower, more thorough. Default: leave it to the service."))
+      .addDropdown((dropdown) => {
+        mark(dropdown.selectEl, "ai-thinking");
+        for (const option of THINKING_MODE_OPTIONS) dropdown.addOption(option.value, t(option.label));
+        dropdown.setValue(normalizeThinkingModeValue(settings.thinkingMode)).onChange(async (value) => {
+          settings.thinkingMode = normalizeThinkingModeValue(value);
+          await host.saveSettings();
+        });
+      });
+  };
+
   const syncProfile = (): void => syncWorkingConfigToLlmProfile(settings, settings.activeLlmProfile);
 
   const keyRow = addTextRow(body, {
@@ -541,6 +562,7 @@ function renderAiCard(el: HTMLElement, host: ApiTabHost, refresh: Refreshers): v
       settings.llmServicePreset = inferLlmServicePresetId(settings);
       syncProfile();
       await host.saveSettings();
+      renderThinkingRow();
     },
   });
 
@@ -557,6 +579,7 @@ function renderAiCard(el: HTMLElement, host: ApiTabHost, refresh: Refreshers): v
       settings.llmModel = value;
       syncProfile();
       await host.saveSettings();
+      renderThinkingRow();
     });
   });
   modelRow.addButton((button) => button.setButtonText(t("Get available models")).onClick(async () => {
@@ -586,6 +609,9 @@ function renderAiCard(el: HTMLElement, host: ApiTabHost, refresh: Refreshers): v
       button.setButtonText(t("Get available models"));
     }
   }));
+
+  thinkingHost = body.createDiv({ cls: "qnalog-ai-thinking-host" });
+  renderThinkingRow();
 
   new obsidian.Setting(body)
     .setName(t("LLM Connectivity Test"))

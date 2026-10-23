@@ -464,45 +464,6 @@ try {
   assert.equal(await evaluate("document.querySelector('#minutes-fixture').scrollTop"), minutesScrollBefore, "the minutes list must keep its scroll position");
   console.log("[topic-dialog-layout] active row follows the clicked row in the topics panel and a 60-row minutes-style list; nodes and scroll unchanged");
   await evaluate("document.querySelector('#minutes-fixture').remove()");
-
-  const idlePairFacts = async (width, theme, display) => evaluate(`(() => {
-    document.body.className = ${JSON.stringify(theme)};
-    let root = document.querySelector('#idle-pair-fixture');
-    if (!root) {
-      root = document.createElement('div');
-      root.id = 'idle-pair-fixture';
-      root.className = 'qnalog-outline is-idle-view';
-      const more = document.createElement('div'); more.className = 'qnalog-outline-more is-expanded';
-      const body = document.createElement('div'); body.className = 'qnalog-outline-more-body';
-      const pair = document.createElement('div'); pair.className = 'qnalog-outline-control-pair';
-      for (const label of ['偏好', '思考']) {
-        const cell = document.createElement('div'); cell.className = 'qnalog-outline-pair-cell'; cell.textContent = label; pair.append(cell);
-      }
-      body.append(pair); more.append(body); root.append(more); document.body.append(root);
-    }
-    root.style.width = ${JSON.stringify(`${width}px`)};
-    const pair = root.querySelector('.qnalog-outline-control-pair');
-    pair.style.display = ${JSON.stringify(display)};
-    const cells = [...root.querySelectorAll('.qnalog-outline-pair-cell')].map((cell) => {
-      const rect = cell.getBoundingClientRect(); return { left: rect.left, width: rect.width, right: rect.right };
-    });
-    return { cells, gap: cells[1].left - cells[0].right, totalWidth: cells[1].right - cells[0].left };
-  })()`);
-  for (const theme of ['theme-light', 'theme-dark']) {
-    for (const width of [280, 360, 480]) {
-      const contents = await idlePairFacts(width, theme, 'contents');
-      const grid = await idlePairFacts(width, theme, 'grid');
-      assert.equal(contents.cells.length, 2, `${theme} ${width}px contents: expected two cells`);
-      assert.equal(grid.cells.length, 2, `${theme} ${width}px grid: expected two cells`);
-      assert(Math.abs(grid.cells[0].left - contents.cells[0].left) <= 1, `${theme} ${width}px: left cell shifted from display:contents baseline`);
-      assert(Math.abs(grid.cells[0].width - contents.cells[0].width) <= 1, `${theme} ${width}px: left cell width differs from display:contents baseline`);
-      assert(Math.abs(grid.cells[1].left - contents.cells[1].left) <= 1, `${theme} ${width}px: right cell shifted from display:contents baseline`);
-      assert(Math.abs(grid.cells[1].width - contents.cells[1].width) <= 1, `${theme} ${width}px: right cell width differs from display:contents baseline`);
-      assert(grid.gap >= 6, `${theme} ${width}px: idle preference/thinking cells have less than 6px between them`);
-      assert(Math.abs(grid.totalWidth - contents.totalWidth) <= 1, `${theme} ${width}px: total pair width differs from display:contents baseline`);
-      console.log(`[topic-dialog-layout] idle pair ${theme} ${width}px: 6px gap; cell geometry matches display:contents within 1px`);
-    }
-  }
 } finally {
   socket?.close();
   if (browser && browser.exitCode === null) {

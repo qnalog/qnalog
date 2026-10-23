@@ -3036,6 +3036,7 @@ export const ZH: MessageTable = {
   "Enter a Claude model name such as claude-sonnet-5-5. Requests go through the compatibility endpoint, so Claude-only features are not used.": "填写 Claude 模型名称，例如 claude-sonnet-5-5。请求走兼容接口，不使用 Claude 专有功能。",
   "Recording transcription (gpt-transcribe) and AI organizing (gpt-6-luna) are configured with a single OpenAI key.": "一把 OpenAI 密钥同时配置录音转写（gpt-transcribe）和 AI 整理（gpt-6-luna）。",
   "AI organizing service": "AI 整理",
+  "Quick: faster replies, less thorough analysis. Reasoning: slower, more thorough. Default: leave it to the service.": "快速：回复更快，分析不那么细。推理：回复更慢，分析更细。默认：交给服务自己决定。",
   "Setup guide": "配置指南",
   "This model uses a different Bailian route, so the transcription settings were switched to match.": "该模型使用百炼的另一条转写路线，转写设置已随之切换。",
   "Speaker recognition for imported audio": "导入音频的说话人识别",

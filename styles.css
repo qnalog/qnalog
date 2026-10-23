@@ -2846,56 +2846,6 @@ button.qnalog-import-category-button {
   opacity: 0.55;
   cursor: default;
 }
-.qnalog-outline-more-body { display: none; }
-/* 「更多设置」展开后是一张分组卡片，内部行做成"标签左 / 当前值右对齐弱化"的紧凑设置行（按设计稿）。 */
-.qnalog-outline-more.is-expanded .qnalog-outline-more-body {
-  display: block;
-  margin-top: 6px;
-  padding: 2px 12px;
-  border: 1px solid color-mix(in srgb, var(--background-modifier-border) 70%, transparent);
-  border-radius: 11px;
-  background: color-mix(in srgb, var(--background-secondary) 45%, transparent);
-}
-.qnalog-outline-more-body .qnalog-outline-control-row {
-  margin-top: 0;
-  padding: 9px 0;
-  border-top: 1px solid color-mix(in srgb, var(--background-modifier-border) 45%, transparent);
-}
-.qnalog-outline-more-body .qnalog-outline-control-row:first-child { border-top: none; }
-/* 折叠区里的触发器：无边框透明、当前值右对齐并弱化，hover 才提亮（区别于顶层带框下拉） */
-.qnalog-outline-more-body .qnalog-outline-menu-trigger {
-  border: none;
-  background: transparent;
-  min-height: 0;
-  padding: 0;
-  justify-content: flex-end;
-}
-.qnalog-outline-more-body .qnalog-outline-menu-trigger:hover { background: transparent; border-color: transparent; }
-.qnalog-outline-more-body .qnalog-ms-label { flex: 0 1 auto; color: var(--text-muted); text-align: right; }
-.qnalog-outline-more-body .qnalog-outline-menu-trigger:hover .qnalog-ms-label { color: var(--text-normal); }
-/* 偏好 + 思考 并排双列（压扁折叠区）：与其它折叠行同样的分隔线 + 上下内边距；每个单元 = 标签左 + 紧凑触发器（值右对齐弱化） */
-.qnalog-outline-more-body .qnalog-outline-control-pair {
-  display: grid;
-  grid-template-columns: 1fr 1fr;
-  gap: 0 14px;
-  padding: 9px 0;
-  border-top: 1px solid color-mix(in srgb, var(--background-modifier-border) 45%, transparent);
-}
-.qnalog-outline-pair-cell {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  min-width: 0;
-}
-.qnalog-outline-pair-cell .qnalog-outline-control-label {
-  flex: 0 0 auto; /* 字号 / 颜色 / 字重 全部继承 is-idle 的 .qnalog-outline-control-label，与 模板/音频/方案 一致 */
-}
-.qnalog-outline-pair-cell .qnalog-outline-select-wrap,
-.qnalog-outline-pair-cell .qnalog-outline-menu-trigger {
-  flex: 1 1 auto;
-  min-width: 0;
-}
-
 /* 自定义菜单（mkSelect 弹出的 Obsidian Menu，挂了 qnalog-ms-menu 类，只影响我们自己的下拉）：
    ① 无图标——隐藏左侧图标占位槽，让文本左对齐、左右留白对称；
    ② 当前项不用色点，只把文字变成主题色来区分，所有项文本起点一致、不被色点顶偏。 */
@@ -8044,9 +7994,7 @@ button.qnalog-vcable-tab {
   color: var(--qnalog-text-tertiary);
 }
 
-/* 折叠容器「更多设置」也是 controls(50px+1fr 两列 grid) 的直接子项，必须跨满整行，
-   否则会被自动塞进 50px 那一列、塌缩成窄条，把折叠区里的下拉触发器裁空（与 control-row 同理）。 */
-.qnalog-outline-head.is-idle .qnalog-outline-more
+/* 操作行是 controls(50px+1fr 两列 grid) 的直接子项，必须跨满整行。 */
 .qnalog-outline-head.is-idle .qnalog-outline-actions {
   grid-column: 1 / -1;
   margin-left: 0;
@@ -10069,45 +10017,6 @@ button.qnalog-pick-item {
   text-overflow: ellipsis;
 }
 
-.qnalog-outline-segment-inline {
-  display: inline-flex;
-  align-items: center;
-  justify-self: end;
-  gap: 4px;
-  min-width: 0;
-  white-space: nowrap;
-}
-
-.qnalog-outline-segment-label,
-.qnalog-outline-segment-unit {
-  color: var(--text-muted);
-  font-size: var(--qnalog-font-ui-smallest);
-  line-height: 1;
-}
-
-button.qnalog-outline-segment-value {
-  min-width: 34px;
-  min-height: 24px;
-  padding: 2px 4px;
-  border: 1px solid color-mix(in srgb, var(--background-modifier-border) 62%, transparent);
-  border-radius: 6px;
-  background: color-mix(in srgb, var(--background-primary) 88%, transparent);
-  color: var(--text-normal);
-  font-size: var(--font-ui-smaller);
-  line-height: 1;
-  text-align: right;
-  cursor: ns-resize;
-}
-
-.qnalog-outline-segment-value:hover {
-  background: var(--background-modifier-hover);
-}
-
-.qnalog-outline-segment-value:focus {
-  border-color: var(--interactive-accent);
-  box-shadow: 0 0 0 2px color-mix(in srgb, var(--interactive-accent) 16%, transparent);
-}
-
 /* Settings tab internal sections. Top-level tabs stay unchanged; each tab body is grouped into collapsible native sections. */
 .qnalog-settings-section {
   margin: 0;
@@ -11041,91 +10950,6 @@ button.qnalog-outline-segment-value {
 
 .qnalog-outline.is-idle-view .qnalog-outline-menu-trigger .qnalog-ms-chev svg {
   stroke-width: 2.6;
-}
-
-.qnalog-outline.is-idle-view .qnalog-outline-more {
-  display: none;
-  flex: 1 1 100%;
-  order: 3;
-  margin: 0;
-}
-
-.qnalog-outline.is-idle-view .qnalog-outline-more.is-expanded {
-  display: block;
-}
-
-.qnalog-outline.is-idle-view .qnalog-outline-more-body {
-  display: grid;
-  grid-template-columns: repeat(2, minmax(0, 1fr));
-  gap: 6px;
-  padding: 0;
-  border: 0;
-  border-radius: 0;
-  background: transparent;
-}
-
-.qnalog-outline.is-idle-view .qnalog-outline-control-pair {
-  display: grid;
-  grid-column: 1 / -1;
-  grid-template-columns: repeat(2, minmax(0, 1fr));
-  gap: 6px;
-  min-width: 0;
-  padding: 0;
-  border: 0;
-}
-
-.qnalog-outline.is-idle-view .qnalog-outline-pair-cell,
-.qnalog-outline.is-idle-view .qnalog-outline-segment-inline {
-  display: flex;
-  align-items: center;
-  min-width: 0;
-  height: 30px;
-  padding: 0 9px;
-  gap: 7px;
-  border: var(--border-width, 1px) solid var(--qnalog-border-line, var(--background-modifier-border));
-  border-radius: 8px;
-  background: var(--background-primary);
-}
-
-.qnalog-outline.is-idle-view .qnalog-outline-scheme-cell {
-  grid-column: 1 / 2;
-}
-
-.qnalog-outline.is-idle-view .qnalog-outline-segment-inline {
-  grid-column: 2 / 3;
-  justify-self: stretch;
-  white-space: nowrap;
-}
-
-.qnalog-outline.is-idle-view .qnalog-outline-segment-label,
-.qnalog-outline.is-idle-view .qnalog-outline-segment-unit {
-  color: var(--qnalog-text-tertiary, var(--text-muted));
-  font-size: var(--qnalog-font-ui-smallest);
-  line-height: 1;
-}
-
-.qnalog-outline.is-idle-view .qnalog-outline-segment-value {
-  flex: 1 1 auto;
-  min-width: 20px;
-  min-height: 0;
-  height: 28px;
-  padding: 0;
-  border: 0;
-  border-radius: 0;
-  background: transparent;
-  box-shadow: none;
-  color: var(--qnalog-text-primary, var(--text-normal));
-  font-size: var(--font-ui-small);
-  font-weight: 550;
-  line-height: 1;
-  text-align: right;
-}
-
-.qnalog-outline.is-idle-view .qnalog-outline-segment-value:hover,
-.qnalog-outline.is-idle-view .qnalog-outline-segment-value:focus {
-  border: 0;
-  background: transparent;
-  box-shadow: none;
 }
 
 .qnalog-outline.is-idle-view .qnalog-outline-actions {

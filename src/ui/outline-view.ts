@@ -24,9 +24,7 @@ import { formatLlmConfigIssue } from "../llm/failure-presentation";
 
 import { DEFAULT_SETTINGS } from "../shared/defaults";
 
-import { applyLlmProfileToWorkingConfig } from "../llm/config";
 
-import { getThinkingControl } from "../llm/thinking";
 
 import { MODE_META } from "../shared/catalog-modes";
 
@@ -203,7 +201,6 @@ export class OutlineView extends obsidian.ItemView {
   /** 录音器状态订阅的取消函数。 */
   declare unsubscribeRecorder: (() => void) | null;
   /** 侧边栏「更多」是否展开。 */
-  declare _sidebarMoreExpanded: boolean;
   /** 纪要列表的搜索关键词。 */
   declare _recentSearch: string;
   constructor(leaf, plugin, topicsUi: TopicsUiPort | null = null, errataUi: ErrataUiPort | null = null, regenerateUi: RegenerateActionsPort | null = null, sedimentUi: SedimentUiPort | null = null) {
@@ -1986,89 +1983,6 @@ export class OutlineView extends obsidian.ItemView {
         if (!capSelect.contains(event.target)) capSelect.click();
       };
     }
-    // 更多设置由主操作行末尾的图标控制；展开区保持两列紧凑布局。
-    const moreWrap = controls.createDiv({ cls: "qnalog-outline-more" + (this._sidebarMoreExpanded ? " is-expanded" : "") });
-    const moreBody = moreWrap.createDiv({ cls: "qnalog-outline-more-body" });
-
-    // API 方案快捷切换：复用设置页「API 方案」(llmProfiles)，侧边栏一键切换整套「转写 + AI 整理」配置。
-    const schemeProfiles = Array.isArray(this.plugin.settings.llmProfiles) ? this.plugin.settings.llmProfiles : [];
-    const schemeCell = moreBody.createDiv({ cls: "qnalog-outline-pair-cell qnalog-outline-scheme-cell" });
-    schemeCell.createSpan({ cls: "qnalog-outline-control-label", text: i18nT("Preset") });
-    mkSelect(schemeCell, {
-      current: this.plugin.settings.activeLlmProfile || "",
-      items: [{ value: "", label: schemeProfiles.length ? i18nT("Temporary configuration (not saved)") : i18nT("Preset not saved · Add it in settings") }]
-        .concat(schemeProfiles.map(p => ({ value: p.id, label: p.name || p.id }))),
-      onPick: async (id) => {
-        if (!id) { this.plugin.settings.activeLlmProfile = ""; await this.plugin.saveSettings(); return; }
-        applyLlmProfileToWorkingConfig(this.plugin.settings, id);
-        await this.plugin.saveSettings();
-        const picked = (this.plugin.settings.llmProfiles || []).find(p => p.id === id);
-        try { new obsidian.Notice(`${i18nT("Switched API configuration:")}${(picked && picked.name) || id}`); } catch { /* intentionally empty */ }
-        this.scheduleUpdate();
-      },
-    });
-
-    const segmentField = moreBody.createDiv({ cls: "qnalog-outline-segment-inline" });
-    segmentField.createSpan({ cls: "qnalog-outline-segment-label", text: i18nT("Segment") });
-    const formatSegmentInterval = (value: number): string => {
-      const normalized = Math.round(value * 10) / 10;
-      return Number.isInteger(normalized) ? String(normalized) : String(normalized);
-    };
-    const segmentValue = segmentField.createEl("button", {
-      cls: "qnalog-outline-segment-value",
-      text: formatSegmentInterval(Number(this.plugin.settings.segmentIntervalMinutes) || 5),
-      attr: {
-        type: "button",
-        "aria-label": i18nT("Transcription segment interval, in minutes"),
-        title: i18nT("Scroll wheel adjusts the segment interval"),
-      },
-    });
-    segmentField.createSpan({ cls: "qnalog-outline-segment-unit", text: i18nT("min") });
-    const setSegmentInterval = async (nextValue: number) => {
-      const clamped = Math.min(30, Math.max(0.5, Math.round(nextValue * 10) / 10));
-      segmentValue.setText(formatSegmentInterval(clamped));
-      if (Number(this.plugin.settings.segmentIntervalMinutes) === clamped) return;
-      this.plugin.settings.segmentIntervalMinutes = clamped;
-      await this.plugin.saveSettings();
-    };
-    const stepSegmentInterval = async (delta: number) => {
-      const current = Number(this.plugin.settings.segmentIntervalMinutes) || 5;
-      await setSegmentInterval(current + delta);
-    };
-    segmentValue.onwheel = (evt) => {
-      evt.preventDefault();
-      segmentValue.focus();
-      void stepSegmentInterval(evt.deltaY > 0 ? -1 : 1);
-    };
-    segmentValue.onkeydown = (evt) => {
-      if (evt.key === "ArrowUp" || evt.key === "ArrowRight") {
-        evt.preventDefault();
-        void stepSegmentInterval(1);
-      } else if (evt.key === "ArrowDown" || evt.key === "ArrowLeft") {
-        evt.preventDefault();
-        void stepSegmentInterval(-1);
-      }
-    };
-
-    // 偏好 + 思考 并排一行（紧凑双列），方案在上独占一行——压扁「更多设置」。
-    const pairRow = moreBody.createDiv({ cls: "qnalog-outline-control-pair" });
-
-    // 思考档（右半）：默认 / 快速 / 推理。仅当前 AI 整理服务支持调节时可选，否则灰掉。
-    const thinkCtrl = getThinkingControl(this.plugin.settings.llmEndpoint, this.plugin.settings.llmModel);
-    const thinkCell = pairRow.createDiv({ cls: "qnalog-outline-pair-cell" });
-    thinkCell.createSpan({ cls: "qnalog-outline-control-label", text: i18nT("Thinking") });
-    mkSelect(thinkCell, {
-      current: this.plugin.settings.thinkingMode || "auto",
-      items: [
-        { value: "fast", label: i18nT("Quick mode") },
-        { value: "auto", label: i18nT("Default mode") },
-        { value: "reasoning", label: i18nT("Reasoning mode") },
-      ],
-      disabled: !thinkCtrl,
-      disabledLabel: i18nT("Not supported"),
-      onPick: async (v) => { this.plugin.settings.thinkingMode = v; await this.plugin.saveSettings(); },
-    });
-
     const actions = controls.createDiv({ cls: "qnalog-outline-actions" });
     const startBtn = actions.createEl("button", { cls: "mod-cta qnalog-outline-action-button is-record", attr: { type: "button" } });
     try { obsidian.setIcon(startBtn.createSpan({ cls: "qnalog-outline-action-icon" }), "mic"); } catch { /* intentionally empty */ }
@@ -2081,17 +1995,6 @@ export class OutlineView extends obsidian.ItemView {
     const importTextBtn = actionCluster.createEl("button", { cls: "qnalog-outline-action-button", attr: { type: "button", title: i18nT("Import text"), "aria-label": i18nT("Import text") } });
     try { obsidian.setIcon(importTextBtn.createSpan({ cls: "qnalog-outline-action-icon" }), "file-text"); } catch { /* intentionally empty */ }
     importTextBtn.onclick = () => new ImportTextModal(this.app, this.plugin).open();
-    const moreBtn = actionCluster.createEl("button", {
-      cls: `qnalog-outline-action-button is-more${this._sidebarMoreExpanded ? " is-active" : ""}`,
-      attr: { type: "button", title: i18nT("More settings"), "aria-label": i18nT("More settings"), "aria-expanded": this._sidebarMoreExpanded ? "true" : "false" },
-    });
-    try { obsidian.setIcon(moreBtn.createSpan({ cls: "qnalog-outline-action-icon" }), "list-filter"); } catch { /* intentionally empty */ }
-    moreBtn.onclick = () => {
-      this._sidebarMoreExpanded = !moreWrap.hasClass("is-expanded");
-      moreWrap.toggleClass("is-expanded", this._sidebarMoreExpanded);
-      moreBtn.toggleClass("is-active", this._sidebarMoreExpanded);
-      moreBtn.setAttribute("aria-expanded", this._sidebarMoreExpanded ? "true" : "false");
-    };
   }
 
   getMeetingMaterialsFolder(session) {
