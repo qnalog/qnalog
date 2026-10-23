@@ -452,13 +452,13 @@ describe("OpenAI 一站式方案与 AI 整理记忆", () => {
     expect(after.activeTranscribeProvider).toBe("openai");
     expect(after.transcribeProviders.openai).toMatchObject({
       apiKey: "sk-openai-new",
-      model: "gpt-4o-transcribe",
+      model: "gpt-transcribe",
       endpoint: "https://api.openai.com/v1/audio/transcriptions",
     });
     expect(after).toMatchObject({
       llmServicePreset: "openai",
       llmEndpoint: "https://api.openai.com/v1",
-      llmModel: "gpt-4.1-mini",
+      llmModel: "gpt-6-luna",
       llmApiKey: "sk-openai-new",
       importSpeakerDiarization: false,
     });

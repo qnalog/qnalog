@@ -60,3 +60,30 @@ describe("getTranscribeRequestTimeoutMs", () => {
       .toBe(300 * 1000);
   });
 });
+
+describe("transcribeAudio language field", () => {
+  async function sentForm(endpoint: string, model: string): Promise<FormData> {
+    const fetchMock = vi.fn(async (_url: string, init: { body: FormData }) => ({
+      ok: true,
+      status: 200,
+      headers: new Headers(),
+      text: async () => JSON.stringify({ text: "ok" }),
+      json: async () => ({ text: "ok" }),
+    }));
+    vi.stubGlobal("window", { fetch: fetchMock, setTimeout: globalThis.setTimeout.bind(globalThis), clearTimeout: globalThis.clearTimeout.bind(globalThis) });
+    try {
+      await transcribeAudio({ settings: {} }, new Blob(["audio"]), "audio/webm", { id: "custom", name: "x", endpoint, apiKey: "k", model, language: "zh" });
+    } finally {
+      vi.unstubAllGlobals();
+    }
+    return fetchMock.mock.calls[0][1].body;
+  }
+
+  it("api.openai.com 上的 gpt-transcribe 系列不发送 language，其它模型与地址照旧发送", async () => {
+    const openai = "https://api.openai.com/v1/audio/transcriptions";
+    expect((await sentForm(openai, "gpt-transcribe")).has("language")).toBe(false);
+    expect((await sentForm(openai, "gpt-live-transcribe")).has("language")).toBe(false);
+    expect((await sentForm(openai, "whisper-1")).get("language")).toBe("zh");
+    expect((await sentForm("https://api.example.com/v1/audio/transcriptions", "gpt-transcribe")).get("language")).toBe("zh");
+  });
+});

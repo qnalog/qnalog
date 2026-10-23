@@ -263,7 +263,7 @@ export class QnALogSettingTab extends obsidian.PluginSettingTab {
   renderDataRiskNotice(parent, variant = "") {
     const cls = ["qnalog-risk-notice", variant].filter(Boolean).join(" ");
     const box = parent.createEl("details", { cls });
-    box.createEl("summary", { cls: "qnalog-risk-title", text: t("AI has not read this note yet") });
+    box.createEl("summary", { cls: "qnalog-risk-title", text: t("Where your data is sent") });
     box.createDiv({
       cls: "qnalog-risk-body",
       text: t("QnALog has no cloud storage of its own and does not upload recordings to a QnALog server; recordings are saved in the local Obsidian vault path you choose. During transcription and AI organizing, the audio, transcript text, and prompts are sent to the currently configured cloud API or local model. For sensitive content, use local transcription and a local LLM, and avoid processing confidential, private, customer, medical, legal, or HR information through a cloud API."),

@@ -121,6 +121,26 @@ export function isAnthropicApiEndpoint(endpoint) {
   }
 }
 
+/** OpenAI 官方地址上的 GPT-5 / GPT-6 / o 系列：这些模型在推理档位不为 none 时不接受 temperature（返回 400）。 */
+export function isOpenAiReasoningModel(endpoint, model) {
+  try {
+    const host = new URL(normalizeLlmEndpoint(endpoint)).hostname.toLowerCase();
+    return host === "api.openai.com" && /^(gpt-[56](?:[.-]|$)|o[1-9](?:-|$))/i.test(String(model || "").trim());
+  } catch {
+    return false;
+  }
+}
+
+/** OpenAI 官方地址上的 gpt-transcribe / gpt-live-transcribe 系列：官方用 languages 取代单数 language，两者不能同时发送，这里改为不发 language。 */
+export function isOpenAiGptTranscribeModel(endpoint, model) {
+  try {
+    const host = new URL(String(endpoint || "")).hostname.toLowerCase();
+    return host === "api.openai.com" && /^gpt-(live-)?transcribe(?:-|$)/i.test(String(model || "").trim());
+  } catch {
+    return false;
+  }
+}
+
 export function isMoonshotKimiModel(endpoint, model) {
   try {
     const url = new URL(normalizeLlmEndpoint(endpoint));

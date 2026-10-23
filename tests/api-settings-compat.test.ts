@@ -117,7 +117,7 @@ describe("Anthropic 兼容接口的请求", () => {
 });
 
 describe("请求体按服务调整", () => {
-  async function sentBody(endpoint: string): Promise<Record<string, unknown>> {
+  async function sentBody(endpoint: string, model = "m"): Promise<Record<string, unknown>> {
     const fetchMock = vi.fn(async (_url: string, init: { body: string }) => ({
       ok: true,
       json: async () => ({ choices: [{ message: { content: "OK" }, finish_reason: "stop" }] }),
@@ -125,7 +125,7 @@ describe("请求体按服务调整", () => {
     }));
     vi.stubGlobal("window", { fetch: fetchMock, setTimeout: globalThis.setTimeout.bind(globalThis), clearTimeout: globalThis.clearTimeout.bind(globalThis) });
     try {
-      await requestLlmChatCompletion({ settings: { llmEndpoint: endpoint, llmApiKey: "k", llmModel: "m", thinkingMode: "auto" } }, [{ role: "user", content: "hi" }], { stream: false });
+      await requestLlmChatCompletion({ settings: { llmEndpoint: endpoint, llmApiKey: "k", llmModel: model, thinkingMode: "auto" } }, [{ role: "user", content: "hi" }], { stream: false });
       return JSON.parse(fetchMock.mock.calls[0][1].body) as Record<string, unknown>;
     } finally {
       vi.unstubAllGlobals();
@@ -135,6 +135,14 @@ describe("请求体按服务调整", () => {
   it("Anthropic 兼容接口不带 temperature（新模型对小于 1 的值返回 400），其它服务保持 0.3", async () => {
     expect(await sentBody("https://api.anthropic.com/v1")).not.toHaveProperty("temperature");
     expect((await sentBody("https://api.openai.com/v1")).temperature).toBe(0.3);
+  });
+
+  it("OpenAI 官方地址上的 GPT-5 / GPT-6 / o 系列不带 temperature；gpt-4.1 与第三方同名模型保持 0.3", async () => {
+    for (const model of ["gpt-6-luna", "gpt-6.1-sol", "gpt-5.5", "o3-mini"]) {
+      expect(await sentBody("https://api.openai.com/v1", model)).not.toHaveProperty("temperature");
+    }
+    expect((await sentBody("https://api.openai.com/v1", "gpt-4.1-mini")).temperature).toBe(0.3);
+    expect((await sentBody("https://api.example.com/v1", "gpt-6-luna")).temperature).toBe(0.3);
   });
 });
 

@@ -46,7 +46,7 @@ const RECORDING_SERVICES: readonly RecordingServiceDef[] = [
   {
     id: "openai",
     label: () => "OpenAI",
-    hint: () => t("gpt-4o-transcribe. Needs access to the OpenAI API."),
+    hint: () => t("gpt-transcribe. Needs access to the OpenAI API."),
     providerIds: ["openai"],
     defaultProviderId: "openai",
   },
