@@ -11252,6 +11252,16 @@ button.qnalog-outline-segment-value {
   padding-top: 0;
 }
 
+/* 悬浮录音按钮（position: fixed）停在侧栏上方时会盖住列表最后几行。
+   按钮显示时，侧栏内容末尾留出 72px（按钮高度 + 尾巴 + 间距），最后一行可以滚到按钮上方。
+   按钮不在侧栏上方时，这段空白只出现在滚动到底之后，不影响其它内容。 */
+body:has(.qnalog-bubble-wrap.is-visible) .qnalog-outline::after {
+  content: "";
+  display: block;
+  flex: 0 0 auto;
+  height: 72px;
+}
+
 /* 问一问、沉淀两个面板自身定义了 12px 的纵向间距，上一条把所有空闲视图分区的 gap 清零后，
    问一问的标题贴着输入框、沉淀的完成卡片贴着下方说明。这里恢复两者原定的间距。 */
 .qnalog-outline > .qnalog-outline-section:is(.qnalog-note-ask, .qnalog-sediment) {
