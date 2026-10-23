@@ -428,6 +428,11 @@ export interface MergeQueueTaskPayload {
   continuationDisposition?: "discard";
   /** A Markdown write conflict requires a user-reviewed, single-task retry. */
   manualRetryRequired?: boolean;
+  /**
+   * Set while the session-finalize run is still executing this organize in the current process.
+   * The task has status "running" so the queue skips it; queue recovery clears this flag after a reload.
+   */
+  liveFinalize?: boolean;
 }
 
 export interface GeneratePromptQueueTaskPayload {

@@ -570,7 +570,7 @@ export class QueueModal extends obsidian.Modal {
     const recoveryEntries = this.plugin.queue && typeof this.plugin.queue.recoveryEntries === "function"
       ? this.plugin.queue.recoveryEntries() : [];
     const retainedOnly = recoveryEntries.length > 0 && allTasks.length === 0;
-    const running = allTasks.filter((t) => t && (t.status === "running" || t.status === "live"));
+    const running = allTasks.filter((t) => t && (t.status === "running" || t.status === "live") && !t.liveFinalize);
     const pending = allTasks.filter((t) => t && t.status !== "running" && t.status !== "live");
     const completed = Array.isArray(this.plugin.tasks.completedWorkLog) ? this.plugin.tasks.completedWorkLog : [];
     const detail = this.plugin.tasks.getCurrentActivityDetail ? this.plugin.tasks.getCurrentActivityDetail() : null;

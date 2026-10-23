@@ -122,7 +122,7 @@ export interface SessionFinalizeRunPort extends SessionShortRecordingPort {
   ensureRealtimeOutline(session: RecordingSession): Promise<unknown>;
   mergeAndPolish(segments: Segment[], mode: string, sessionMeta: SessionMetaForMerge, speakerFrontmatter: Record<string, unknown> | null): Promise<string>;
   clearCommittedBriefingCheckpoint(meta: SessionMetaForMerge): Promise<unknown>;
-  addQueueTask(task: MergeQueueTaskPayload & Partial<QueueTaskLifecycle>): Promise<unknown>;
+  addQueueTask(task: MergeQueueTaskPayload & Partial<QueueTaskLifecycle>): Promise<{ id?: string } | void>;
   requestDeferredAsrRetry(session: RecordingSession): void;
   requestTaskQueueRetry(delayMs: number, reason: string): void;
   beginTaskMeter(): unknown;
@@ -253,6 +253,8 @@ export async function runSessionFinalization(port: SessionFinalizeRunPort, sessi
   let taskMeter: unknown = null;
   let finalSessionMeta: SessionMetaForMerge | null = null;
   let initialMarkdown = "";
+  // Queue task that mirrors the first organize while it runs, so a reload mid-call leaves a retryable task behind.
+  let inFlightTaskId = "";
   try {
     const llmConfigIssue = port.getLlmConfigIssue();
     if (llmConfigIssue) {
@@ -282,6 +284,25 @@ export async function runSessionFinalization(port: SessionFinalizeRunPort, sessi
     if (noteFile instanceof obsidian.TFile) sessionMeta._previousKnowledge = readSessionKnowledge(initialMarkdown);
     finalSessionMeta = sessionMeta;
     port.setProgress(session, { stage: "llm-merge", label: t("AI organizing"), percent: 62, detail: textImport ? t("Sending the imported text to the AI model for structured organizing") : t("Merging the segmented transcriptions into the final note") });
+    if (!session.continuation) {
+      // Persist the organize before the (possibly minutes-long) model call. Status "running" keeps every in-process
+      // queue entry point away from it; queue recovery resets it to "pending" after a reload.
+      try {
+        const persistedMeta: SessionMetaForMerge = { ...sessionMeta };
+        delete persistedMeta._previousKnowledge;
+        delete persistedMeta._taskMeter;
+        const inFlight = await port.addQueueTask({
+          type: "merge", sessionId: session.id, mdPath: session.mdPath, mode: session.mode,
+          status: "running", liveFinalize: true, segments: segmentsForLlm.map(segment => ({ ...segment })),
+          source: session.source || "", sourceMeta: session.sourceMeta || null, externalAudioSource: session.externalAudioSource || null,
+          textImportSources: session.textImportSources || [], speakerFrontmatter, sessionMeta: persistedMeta,
+        });
+        inFlightTaskId = inFlight && inFlight.id || "";
+      } catch (persistError) {
+        try { await port.logDiagnostic("warn", "queue.merge_inflight_persist_failed", t("Could not save the organizing task before the model call; a reload during organizing would not be recovered"), { mdPath: session.mdPath, error: diagnosticError(persistError) }); }
+        catch { /* diagnostics must not change finalization behavior */ }
+      }
+    }
     taskMeter = port.beginTaskMeter();
     sessionMeta._taskMeter = taskMeter;
     session._finalizeTaskMeter = taskMeter;
@@ -312,7 +333,7 @@ export async function runSessionFinalization(port: SessionFinalizeRunPort, sessi
     const errorMessage = (mergeError as { message?: string }).message || (mergeError as { toString(): string }).toString();
     await port.addQueueTask({
       type: "merge", sessionId: session.id, mdPath: session.mdPath, mode: session.mode,
-      status: nonRetryableMergeError ? "blocked" : "pending", segments: segmentsForLlm.map(segment => ({ ...segment })),
+      status: nonRetryableMergeError ? "blocked" : "pending", liveFinalize: undefined, segments: segmentsForLlm.map(segment => ({ ...segment })),
       source: session.source || "", sourceMeta: session.sourceMeta || null, externalAudioSource: session.externalAudioSource || null,
       textImportSources: session.textImportSources || [], speakerFrontmatter, sessionMeta: retrySessionMeta, lastError: errorMessage,
     });
@@ -365,6 +386,15 @@ export async function runSessionFinalization(port: SessionFinalizeRunPort, sessi
     }
     try {
       await port.rewriteConsolidated(writeSession, polished, initialMarkdown);
+      if (inFlightTaskId) {
+        // The note is written; the recovery task is no longer needed. A failure here leaves a task that
+        // re-runs the organize with its checkpoint after a reload, which is safe.
+        try { await port.removeQueueTask(inFlightTaskId); }
+        catch (removeError) {
+          try { await port.logDiagnostic("warn", "queue.merge_inflight_cleanup_failed", t("The note was written, but the saved organizing task could not be removed"), { mdPath: session.mdPath, error: diagnosticError(removeError) }); }
+          catch { /* diagnostics must not change finalization behavior */ }
+        }
+      }
     } catch (writeError) {
       commitError = true;
       mergeError = writeError;
@@ -376,7 +406,8 @@ export async function runSessionFinalization(port: SessionFinalizeRunPort, sessi
         type: "merge", sessionId: session.id, mdPath: session.mdPath, mode: session.mode,
         segments: segmentsForLlm.map(segment => ({ ...segment })), source: session.source || "", sourceMeta: session.sourceMeta || null,
         externalAudioSource: session.externalAudioSource || null, textImportSources: session.textImportSources || [], speakerFrontmatter,
-        ...(writeError instanceof NoteMarkdownConflictError ? { status: "blocked", manualRetryRequired: true } : {}),
+        liveFinalize: undefined,
+        ...(writeError instanceof NoteMarkdownConflictError ? { status: "blocked", manualRetryRequired: true } : { status: "pending" }),
         sessionMeta: finalSessionMeta, lastError: t("Failed to write the notes: {0}").replace("{0}", getErrorMessage(writeError)),
       });
       if (!(writeError instanceof NoteMarkdownConflictError)) {
