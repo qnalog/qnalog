@@ -10,7 +10,7 @@ import { getEffectivePolishMode, getModeDisplayName, getModeMeta, getVisibleMode
 import { renderApiTab } from "./settings-api-tab";
 import { UI_LANGUAGES, getActiveUiLanguage, t } from '../shared/i18n';
 import { getActiveLlmServicePresetId, getLlmServicePreset } from '../llm/config';
-import { defaultQuickSetupProviderId, listQuickSetupProviders } from "../setup/service-catalog";
+import { currentLlmServiceLabel, currentRecordingServiceLabel, defaultQuickSetupProviderId, listQuickSetupProviders } from "../setup/service-catalog";
 import { testLlmConnection } from '../llm/core';
 import { isDashScopeFlashNoWordsError } from "../asr/dashscope-flash-asr";
 import { normalizeAsrConcurrency, resolveTranscribeProvider, transcribeAudio } from '../asr/transcribe';
@@ -532,7 +532,7 @@ export class QnALogSettingTab extends obsidian.PluginSettingTab {
     const status = buildSetupStatus({
       speakerEnabled,
       transcribe: {
-        value: transcribeServiceIssue || (transcribeProfile.title || transcribeProviderId),
+        value: transcribeServiceIssue || currentRecordingServiceLabel(this.plugin.settings),
         detail: transcribeServiceIssue ? "" : (transcribeProvider.model || ""),
         issue: transcribeServiceIssue,
       },
@@ -597,12 +597,11 @@ export class QnALogSettingTab extends obsidian.PluginSettingTab {
    *
    * 用 getActiveLlmServicePresetId 而不是直接读 llmServicePreset：用户可能在
    * 设置页改过接口地址，此时预设 id 还是旧的，直接读会报出一个并非在用的服务名。
-   * 认不出预设就报出接口主机名，不凭空编造。
+   * 认得出预设时用 API 页选择器里的同一个名称；认不出就报出接口主机名，不凭空编造。
    */
   getLlmServiceLabel() {
     const id = getActiveLlmServicePresetId(this.plugin.settings);
-    const preset = id ? getLlmServicePreset(id) : null;
-    if (preset && preset.label) return preset.label;
+    if (id && getLlmServicePreset(id)) return currentLlmServiceLabel(this.plugin.settings);
     try {
       return new URL(String(this.plugin.settings.llmEndpoint || "")).host;
     } catch {
@@ -1255,17 +1254,18 @@ export class QnALogSettingTab extends obsidian.PluginSettingTab {
           await this.plugin.saveSettings();
         }));
 
-    new obsidian.Setting(c).setName(t("Reorganization Preference Prompt"))
+    // 输入框与展开说明放进同一个设置项卡片里，不在卡片外另起一块。
+    const repolishSetting = new obsidian.Setting(c).setName(t("Reorganization Preference Prompt"))
       .setDesc(t("Affects only the preference items under \"Generate derived version\" in the right-click menu. Preferences adjust the level of detail, structure, tone, and whether AI may add a moderate amount of its own points. What you enter here is an additional rule and does not overwrite the built-in prompt."));
-    const repolishPromptTa = c.createEl("textarea", { cls: "qnalog-textarea" });
+    const repolishPromptTa = repolishSetting.infoEl.createEl("textarea", { cls: "qnalog-textarea" });
     repolishPromptTa.value = this.plugin.settings.repolishPreferencePromptAddendum || "";
     repolishPromptTa.placeholder = t("For example: with moderate expansion, when the source raises a concept, question, or clear disagreement, add a short AI-supplement callout for perspective; use ==highlight== for key concepts and <u>underline</u> for core judgments. Do not fabricate facts, data, or owners.");
     repolishPromptTa.rows = 4;
-    repolishPromptTa.addEventListener("change", async () => {
+    repolishPromptTa.addEventListener("change", () => {
       this.plugin.settings.repolishPreferencePromptAddendum = repolishPromptTa.value.trim();
-      await this.plugin.saveSettings();
+      void this.plugin.saveSettings();
     });
-    const repolishPresetHint = c.createEl("details", { cls: "qnalog-setting-details" });
+    const repolishPresetHint = repolishSetting.infoEl.createEl("details", { cls: "qnalog-setting-details" });
     repolishPresetHint.createEl("summary", { text: t("View the prompt direction for built-in preferences") });
     const presetText = [
       t("Style preference:"),
@@ -1320,14 +1320,14 @@ export class QnALogSettingTab extends obsidian.PluginSettingTab {
         .addToggle(t => t.setValue(this.plugin.settings.briefingKeepOriginalTerms !== false)
           .onChange(async v => { this.plugin.settings.briefingKeepOriginalTerms = v; await this.plugin.saveSettings(); }));
 
-      new obsidian.Setting(c).setName(t("Additional Language Requirements"));
-      const langTa = c.createEl("textarea", { cls: "qnalog-textarea" });
+      const langSetting = new obsidian.Setting(c).setName(t("Additional Language Requirements"));
+      const langTa = langSetting.infoEl.createEl("textarea", { cls: "qnalog-textarea" });
       langTa.value = this.plugin.settings.briefingLanguageInstruction || "";
       langTa.placeholder = t("For example: keep Japanese speech in the original with a parenthetical gloss; keep English terms as-is; output in Traditional Chinese.");
       langTa.rows = 3;
-      langTa.addEventListener("change", async () => {
+      langTa.addEventListener("change", () => {
         this.plugin.settings.briefingLanguageInstruction = langTa.value.trim();
-        await this.plugin.saveSettings();
+        void this.plugin.saveSettings();
       });
     }
 

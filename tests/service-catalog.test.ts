@@ -8,7 +8,9 @@ import { resolveBailianAsrRoute } from "../src/asr/bailian-asr-registry";
 import {
   bailianRecordingProviderIdForModel,
   currentLlmServiceId,
+  currentLlmServiceLabel,
   currentRecordingServiceId,
+  currentRecordingServiceLabel,
   defaultQuickSetupProviderId,
   listLlmServices,
   listQuickSetupProviders,
@@ -129,6 +131,23 @@ describe("AI 整理目录", () => {
 
   it("Claude 预设使用兼容接口地址", () => {
     expect((getLlmServicePreset("anthropic") as { endpoint: string }).endpoint).toBe("https://api.anthropic.com/v1");
+  });
+});
+
+describe("当前服务名称（首页使用状态与 API 页一致）", () => {
+  it("录音转写：custom 显示为目录名「本地 / 自定义」，而不是服务配置里的英文名", () => {
+    const s = fresh();
+    s.activeTranscribeProvider = "custom";
+    expect(currentRecordingServiceLabel(s)).toBe("Local / custom (OpenAI-compatible)");
+    s.activeTranscribeProvider = "apimimo";
+    expect(currentRecordingServiceLabel(s)).toContain("Legacy (still works)");
+  });
+
+  it("AI 整理：与选择器里当前项的名称相同", () => {
+    const settings = { llmEndpoint: "https://api.openai.com/v1", llmServicePreset: "openai" };
+    const current = listLlmServices(settings).find((item) => item.id === currentLlmServiceId(settings));
+    expect(currentLlmServiceLabel(settings)).toBe(current?.label);
+    expect(currentLlmServiceLabel({ llmEndpoint: "http://192.168.1.9:8000/v1", llmServicePreset: "" })).toBe("Local / custom (OpenAI-compatible)");
   });
 });
 

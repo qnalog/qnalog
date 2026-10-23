@@ -6138,7 +6138,8 @@ button.qnalog-object-overview-card {
 .qnalog-object-overview-desc {
   position: relative;
   z-index: 1;
-  max-width: 9.5em;
+  /* 右下角图标是 9% 不透明度的底纹，文字只需略微避让；原先 9.5em 让一行能放下的说明折成三行。 */
+  max-width: calc(100% - 24px);
   margin-top: var(--size-4-3);
   color: var(--text-muted);
   font-size: var(--font-ui-smaller);
@@ -10324,6 +10325,119 @@ button.qnalog-outline-segment-value {
   max-width: none;
   justify-self: stretch;
   justify-content: flex-start;
+}
+
+/* 设置页字号层级（与 Obsidian 原生设置页一致）：
+   区块标题 = font-ui-medium + semibold（原生分组标题）；
+   设置项名称 = font-ui-small，正常色；
+   说明、提示、展开链接 = font-ui-smaller，muted。
+   原先区块标题与设置项名称同为 font-ui-small，只差字重，两级看起来一样大。 */
+.qnalog-settings-section-title,
+.qnalog-api-card-head .qnalog-provider-title {
+  font-size: var(--font-ui-medium);
+  font-weight: var(--font-semibold);
+  line-height: var(--line-height-tight);
+}
+
+.qnalog-settings-section-summary::before {
+  font-size: var(--font-ui-medium);
+}
+
+/* 展开式说明（数据发送到哪里、配置指南、查看内置提示词）统一为一种弱链接样式。 */
+.qnalog-setting-details summary,
+.qnalog-risk-title,
+.qnalog-api-guide-summary {
+  width: fit-content;
+  color: var(--text-muted);
+  font-size: var(--font-ui-smaller);
+  font-weight: var(--font-medium);
+  cursor: pointer;
+}
+
+.qnalog-setting-details summary:hover,
+.qnalog-risk-title:hover,
+.qnalog-api-guide-summary:hover {
+  color: var(--text-normal);
+}
+
+/* 撑满控制列的下拉框：文字靠左，与同列的文本输入框对齐（原生下拉框是按内容宽度靠右放的）。 */
+.qnalog-settings-content select.dropdown {
+  text-align: start;
+  text-align-last: start;
+}
+
+/* 设置项卡片里的多行输入框与展开说明：占满卡片宽度，排在说明文字下方。 */
+.qnalog-settings-content .setting-item-info > .qnalog-textarea {
+  display: block;
+  margin: var(--size-4-2) 0 0;
+  font-family: inherit;
+  font-size: var(--font-ui-small);
+}
+
+.qnalog-settings-content .setting-item-info > .qnalog-setting-details {
+  margin: var(--size-4-2) 0 0;
+  padding: 0;
+}
+
+/* 录音 › 音频输入：与同页其他设置项一样放在卡片里；字段标签用设置项名称的字号与颜色。 */
+.qnalog-settings-content .qnalog-audio-input-card {
+  padding: var(--size-4-4);
+  border-radius: var(--setting-items-radius, var(--radius-l));
+  background: var(--setting-items-background, var(--background-primary-alt));
+}
+
+.qnalog-settings-content .qnalog-audio-input-label {
+  color: var(--text-normal);
+  font-size: var(--font-ui-small);
+  font-weight: var(--font-normal);
+}
+
+/* 控制列里只有开关或按钮时，不给控件预留 280px：控件按内容宽度，说明文字占满剩余宽度，避免三四行折行。 */
+.qnalog-settings-section-body > .setting-item:not(.setting-item-heading):not(:has(> .setting-item-control :is(input:not([type="checkbox"]), select, textarea))),
+.qnalog-api-fields > .setting-item:not(.setting-item-heading):not(:has(> .setting-item-control :is(input:not([type="checkbox"]), select, textarea))) {
+  grid-template-columns: minmax(0, 1fr) auto;
+}
+
+.qnalog-settings-section-body > .setting-item:not(:has(> .setting-item-control :is(input:not([type="checkbox"]), select, textarea))) > .setting-item-control,
+.qnalog-api-fields > .setting-item:not(:has(> .setting-item-control :is(input:not([type="checkbox"]), select, textarea))) > .setting-item-control {
+  width: auto;
+}
+
+/* 首页：Obsidian 给设置页里的 h2/h3 加了 16px 左右内边距，标题因此比正文缩进一截。 */
+.qnalog-settings-content .qnalog-home-title-line h2,
+.qnalog-settings-content .qnalog-home-block h3 {
+  padding-inline: 0;
+}
+
+.qnalog-settings-content .qnalog-home-block h3 {
+  margin-bottom: 0;
+  color: var(--text-normal);
+  font-size: var(--font-ui-medium);
+  font-weight: var(--font-semibold);
+}
+
+/* 使用状态：结论一行（加粗）→ 每项名称（正常色）→ 服务名与模型（muted / faint），逐级减弱。 */
+.qnalog-settings-content .qnalog-status-headline {
+  font-size: var(--font-ui-small);
+}
+
+.qnalog-settings-content .qnalog-status-detail {
+  margin-top: var(--size-2-1);
+  font-size: var(--font-ui-smaller);
+}
+
+.qnalog-settings-content .qnalog-status-row-label {
+  font-weight: var(--font-medium);
+}
+
+.qnalog-settings-content .qnalog-status-row-value {
+  margin-top: 2px;
+  color: var(--text-muted);
+  font-size: var(--font-ui-smaller);
+}
+
+.qnalog-settings-content .qnalog-status-row-detail {
+  color: var(--text-faint);
 }
 
 /* API 标签：语音转写 / AI 整理两张卡片、进阶区块。

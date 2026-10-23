@@ -119,6 +119,15 @@ export function listRecordingServices(
   return list;
 }
 
+/** 当前录音转写服务在 API 页选择器里显示的名称；首页「使用状态」用同一个名称。 */
+export function currentRecordingServiceLabel(
+  settings: Pick<PluginSettings, "activeTranscribeProvider" | "transcribeProviders">,
+): string {
+  const id = currentRecordingServiceId(settings);
+  const item = listRecordingServices(settings).find((service) => service.id === id);
+  return item ? item.label : id;
+}
+
 /**
  * 选择某个录音转写服务应写入的字段（只有 activeTranscribeProvider，不改任何服务配置）。
  * 当前 provider 已属于该目录项时保持不变，避免把百炼的流式或旧版路线改回默认。
@@ -283,6 +292,15 @@ export function listLlmServices(
     list.push({ id: currentId, label: legacyLabel(preset ? preset.label : currentId), hint: "", legacy: true });
   }
   return list;
+}
+
+/** 当前 AI 整理服务在 API 页选择器里显示的名称。 */
+export function currentLlmServiceLabel(
+  settings: Pick<PluginSettings, "llmEndpoint" | "llmServicePreset">,
+): string {
+  const id = currentLlmServiceId(settings);
+  const item = listLlmServices(settings).find((service) => service.id === id);
+  return item ? item.label : id;
 }
 
 // ---------------------------------------------------------------- 快速配置
