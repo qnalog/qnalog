@@ -2465,7 +2465,10 @@ export class BubbleWidget {
   mount(ribbonEl) {
     if (this.wrapEl) return;
     this.ribbonEl = ribbonEl || null;
-    const wrapEl = activeDocument.body.createDiv({ cls: "qnalog-bubble-wrap" });
+    // 悬浮按钮属于主窗口。Obsidian 1.14 的设置页是独立窗口，从设置里打开开关时 activeDocument 指向设置窗口，
+    // 按钮会跟着设置窗口一起关闭；因此挂到功能区图标所在的文档（主窗口）。
+    const doc = (ribbonEl && ribbonEl.ownerDocument) || activeDocument;
+    const wrapEl = doc.body.createDiv({ cls: "qnalog-bubble-wrap" });
     const el = wrapEl.createDiv({ cls: "qnalog-bubble is-idle" });
     this.wrapEl = wrapEl;
     this.el = el;
