@@ -11227,7 +11227,8 @@ button.qnalog-outline-segment-value {
   background: transparent;
   box-shadow: none;
   color: var(--qnalog-text-secondary, var(--text-muted));
-  font-size: var(--font-ui-small);
+  /* 主导航标签：默认设置下 14px，随 Obsidian 字号缩放 */
+  font-size: calc(var(--font-ui-small) * 14 / 13);
   font-weight: 500;
 }
 
