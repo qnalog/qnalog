@@ -13,7 +13,6 @@ const PX_ALLOWLIST: Array<{ selector: string; reason: string }> = [
   { selector: ".qnalog-sediment-pipeline-circle", reason: "digit inside a fixed 24px circle" },
   { selector: "qnalog-outline-leading-time", reason: "time label in a fixed 42px column" },
   { selector: ".qnalog-outline-recent-filter-badge", reason: "digit inside a fixed 16px badge" },
-  { selector: ".bases-view", reason: "block under edit in another session" },
 ];
 
 function stripComments(css: string): string {

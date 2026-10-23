@@ -7908,7 +7908,7 @@ button.qnalog-vcable-tab {
 .qnalog-base-view .bases-view .bases-cards-item .bases-cards-property-name,
 .qnalog-base-view .bases-view .bases-cards-item [class*="property-name"],
 .qnalog-base-view .bases-view .bases-cards-item [class*="property-key"] {
-  font-size: 11px;
+  font-size: var(--qnalog-font-ui-smallest);
   line-height: 1.25;
   color: var(--text-faint);
   letter-spacing: 0;
@@ -10818,7 +10818,8 @@ button.qnalog-outline-segment-value {
   min-width: 0;
   gap: 8px;
   color: var(--text-normal);
-  font-size: var(--font-ui-large);
+  /* 默认设置下 18px（15 × 1.2），随 Obsidian 字号缩放 */
+  font-size: calc(var(--font-ui-medium) * 1.2);
   font-weight: 600;
   line-height: 1.2;
 }
