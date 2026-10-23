@@ -2887,11 +2887,11 @@ export class OutlineView extends obsidian.ItemView {
     const filters = this.getRecentFilters();
     const actions = box.createDiv({ cls: "qnalog-outline-recent-filter-empty-actions" });
     if (filters.time === "today") {
-      const widen = actions.createEl("button", { text: i18nT("Show this week"), attr: { type: "button" } });
+      const widen = actions.createEl("button", { cls: "qnalog-text-action", text: i18nT("Show this week"), attr: { type: "button" } });
       widen.addEventListener("click", () => this.setRecentFilter("time", "week"));
     }
     if (this.hasActiveRecentFilters()) {
-      const clear = actions.createEl("button", { text: i18nT("Clear all filters"), attr: { type: "button" } });
+      const clear = actions.createEl("button", { cls: "qnalog-text-action", text: i18nT("Clear all filters"), attr: { type: "button" } });
       clear.addEventListener("click", () => this.resetRecentFilters());
     }
   }
