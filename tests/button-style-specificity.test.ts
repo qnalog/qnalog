@@ -19,12 +19,12 @@ function buttonClasses(): Set<string> {
   const classes = new Set<string>();
   for (const file of sourceFiles("src")) {
     const source = readFileSync(file, "utf8");
-    for (const match of source.matchAll(/createEl\(\s*"button"\s*,\s*\{([^}]*)\}/g)) {
-      const cls = /cls:\s*[`"']([^`"']+)[`"']/.exec(match[1])?.[1];
-      if (!cls || cls.includes("clickable-icon")) continue;
-      for (const name of cls.replace(/\$\{[^}]*\}/g, " ").split(/\s+/)) {
-        if (name.startsWith("qnalog-")) classes.add(name);
-      }
+    // The options object may contain `${...}` in a template-literal class, so read up to the closing quote
+    // of `cls:` instead of up to the first `}`.
+    for (const match of source.matchAll(/createEl\(\s*"button"\s*,\s*\{\s*(?:[\w]+:[^,]*,\s*)*?cls:\s*([`"'])([\s\S]*?)\1/g)) {
+      const cls = match[2];
+      if (cls.includes("clickable-icon")) continue;
+      for (const name of cls.match(/qnalog-[\w-]+/g) || []) classes.add(name);
     }
   }
   return classes;

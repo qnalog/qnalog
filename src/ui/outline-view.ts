@@ -723,7 +723,9 @@ export class OutlineView extends obsidian.ItemView {
     const box = sec.createDiv({ cls: "qnalog-empty-state" });
     const iconWrap = box.createDiv({ cls: "qnalog-empty-state-icon" });
     try { obsidian.setIcon(iconWrap, "history"); } catch { /* intentionally empty */ }
-    box.createDiv({ cls: "qnalog-empty-state-title", text: i18nT("This note has no outline or playback timeline to restore.") });
+    // 与其它空态一致：一行短标题 + 一行说明，而不是整句加粗。
+    box.createDiv({ cls: "qnalog-empty-state-title", text: i18nT("No outline for this note") });
+    box.createDiv({ cls: "qnalog-empty-state-desc", text: i18nT("This note has no outline or playback timeline to restore.") });
   }
 
   getAskState(file) {

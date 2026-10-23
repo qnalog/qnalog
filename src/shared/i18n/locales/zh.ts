@@ -1285,6 +1285,7 @@ export const ZH: MessageTable = {
   "This meeting has been distilled": "这场会沉淀完了",
   "This suggestion cannot be ignored right now": "这条建议暂时无法忽略",
   "This suggestion cannot be restored right now": "这条建议暂时无法恢复",
+  "No outline for this note": "这篇笔记没有大纲",
   "This note has no outline or playback timeline to restore.": "这篇笔记没有可恢复的大纲或回听时间轴。",
   "This note still contains transcription or cleanup failure markers": "这篇笔记仍含有转写或整理失败标记",
   "This note did not save a live outline.": "这篇笔记没有保存实时大纲。",
