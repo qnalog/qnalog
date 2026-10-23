@@ -14,6 +14,11 @@
    0. 共享控件
    ============================================================ */
 
+/* Obsidian 没有比 --font-ui-smaller 更小的界面字号；默认设置下为 11px，随 --font-ui-smaller 缩放 */
+body {
+  --qnalog-font-ui-smallest: calc(var(--font-ui-smaller) * 11 / 12);
+}
+
 /* 文字操作按钮：在一行说明文字里以链接样式出现的按钮。
    Obsidian 的 button 基础样式带 height: var(--input-height)、--input-shadow 与悬停底色，
    三者在这里清掉，按钮才能与同行文字对齐、不显得比文字重。 */
@@ -397,7 +402,7 @@ button.qnalog-bubble-btn {
   background: var(--background-primary);
   border: 1px solid var(--background-modifier-border);
   color: var(--text-accent);
-  font-size: 10px;
+  font-size: 10px; /* 「+」符号字形放在 12px 固定圆内，放大会溢出 */
   font-weight: 600;
   line-height: 10px;
   text-align: center;
@@ -478,12 +483,12 @@ body .qnalog-bubble-wrap .qnalog-bubble button.qnalog-bubble-btn.is-stop-icon::b
 .qnalog-progress-head { padding: 20px 22px 15px; }
 .qnalog-progress-title-row { display: flex; align-items: baseline; gap: 10px; }
 .qnalog-progress-title {
-  font-size: 16px;
+  font-size: var(--font-ui-medium);
   font-weight: 700;
   letter-spacing: 0;
   color: var(--text-normal);
 }
-.qnalog-progress-state { font-size: 12.5px; color: var(--text-muted); }
+.qnalog-progress-state { font-size: var(--font-ui-smaller); color: var(--text-muted); }
 .qnalog-progress-state.is-running,
 .qnalog-progress-state.is-waiting {
   color: var(--interactive-accent);
@@ -549,10 +554,10 @@ body .qnalog-bubble-wrap .qnalog-bubble button.qnalog-bubble-btn.is-stop-icon::b
   gap: 10px;
   margin-top: 7px;
 }
-.qnalog-progress-summary-left { font-size: 11.5px; color: var(--text-muted); }
+.qnalog-progress-summary-left { font-size: var(--qnalog-font-ui-smallest); color: var(--text-muted); }
 .qnalog-progress-summary-right {
   flex: 0 0 auto;
-  font-size: 11.5px;
+  font-size: var(--qnalog-font-ui-smallest);
   color: var(--text-faint);
   font-variant-numeric: tabular-nums;
   text-align: right;
@@ -572,7 +577,7 @@ body .qnalog-bubble-wrap .qnalog-bubble button.qnalog-bubble-btn.is-stop-icon::b
 .qnalog-progress-section-title {
   margin: var(--size-4-3) 0 var(--size-2-2);
   color: var(--text-faint);
-  font-size: var(--font-ui-smallest);
+  font-size: var(--qnalog-font-ui-smallest);
   font-weight: var(--font-semibold);
 }
 .qnalog-progress-section-title:first-child {
@@ -672,7 +677,7 @@ body .qnalog-bubble-wrap .qnalog-bubble button.qnalog-bubble-btn.is-stop-icon::b
 .qnalog-progress-activity-stage {
   min-width: 0;
   color: var(--text-muted);
-  font-size: var(--font-ui-smallest);
+  font-size: var(--qnalog-font-ui-smallest);
   line-height: var(--line-height-tight);
   overflow: hidden;
   text-overflow: ellipsis;
@@ -680,7 +685,7 @@ body .qnalog-bubble-wrap .qnalog-bubble button.qnalog-bubble-btn.is-stop-icon::b
 }
 .qnalog-progress-activity-state {
   color: var(--text-faint);
-  font-size: var(--font-ui-smallest);
+  font-size: var(--qnalog-font-ui-smallest);
   white-space: nowrap;
 }
 .qnalog-progress-activity-state.is-running,
@@ -731,7 +736,7 @@ body .qnalog-bubble-wrap .qnalog-bubble button.qnalog-bubble-btn.is-stop-icon::b
 .qnalog-progress-activity-progress-label {
   margin-top: var(--size-2-1);
   color: var(--text-faint);
-  font-size: var(--font-ui-smallest);
+  font-size: var(--qnalog-font-ui-smallest);
   font-variant-numeric: tabular-nums;
   text-align: right;
 }
@@ -746,7 +751,7 @@ body .qnalog-bubble-wrap .qnalog-bubble button.qnalog-bubble-btn.is-stop-icon::b
   align-items: baseline;
   gap: var(--size-2-1);
   min-width: 0;
-  font-size: var(--font-ui-smallest);
+  font-size: var(--qnalog-font-ui-smallest);
 }
 .qnalog-progress-activity-fact-label {
   color: var(--text-faint);
@@ -787,7 +792,7 @@ body .qnalog-bubble-wrap .qnalog-bubble button.qnalog-bubble-btn.is-stop-icon::b
 .qnalog-progress-activity-error-message,
 .qnalog-progress-activity-error-hint {
   margin-top: var(--size-2-1);
-  font-size: var(--font-ui-smallest);
+  font-size: var(--qnalog-font-ui-smallest);
   line-height: var(--line-height-tight);
   overflow-wrap: anywhere;
 }
@@ -854,7 +859,7 @@ body .qnalog-bubble-wrap .qnalog-bubble button.qnalog-bubble-btn.is-stop-icon::b
 .qnalog-progress-name {
   flex: 1 1 0;
   min-width: 0;
-  font-size: 13.5px;
+  font-size: var(--font-ui-small);
   font-weight: 600;
   color: var(--text-normal);
   white-space: nowrap;
@@ -864,14 +869,14 @@ body .qnalog-bubble-wrap .qnalog-bubble button.qnalog-bubble-btn.is-stop-icon::b
 .qnalog-progress-name.is-faint { color: var(--text-faint); }
 .qnalog-progress-right {
   flex: 0 0 auto;
-  font-size: 11px;
+  font-size: var(--qnalog-font-ui-smallest);
   color: var(--text-muted);
   font-variant-numeric: tabular-nums;
 }
 .qnalog-progress-right.is-faint { color: var(--text-faint); }
 .qnalog-progress-sub {
   margin-top: 3px;
-  font-size: 11.5px;
+  font-size: var(--qnalog-font-ui-smallest);
   color: var(--text-muted);
   overflow: hidden;
   text-overflow: ellipsis;
@@ -947,7 +952,7 @@ body .qnalog-bubble-wrap .qnalog-bubble button.qnalog-bubble-btn.is-stop-icon::b
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  font-size: var(--font-ui-smallest);
+  font-size: var(--qnalog-font-ui-smallest);
   font-variant-numeric: tabular-nums;
 }
 .qnalog-progress-stage-marker svg {
@@ -998,7 +1003,7 @@ body .qnalog-bubble-wrap .qnalog-bubble button.qnalog-bubble-btn.is-stop-icon::b
 }
 .qnalog-progress-stage-summary-text {
   min-width: 0;
-  font-size: var(--font-ui-smallest);
+  font-size: var(--qnalog-font-ui-smallest);
   line-height: var(--line-height-tight);
   color: var(--text-faint);
   white-space: nowrap;
@@ -1015,7 +1020,7 @@ body .qnalog-bubble-wrap .qnalog-bubble button.qnalog-bubble-btn.is-stop-icon::b
 .qnalog-progress-stage-state,
 .qnalog-progress-request-state {
   flex: 0 0 auto;
-  font-size: var(--font-ui-smallest);
+  font-size: var(--qnalog-font-ui-smallest);
   color: var(--text-faint);
   white-space: nowrap;
 }
@@ -1058,7 +1063,7 @@ body .qnalog-bubble-wrap .qnalog-bubble button.qnalog-bubble-btn.is-stop-icon::b
   display: inline-flex;
   align-items: baseline;
   gap: var(--size-2-1);
-  font-size: var(--font-ui-smallest);
+  font-size: var(--qnalog-font-ui-smallest);
 }
 .qnalog-progress-stage-fact-label {
   color: var(--text-faint);
@@ -1070,7 +1075,7 @@ body .qnalog-bubble-wrap .qnalog-bubble button.qnalog-bubble-btn.is-stop-icon::b
 .qnalog-progress-section-label {
   margin: var(--size-4-3) 0 var(--size-2-2);
   color: var(--text-muted);
-  font-size: var(--font-ui-smallest);
+  font-size: var(--qnalog-font-ui-smallest);
   font-weight: var(--font-semibold);
 }
 .qnalog-progress-request-list {
@@ -1105,12 +1110,12 @@ body .qnalog-bubble-wrap .qnalog-bubble button.qnalog-bubble-btn.is-stop-icon::b
 .qnalog-progress-request-attempt {
   margin-right: auto;
   color: var(--text-faint);
-  font-size: var(--font-ui-smallest);
+  font-size: var(--qnalog-font-ui-smallest);
 }
 .qnalog-progress-request-meta,
 .qnalog-progress-request-error {
   margin-top: var(--size-2-1);
-  font-size: var(--font-ui-smallest);
+  font-size: var(--qnalog-font-ui-smallest);
   line-height: var(--line-height-tight);
   word-break: break-word;
 }
@@ -1125,7 +1130,7 @@ body .qnalog-bubble-wrap .qnalog-bubble button.qnalog-bubble-btn.is-stop-icon::b
   grid-template-columns: minmax(72px, max-content) minmax(0, 1fr);
   gap: var(--size-2-1) var(--size-4-2);
   padding: 3px 0;
-  font-size: var(--font-ui-smallest);
+  font-size: var(--qnalog-font-ui-smallest);
 }
 .qnalog-progress-event-time {
   color: var(--text-muted);
@@ -1192,7 +1197,7 @@ body .qnalog-bubble-wrap .qnalog-bubble button.qnalog-bubble-btn.is-stop-icon::b
 .qnalog-progress-background-hint {
   margin-top: var(--size-2-1);
   color: var(--text-faint);
-  font-size: var(--font-ui-smallest);
+  font-size: var(--qnalog-font-ui-smallest);
   line-height: var(--line-height-tight);
 }
 .qnalog-progress-foot {
@@ -1954,7 +1959,7 @@ button.qnalog-import-category-button {
 }
 .qnalog-outline-annotation-ai-label {
   display: inline-block;
-  font-size: 9.5px;
+  font-size: var(--qnalog-font-ui-smallest);
   font-weight: 600;
   letter-spacing: 0.05em;
   color: color-mix(in srgb, var(--text-faint) 70%, var(--text-accent));
@@ -2122,7 +2127,7 @@ button.qnalog-import-category-button {
 .qnalog-meeting-composer.is-mobile .qnalog-meeting-composer-input {
   min-height: 40px;
   border-radius: 20px;
-  font-size: 16px;
+  font-size: 16px; /* 移动端输入框字号低于 16px 时 iOS 会自动放大页面 */
   padding: 8px 10px;
 }
 
@@ -2773,7 +2778,7 @@ button.qnalog-import-category-button {
 
 .qnalog-outline-head.is-idle .qnalog-outline-title {
   color: color-mix(in srgb, var(--text-normal) 82%, var(--text-accent) 18%);
-  font-size: 22px;
+  font-size: calc(var(--font-ui-large) * 1.1);
   font-weight: 760;
 }
 
@@ -2791,7 +2796,7 @@ button.qnalog-import-category-button {
 
 .qnalog-outline-head.is-idle .qnalog-outline-control-label {
   color: color-mix(in srgb, var(--text-muted) 80%, var(--text-normal) 20%);
-  font-size: 16px;
+  font-size: var(--font-ui-medium);
 }
 
 .qnalog-outline-select-wrap {
@@ -2811,7 +2816,7 @@ button.qnalog-import-category-button {
   border-radius: 9px;
   background: transparent;
   color: var(--qnalog-text-primary, var(--text-normal));
-  font-size: 13px;
+  font-size: var(--font-ui-small);
   font-weight: 500;
   cursor: pointer;
   min-width: 0;
@@ -2957,7 +2962,7 @@ body .qnalog-menu .menu-item.selected .menu-item-icon {
   border-radius: 8px;
   background: color-mix(in srgb, var(--background-primary) 94%, var(--background-secondary) 6%);
   color: color-mix(in srgb, var(--text-normal) 78%, var(--text-accent) 22%);
-  font-size: 12px;
+  font-size: var(--font-ui-smaller);
   font-weight: 500;
   box-shadow: none;
 }
@@ -2972,7 +2977,7 @@ body .qnalog-menu .menu-item.selected .menu-item-icon {
   color: var(--text-on-accent);
   border-color: transparent;
   background: var(--interactive-accent);
-  font-size: 13px;
+  font-size: var(--font-ui-small);
   font-weight: 700;
 }
 
@@ -3172,7 +3177,7 @@ body .qnalog-menu .menu-item.selected .menu-item-icon {
 .qnalog-empty-state-title {
   margin-bottom: 6px;
   color: var(--qnalog-text-primary);
-  font-size: 13px;
+  font-size: var(--font-ui-small);
   font-weight: 500;
   line-height: 1.4;
 }
@@ -3181,7 +3186,7 @@ body .qnalog-menu .menu-item.selected .menu-item-icon {
   max-width: 220px;
   margin-bottom: 22px;
   color: var(--qnalog-text-tertiary);
-  font-size: 11px;
+  font-size: var(--qnalog-font-ui-smallest);
   line-height: 1.6;
 }
 
@@ -3196,7 +3201,7 @@ button.qnalog-empty-state-action {
   border-radius: 8px;
   background: transparent;
   color: var(--qnalog-text-primary);
-  font-size: 12px;
+  font-size: var(--font-ui-smaller);
   font-family: inherit;
   box-shadow: none;
   cursor: pointer;
@@ -3817,7 +3822,7 @@ button.qnalog-note-ask-suggest-chip {
 .qnalog-sediment-status {
   gap: 8px;
   color: var(--qnalog-sediment-accent);
-  font-size: 11px;
+  font-size: var(--qnalog-font-ui-smallest);
   font-weight: var(--font-medium);
   transition: color 0.3s ease;
 }
@@ -3850,7 +3855,7 @@ button.qnalog-note-ask-suggest-chip {
 
 .qnalog-sediment-progress-text {
   color: var(--qnalog-sediment-accent);
-  font-size: 11px;
+  font-size: var(--qnalog-font-ui-smallest);
   transition: color 0.3s ease;
   /* 不跟随标题换行被压扁；保持单行紧贴右侧 */
   flex: 0 0 auto;
@@ -3899,7 +3904,7 @@ button.qnalog-note-ask-suggest-chip {
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  font-size: 12px;
+  font-size: 12px; /* 24px 固定圆内的数字，放大会溢出 */
   font-weight: var(--font-medium);
   line-height: 1;
   box-sizing: border-box;
@@ -3912,7 +3917,7 @@ button.qnalog-note-ask-suggest-chip {
 }
 
 .qnalog-sediment-pipeline-label {
-  font-size: 13px;
+  font-size: var(--font-ui-small);
   line-height: 1;
   white-space: nowrap;
 }
@@ -4116,7 +4121,7 @@ button.qnalog-note-ask-suggest-chip {
   background: transparent;
   box-shadow: none;
   color: var(--qnalog-sediment-muted);
-  font-size: 11px;
+  font-size: var(--qnalog-font-ui-smallest);
   cursor: pointer;
 }
 
@@ -4252,7 +4257,7 @@ button.qnalog-note-ask-suggest-chip {
   border-radius: 999px;
   color: var(--qnalog-sediment-muted);
   background: transparent;
-  font-size: 10px;
+  font-size: var(--qnalog-font-ui-smallest);
   line-height: 1.2;
   white-space: nowrap;
 }
@@ -4273,7 +4278,7 @@ button.qnalog-note-ask-suggest-chip {
 .qnalog-sediment-item-summary {
   margin-top: 3px;
   color: var(--qnalog-sediment-muted);
-  font-size: 11px;
+  font-size: var(--qnalog-font-ui-smallest);
   line-height: 1.35;
   overflow: hidden;
   text-overflow: ellipsis;
@@ -4294,7 +4299,7 @@ button.qnalog-note-ask-suggest-chip {
   gap: 3px;
   min-height: 18px;
   color: var(--qnalog-sediment-muted);
-  font-size: 11px;
+  font-size: var(--qnalog-font-ui-smallest);
   line-height: 1;
   cursor: pointer;
 }
@@ -4461,7 +4466,7 @@ button.qnalog-note-ask-suggest-chip {
 }
 .qnalog-todo-inline-item-meta {
   flex: 0 0 auto;
-  font-size: 10px;
+  font-size: var(--qnalog-font-ui-smallest);
   color: var(--qnalog-sediment-faint);
   max-width: 50%;
   overflow: hidden;
@@ -4470,7 +4475,7 @@ button.qnalog-note-ask-suggest-chip {
 }
 .qnalog-todo-inline-item-clear {
   flex: 0 0 auto;
-  font-size: 10px;
+  font-size: var(--qnalog-font-ui-smallest);
   color: var(--qnalog-sediment-faint);
   padding: 2px 6px;
   border-radius: 4px;
@@ -4533,7 +4538,7 @@ button.qnalog-todo-inline-preset {
   color: var(--qnalog-sediment-faint);
   background: transparent;
   border-color: transparent;
-  font-size: 11px;
+  font-size: var(--qnalog-font-ui-smallest);
   padding: 4px 8px;
 }
 .qnalog-todo-inline-preset.is-clear:hover {
@@ -4752,7 +4757,7 @@ button.qnalog-todo-inline-preset {
   margin-top: 6px;
   padding-top: 4px;
   border-top: 0.5px solid var(--qnalog-sediment-line);
-  font-size: 10px;
+  font-size: var(--qnalog-font-ui-smallest);
   color: var(--qnalog-sediment-faint);
 }
 
@@ -4772,7 +4777,7 @@ button.qnalog-todo-inline-preset {
 
 .qnalog-sediment-todo-edit-label {
   color: var(--text-muted);
-  font-size: 12px;
+  font-size: var(--font-ui-smaller);
   line-height: 30px;
 }
 
@@ -4780,7 +4785,7 @@ button.qnalog-todo-inline-preset {
   width: 100%;
   min-height: 30px;
   resize: vertical;
-  font-size: 13px;
+  font-size: var(--font-ui-small);
 }
 
 .qnalog-sediment-list-item.is-person-candidate .qnalog-sediment-item-icon {
@@ -4874,7 +4879,7 @@ button.qnalog-todo-inline-preset {
 
 .qnalog-sediment-multiselect-count {
   color: var(--qnalog-sediment-muted);
-  font-size: 11px;
+  font-size: var(--qnalog-font-ui-smallest);
 }
 
 button.qnalog-sediment-checkbox {
@@ -4981,7 +4986,7 @@ button.qnalog-sediment-checkbox:hover {
   max-width: 100%;
   margin-bottom: 6px;
   color: var(--qnalog-sediment-muted);
-  font-size: 11px;
+  font-size: var(--qnalog-font-ui-smallest);
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
@@ -4989,7 +4994,7 @@ button.qnalog-sediment-checkbox:hover {
 
 .qnalog-sediment-prompt-title {
   color: var(--qnalog-sediment-text);
-  font-size: 14px;
+  font-size: var(--font-ui-medium);
   font-weight: var(--font-medium);
 }
 
@@ -5046,14 +5051,14 @@ button.qnalog-sediment-checkbox:hover {
 
 .qnalog-sediment-scan-number {
   color: var(--qnalog-sediment-text);
-  font-size: 13px;
+  font-size: var(--font-ui-small);
   font-weight: var(--font-medium);
   line-height: 1;
 }
 
 .qnalog-sediment-scan-label {
   color: var(--qnalog-sediment-muted);
-  font-size: 10px;
+  font-size: var(--qnalog-font-ui-smallest);
   line-height: 1;
 }
 
@@ -5108,7 +5113,7 @@ button.qnalog-sediment-button {
 
 .qnalog-sediment-review-note {
   color: var(--qnalog-sediment-muted);
-  font-size: 11px;
+  font-size: var(--qnalog-font-ui-smallest);
   margin: 2px 0 4px;
 }
 
@@ -5123,7 +5128,7 @@ button.qnalog-sediment-button {
   padding: 2px 6px;
   border-radius: 999px;
   text-align: center;
-  font-size: 10px;
+  font-size: var(--qnalog-font-ui-smallest);
   color: var(--qnalog-sediment-success);
   background: var(--qnalog-sediment-success-bg);
 }
@@ -5307,7 +5312,7 @@ button.qnalog-sediment-button {
 }
 
 .qnalog-outline-recent-axis-primary {
-  font-size: 19px;
+  font-size: var(--font-ui-large);
   line-height: 1;
   font-weight: 760;
   color: var(--text-normal);
@@ -5319,7 +5324,7 @@ button.qnalog-sediment-button {
 
 .qnalog-outline-recent-axis-secondary {
   margin-top: 2px;
-  font-size: 11px;
+  font-size: var(--qnalog-font-ui-smallest);
   line-height: 1.15;
   color: var(--text-muted);
 }
@@ -5927,11 +5932,11 @@ button.qnalog-sediment-toast-action {
   }
 
   .qnalog-outline-recent-axis-primary {
-    font-size: 16px;
+    font-size: var(--font-ui-medium);
   }
 
   .qnalog-outline-recent-axis-secondary {
-    font-size: 10px;
+    font-size: var(--qnalog-font-ui-smallest);
   }
 }
 
@@ -6616,7 +6621,7 @@ button.qnalog-audio-channel-detect {
 .modal.qnalog-progress-modal .qnalog-progress-current-fact-label {
   margin-bottom: var(--size-2-1);
   color: var(--text-faint);
-  font-size: var(--font-ui-smallest);
+  font-size: var(--qnalog-font-ui-smallest);
 }
 
 .modal.qnalog-progress-modal .qnalog-progress-current-fact-value {
@@ -7224,7 +7229,7 @@ button.qnalog-vcable-tab {
 }
 
 .qnalog-home-title-line h2 {
-  font-size: 22px;
+  font-size: calc(var(--font-ui-large) * 1.1);
   line-height: 1.25;
   font-weight: var(--font-semibold);
 }
@@ -7875,8 +7880,10 @@ button.qnalog-vcable-tab {
 }
 
 /* QnALog styling for Obsidian Bases card views.
+   只作用于打开 QnALog 生成的 Base 文件（人员库等）的标签页：LibraryViewService.syncBaseViewScope
+   给这些标签页加 .qnalog-base-view。用户自己的 Base 视图保持 Obsidian 原样。
    Keep this conservative: no real border/margin/width changes, so Bases layout stays stable. */
-.bases-view .bases-cards-item {
+.qnalog-base-view .bases-view .bases-cards-item {
   border: none;
   background:
     linear-gradient(135deg,
@@ -7889,44 +7896,44 @@ button.qnalog-vcable-tab {
     12px 16px 28px -24px color-mix(in srgb, var(--background-primary) 65%, black 35%);
 }
 
-.bases-view .bases-cards-item:hover {
+.qnalog-base-view .bases-view .bases-cards-item:hover {
   box-shadow:
     inset 0 0 0 1px color-mix(in srgb, var(--interactive-accent) 22%, var(--background-modifier-border)),
     8px 10px 18px -15px color-mix(in srgb, var(--background-primary) 45%, black 55%),
     14px 18px 32px -26px color-mix(in srgb, var(--background-primary) 62%, black 38%);
 }
 
-.bases-view .bases-cards-item .metadata-property-key,
-.bases-view .bases-cards-item .bases-card-property-name,
-.bases-view .bases-cards-item .bases-cards-property-name,
-.bases-view .bases-cards-item [class*="property-name"],
-.bases-view .bases-cards-item [class*="property-key"] {
-  font-size: 11px;
+.qnalog-base-view .bases-view .bases-cards-item .metadata-property-key,
+.qnalog-base-view .bases-view .bases-cards-item .bases-card-property-name,
+.qnalog-base-view .bases-view .bases-cards-item .bases-cards-property-name,
+.qnalog-base-view .bases-view .bases-cards-item [class*="property-name"],
+.qnalog-base-view .bases-view .bases-cards-item [class*="property-key"] {
+  font-size: var(--qnalog-font-ui-smallest);
   line-height: 1.25;
   color: var(--text-faint);
   letter-spacing: 0;
 }
 
-.bases-view .bases-cards-item .bases-card-property-value,
-.bases-view .bases-cards-item .bases-cards-property-value,
-.bases-view .bases-cards-item [class*="property-value"] {
+.qnalog-base-view .bases-view .bases-cards-item .bases-card-property-value,
+.qnalog-base-view .bases-view .bases-cards-item .bases-cards-property-value,
+.qnalog-base-view .bases-view .bases-cards-item [class*="property-value"] {
   color: var(--text-muted);
 }
 
-.bases-view .bases-cards-item .internal-link,
-.bases-view .bases-cards-item a {
+.qnalog-base-view .bases-view .bases-cards-item .internal-link,
+.qnalog-base-view .bases-view .bases-cards-item a {
   color: color-mix(in srgb, var(--text-accent) 78%, var(--text-normal) 22%);
   text-decoration: none;
 }
 
-.bases-view .bases-cards-item .tag {
+.qnalog-base-view .bases-view .bases-cards-item .tag {
   border-radius: var(--radius-s, 6px);
   color: var(--text-muted);
   background: var(--background-modifier-hover);
   box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--background-modifier-border) 80%, transparent);
 }
 
-.theme-dark .bases-view .bases-cards-item {
+.theme-dark .qnalog-base-view .bases-view .bases-cards-item {
   background:
     linear-gradient(135deg,
       color-mix(in srgb, var(--background-secondary) 96%, white 4%),
@@ -8000,7 +8007,7 @@ button.qnalog-vcable-tab {
 
 .qnalog-outline-head.is-idle .qnalog-outline-title {
   color: var(--qnalog-text-primary);
-  font-size: 20px;
+  font-size: var(--font-ui-large);
   line-height: 1.15;
   font-weight: 760;
 }
@@ -8024,7 +8031,7 @@ button.qnalog-vcable-tab {
 .qnalog-outline-head.is-idle .qnalog-outline-control-label {
   grid-column: 1;
   color: var(--qnalog-text-secondary);
-  font-size: 13px;
+  font-size: var(--font-ui-small);
   align-self: center;
 }
 
@@ -8058,14 +8065,14 @@ button.qnalog-vcable-tab {
   border-radius: 8px;
   background: transparent;
   color: var(--qnalog-text-secondary);
-  font-size: 12px;
+  font-size: var(--font-ui-smaller);
 }
 
 .qnalog-outline-head.is-idle .qnalog-outline-action-button.is-record,
 .qnalog-outline-head.is-idle .qnalog-outline-action-button.is-record.mod-cta {
   background: var(--qnalog-primary-action);
   color: var(--text-on-accent);
-  font-size: 13px;
+  font-size: var(--font-ui-small);
   font-weight: 700;
   box-shadow: 0 1px 4px color-mix(in srgb, var(--background-modifier-box-shadow) 14%, transparent);
 }
@@ -8095,7 +8102,7 @@ button.qnalog-vcable-tab {
   min-width: 0;
   gap: 8px;
   color: var(--qnalog-text-primary, var(--text-normal));
-  font-size: 20px;
+  font-size: var(--font-ui-large);
   line-height: 1.15;
   font-weight: 760;
 }
@@ -8263,7 +8270,7 @@ button.qnalog-inline-player-play {
 .qnalog-recording-elapsed {
   margin-left: 10px;
   color: var(--qnalog-primary-soft);
-  font-size: 12px;
+  font-size: var(--font-ui-smaller);
   font-weight: 500;
   font-variant-numeric: tabular-nums;
 }
@@ -8346,7 +8353,7 @@ button.qnalog-inline-player-icon-btn {
 .qnalog-recording-finish-times span,
 .qnalog-inline-player-time {
   color: var(--qnalog-text-tertiary);
-  font-size: 10px;
+  font-size: var(--qnalog-font-ui-smallest);
   font-variant-numeric: tabular-nums;
 }
 
@@ -8385,7 +8392,7 @@ button.qnalog-inline-player-icon-btn {
 
 .qnalog-finalizing-banner-text {
   color: var(--qnalog-primary-soft);
-  font-size: 11px;
+  font-size: var(--qnalog-font-ui-smallest);
 }
 /* 后台整理状态条（录音停后回到 idle 头，这条落在「新建录音」按钮下方，告知后台还在整理且可直接开下一段）。 */
 .qnalog-finalizing-banner.is-background {
@@ -8428,7 +8435,7 @@ button.qnalog-inline-player-icon-btn {
 
 .qnalog-recording-alert-title {
   color: var(--qnalog-text-primary);
-  font-size: 12px;
+  font-size: var(--font-ui-smaller);
   font-weight: 600;
   line-height: 1.35;
 }
@@ -8436,7 +8443,7 @@ button.qnalog-inline-player-icon-btn {
 .qnalog-recording-alert-desc {
   margin-top: 2px;
   color: var(--qnalog-text-tertiary);
-  font-size: 11px;
+  font-size: var(--qnalog-font-ui-smallest);
   line-height: 1.5;
 }
 
@@ -8451,7 +8458,7 @@ button.qnalog-recording-alert-action {
   border-radius: 6px;
   background: transparent;
   color: var(--qnalog-text-secondary);
-  font-size: 11px;
+  font-size: var(--qnalog-font-ui-smallest);
   padding: 3px 9px;
   box-shadow: none;
 }
@@ -8487,7 +8494,7 @@ button.qnalog-recording-alert-action {
   min-width: 0;
   overflow: hidden;
   color: var(--text-normal);
-  font-size: 12px;
+  font-size: var(--font-ui-smaller);
   font-weight: 600;
   line-height: 1.2;
   flex: 1 1 auto;
@@ -8523,7 +8530,7 @@ button.qnalog-recording-alert-action {
   border-radius: 999px;
   background: color-mix(in srgb, var(--interactive-accent) 9%, transparent);
   color: var(--text-accent);
-  font-size: 10px;
+  font-size: var(--qnalog-font-ui-smallest);
   line-height: 1.2;
   white-space: nowrap;
 }
@@ -8532,7 +8539,7 @@ button.qnalog-recording-alert-action {
   border: 0;
   background: transparent;
   color: var(--qnalog-text-tertiary);
-  font-size: 11px;
+  font-size: var(--qnalog-font-ui-smallest);
   box-shadow: none;
   padding: 2px 4px;
   flex: 0 0 auto;
@@ -8597,7 +8604,7 @@ button.qnalog-recording-alert-action {
   align-items: center;
   justify-content: flex-end;
   text-align: right;
-  font-size: 11px;
+  font-size: 11px; /* 时间标签宽度固定为 42px，放大字号会溢出 */
   font-variant-numeric: tabular-nums;
   color: var(--qnalog-text-muted, var(--text-muted));
   white-space: nowrap;
@@ -8620,7 +8627,7 @@ button.qnalog-recording-alert-action {
   justify-content: flex-end;
   padding-right: 10px;
   color: var(--text-faint);
-  font-size: 11px;
+  font-size: 11px; /* 「↘」符号字形放在固定宽度的框内 */
   pointer-events: none;
 }
 
@@ -8687,7 +8694,7 @@ button.qnalog-recording-alert-action {
   border-radius: 6px;
   background: var(--qnalog-bg-active);
   color: var(--qnalog-primary-soft);
-  font-size: 9px;
+  font-size: var(--qnalog-font-ui-smallest);
   line-height: 1.4;
   vertical-align: -1px;
 }
@@ -8802,7 +8809,7 @@ button.qnalog-back-to-current {
 }
 
 .qnalog-back-to-current-label {
-  font-size: 11px;
+  font-size: var(--qnalog-font-ui-smallest);
 }
 
 .qnalog-outline-safe-empty {
@@ -8831,14 +8838,14 @@ button.qnalog-back-to-current {
 .qnalog-outline-safe-empty-title {
   margin-top: 4px;
   color: var(--qnalog-text-primary);
-  font-size: 13px;
+  font-size: var(--font-ui-small);
   font-weight: 600;
 }
 
 .qnalog-outline-safe-empty-desc {
   max-width: 210px;
   color: var(--qnalog-text-tertiary);
-  font-size: 11px;
+  font-size: var(--qnalog-font-ui-smallest);
   line-height: 1.55;
 }
 
@@ -8870,7 +8877,7 @@ button.qnalog-back-to-current {
 .qnalog-outline-network-gap-time {
   margin-top: 6px;
   color: var(--qnalog-text-tertiary);
-  font-size: 11px;
+  font-size: var(--qnalog-font-ui-smallest);
 }
 
 .qnalog-outline-network-gap-body {
@@ -8879,7 +8886,7 @@ button.qnalog-back-to-current {
 
 .qnalog-outline-network-gap-title {
   color: var(--qnalog-warning-text);
-  font-size: 12px;
+  font-size: var(--font-ui-smaller);
   font-weight: 600;
   line-height: 1.45;
 }
@@ -8887,7 +8894,7 @@ button.qnalog-back-to-current {
 .qnalog-outline-network-gap-desc {
   margin-top: 2px;
   color: var(--qnalog-text-tertiary);
-  font-size: 11px;
+  font-size: var(--qnalog-font-ui-smallest);
   font-style: italic;
   line-height: 1.5;
 }
@@ -8938,7 +8945,7 @@ button.qnalog-back-to-current {
 
 .qnalog-recording-blocker-title {
   color: var(--qnalog-danger-text);
-  font-size: 15px;
+  font-size: var(--font-ui-medium);
   font-weight: 700;
   line-height: 1.35;
 }
@@ -8946,13 +8953,13 @@ button.qnalog-back-to-current {
 .qnalog-recording-blocker-subtitle {
   margin-top: 2px;
   color: var(--qnalog-text-tertiary);
-  font-size: 11px;
+  font-size: var(--qnalog-font-ui-smallest);
 }
 
 .qnalog-recording-blocker-desc {
   margin-top: 14px;
   color: var(--qnalog-text-primary);
-  font-size: 13px;
+  font-size: var(--font-ui-small);
   line-height: 1.65;
 }
 
@@ -8963,7 +8970,7 @@ button.qnalog-back-to-current {
   border: 0.5px solid var(--qnalog-border-line);
   padding: 10px 12px;
   color: var(--qnalog-text-secondary);
-  font-size: 11px;
+  font-size: var(--qnalog-font-ui-smallest);
   line-height: 1.7;
 }
 
@@ -8977,7 +8984,7 @@ button.qnalog-back-to-current {
 button.qnalog-recording-blocker-secondary,
 button.qnalog-recording-blocker-primary {
   border-radius: 8px;
-  font-size: 12px;
+  font-size: var(--font-ui-smaller);
   padding: 7px 12px;
 }
 
@@ -9198,7 +9205,7 @@ button.qnalog-inline-player-play {
 .qnalog-recording-player.is-live:not(.is-network):not(.is-microphone) .qnalog-recording-elapsed {
   margin-left: 0;
   color: var(--qnalog-primary);
-  font-size: 16px;
+  font-size: var(--font-ui-medium);
   font-weight: 600;
   line-height: 1;
 }
@@ -9336,7 +9343,7 @@ button.qnalog-inline-player-icon-btn {
     min-width: 0;
   }
   .qnalog-sediment-pipeline-label {
-    font-size: 12px;
+    font-size: var(--font-ui-smaller);
   }
 }
 .qnalog-sediment-pipeline-node.is-current {
@@ -9383,7 +9390,7 @@ button.qnalog-inline-player-icon-btn {
 }
 
 .qnalog-todo-popover-section {
-  font-size: 10px;
+  font-size: var(--qnalog-font-ui-smallest);
   font-weight: 700;
   color: var(--text-faint);
   text-transform: uppercase;
@@ -9462,13 +9469,13 @@ button.qnalog-inline-player-icon-btn {
 .qnalog-todo-popover-item-meta {
   flex: 0 0 auto;
   color: var(--text-faint);
-  font-size: 11px;
+  font-size: var(--qnalog-font-ui-smallest);
 }
 
 .qnalog-todo-popover-item-clear {
   flex: 0 0 auto;
   color: var(--text-faint);
-  font-size: 11px;
+  font-size: var(--qnalog-font-ui-smallest);
   cursor: pointer;
 }
 .qnalog-todo-popover-item-clear:hover {
@@ -9706,7 +9713,7 @@ button.qnalog-todo-popover-save,
 }
 
 .qnalog-outline.is-mobile .qnalog-outline-title {
-  font-size: 20px;
+  font-size: var(--font-ui-large);
   line-height: 1.15;
 }
 
@@ -9724,7 +9731,7 @@ button.qnalog-todo-popover-save,
 }
 
 .qnalog-outline.is-mobile .qnalog-outline-control-label {
-  font-size: 14px;
+  font-size: var(--font-ui-small);
   line-height: 1.3;
   white-space: nowrap;
 }
@@ -9742,7 +9749,7 @@ button.qnalog-todo-popover-save,
   overflow-wrap: normal;
   word-break: normal;
   line-height: 1.45;
-  font-size: 12px;
+  font-size: var(--font-ui-smaller);
   color: var(--text-muted);
 }
 
@@ -9758,13 +9765,13 @@ button.qnalog-todo-popover-save,
   height: 38px;
   padding: 0 8px;
   border-radius: 9px;
-  font-size: 12px;
+  font-size: var(--font-ui-smaller);
   white-space: nowrap;
 }
 
 .qnalog-outline.is-mobile .qnalog-outline-action-button.is-record,
 .qnalog-outline.is-mobile .qnalog-outline-action-button.is-record.mod-cta {
-  font-size: 14px;
+  font-size: var(--font-ui-medium);
 }
 
 .qnalog-outline.is-mobile .qnalog-outline-action-icon,
@@ -9785,7 +9792,7 @@ button.qnalog-todo-popover-save,
 .qnalog-topics-pending.is-visible { display: inline-block; }
 .qnalog-topics-empty { margin: 24px 0; }
 .qnalog-topics-create, .qnalog-topics-preview { color: var(--text-normal); }
-.qnalog-topics-create h2, .qnalog-topics-preview h2 { font-size: 16px; }
+.qnalog-topics-create h2, .qnalog-topics-preview h2 { font-size: var(--font-ui-medium); }
 .qnalog-topics-title { box-sizing: border-box; width: 100%; max-width: 100%; margin: 0 0 10px; }
 .qnalog-topics-basis { display: flex; gap: 14px; margin: 10px 0; }
 .qnalog-topics-radio { display: inline-flex; align-items: center; gap: 6px; color: var(--text-normal); font-size: var(--font-ui-small); }
@@ -9809,10 +9816,10 @@ button.qnalog-todo-popover-save,
 .qnalog-topics-progress-text { color: var(--text-normal); font-size: var(--font-ui-small); }
 @keyframes qnalog-topics-indeterminate { from { transform: translateX(-100%); } to { transform: translateX(250%); } }
 .qnalog-topics-candidate-details { flex: 1 1 auto; min-width: 0; }
-.qnalog-topics-candidate-title { color: var(--text-normal); font-size: 12px; line-height: 1.4; }
-.qnalog-topics-candidate-summary { max-height: 2.8em; overflow: hidden; color: var(--text-muted); font-size: 11px; line-height: 1.4; }
+.qnalog-topics-candidate-title { color: var(--text-normal); font-size: var(--font-ui-smaller); line-height: 1.4; }
+.qnalog-topics-candidate-summary { max-height: 2.8em; overflow: hidden; color: var(--text-muted); font-size: var(--qnalog-font-ui-smallest); line-height: 1.4; }
 .qnalog-topics-candidate-meta { display: flex; flex-wrap: wrap; justify-content: flex-end; gap: 4px 8px; min-width: 0; }
-.qnalog-topics-reason, .qnalog-topics-membership, .qnalog-topics-missing, .qnalog-topics-unverified { display: inline-block; margin: 3px 4px 0 0; color: var(--text-faint); font-size: 10px; }
+.qnalog-topics-reason, .qnalog-topics-membership, .qnalog-topics-missing, .qnalog-topics-unverified { display: inline-block; margin: 3px 4px 0 0; color: var(--text-faint); font-size: var(--qnalog-font-ui-smallest); }
 .qnalog-topics-membership { color: var(--text-accent); }
 .qnalog-topics-missing { color: var(--text-error); }
 .qnalog-topics-modal-actions { display: flex; justify-content: flex-end; gap: 8px; padding-top: 12px; }
@@ -9875,7 +9882,7 @@ button.qnalog-topics-source-link { height: auto; box-shadow: none; }
 button.qnalog-topics-source-link:hover { background: var(--background-modifier-active-hover); color: var(--text-normal); }
 .qnalog-topics-preview-date { color: var(--text-faint); font-size: var(--font-ui-smaller); white-space: nowrap; }
 .qnalog-topics-preview-badge,
-.qnalog-topics-unverified { display: inline-flex; align-items: center; flex: 0 0 auto; width: fit-content; padding: 1px 5px; border-radius: 999px; background: var(--background-secondary); color: var(--text-muted); font-size: 10px; line-height: 1.4; white-space: nowrap; }
+.qnalog-topics-unverified { display: inline-flex; align-items: center; flex: 0 0 auto; width: fit-content; padding: 1px 5px; border-radius: 999px; background: var(--background-secondary); color: var(--text-muted); font-size: var(--qnalog-font-ui-smallest); line-height: 1.4; white-space: nowrap; }
 .qnalog-topics-preview-badge.is-conflict { color: var(--text-warning, var(--text-accent)); }
 .qnalog-topics-preview-target { display: inline-flex; align-items: center; color: var(--text-muted); font-size: var(--font-ui-smaller); }
 .qnalog-topics-preview-conflict-heading { display: flex; align-items: flex-start; gap: var(--qnalog-topic-space-sm); min-width: 0; margin-bottom: var(--qnalog-topic-space-sm); }
@@ -9937,7 +9944,7 @@ button.qnalog-topics-source-link:hover { background: var(--background-modifier-a
 
 .qnalog-outline.is-mobile .qnalog-outline-ai-body,
 .qnalog-outline.is-mobile .qnalog-outline-note-timeline {
-  font-size: 14px;
+  font-size: var(--font-ui-small);
   line-height: 1.65;
 }
 
@@ -10074,7 +10081,7 @@ button.qnalog-pick-item {
 .qnalog-outline-segment-label,
 .qnalog-outline-segment-unit {
   color: var(--text-muted);
-  font-size: 11.5px;
+  font-size: var(--qnalog-font-ui-smallest);
   line-height: 1;
 }
 
@@ -10086,7 +10093,7 @@ button.qnalog-outline-segment-value {
   border-radius: 6px;
   background: color-mix(in srgb, var(--background-primary) 88%, transparent);
   color: var(--text-normal);
-  font-size: 12px;
+  font-size: var(--font-ui-smaller);
   line-height: 1;
   text-align: right;
   cursor: ns-resize;
@@ -10811,7 +10818,8 @@ button.qnalog-outline-segment-value {
   min-width: 0;
   gap: 8px;
   color: var(--text-normal);
-  font-size: 18px;
+  /* 默认设置下 18px（15 × 1.2），随 Obsidian 字号缩放 */
+  font-size: calc(var(--font-ui-medium) * 1.2);
   font-weight: 600;
   line-height: 1.2;
 }
@@ -10911,7 +10919,7 @@ button.qnalog-outline-segment-value {
 .qnalog-outline-primary-controls .qnalog-outline-control-label {
   flex: 0 0 auto;
   color: var(--qnalog-text-hint, var(--text-faint));
-  font-size: 11.5px;
+  font-size: var(--qnalog-font-ui-smallest);
   font-weight: var(--font-normal, 400);
   line-height: 1;
 }
@@ -10937,7 +10945,7 @@ button.qnalog-outline-segment-value {
   min-width: 0;
   overflow: hidden;
   color: inherit;
-  font-size: 13px;
+  font-size: var(--font-ui-small);
   font-weight: 550;
   line-height: 1;
   text-align: right;
@@ -10982,7 +10990,7 @@ button.qnalog-outline-segment-value {
 .qnalog-outline.is-idle-view .qnalog-outline-control-label {
   flex: 0 0 auto;
   color: var(--qnalog-text-hint, var(--text-faint));
-  font-size: 11.5px;
+  font-size: var(--qnalog-font-ui-smallest);
   font-weight: var(--font-normal, 400);
   line-height: 1;
   white-space: nowrap;
@@ -11015,7 +11023,7 @@ button.qnalog-outline-segment-value {
   min-width: 0;
   overflow: hidden;
   color: inherit;
-  font-size: 13px;
+  font-size: var(--font-ui-small);
   font-weight: 550;
   line-height: 1;
   text-align: right;
@@ -11092,7 +11100,7 @@ button.qnalog-outline-segment-value {
 .qnalog-outline.is-idle-view .qnalog-outline-segment-label,
 .qnalog-outline.is-idle-view .qnalog-outline-segment-unit {
   color: var(--qnalog-text-tertiary, var(--text-muted));
-  font-size: 11.5px;
+  font-size: var(--qnalog-font-ui-smallest);
   line-height: 1;
 }
 
@@ -11107,7 +11115,7 @@ button.qnalog-outline-segment-value {
   background: transparent;
   box-shadow: none;
   color: var(--qnalog-text-primary, var(--text-normal));
-  font-size: 13px;
+  font-size: var(--font-ui-small);
   font-weight: 550;
   line-height: 1;
   text-align: right;
@@ -11143,7 +11151,7 @@ button.qnalog-outline-segment-value {
   background: var(--qnalog-primary-action, var(--interactive-accent));
   box-shadow: none;
   color: var(--text-on-accent);
-  font-size: 13px;
+  font-size: var(--font-ui-small);
   font-weight: 700;
 }
 
@@ -11219,7 +11227,8 @@ button.qnalog-outline-segment-value {
   background: transparent;
   box-shadow: none;
   color: var(--qnalog-text-secondary, var(--text-muted));
-  font-size: 14px;
+  /* 主导航标签：默认设置下 14px，随 Obsidian 字号缩放 */
+  font-size: calc(var(--font-ui-small) * 14 / 13);
   font-weight: 500;
 }
 
@@ -11248,6 +11257,16 @@ button.qnalog-outline-segment-value {
    后一个分区去掉上内边距，分区之间统一为 18px。 */
 .qnalog-outline.is-idle-view > .qnalog-outline-section + .qnalog-outline-section {
   padding-top: 0;
+}
+
+/* 悬浮录音按钮（position: fixed）停在侧栏上方时会盖住列表最后几行。
+   按钮显示时，侧栏内容末尾留出 72px（按钮高度 + 尾巴 + 间距），最后一行可以滚到按钮上方。
+   按钮不在侧栏上方时，这段空白只出现在滚动到底之后，不影响其它内容。 */
+body:has(.qnalog-bubble-wrap.is-visible) .qnalog-outline::after {
+  content: "";
+  display: block;
+  flex: 0 0 auto;
+  height: 72px;
 }
 
 /* 问一问、沉淀两个面板自身定义了 12px 的纵向间距，上一条把所有空闲视图分区的 gap 清零后，
@@ -11323,7 +11342,7 @@ button.qnalog-outline-segment-value {
   background: transparent;
   box-shadow: none;
   color: var(--text-normal);
-  font-size: 12.5px;
+  font-size: var(--font-ui-smaller);
 }
 
 .qnalog-outline .qnalog-outline-recent-search:focus {
@@ -11412,7 +11431,7 @@ button.qnalog-outline-segment-value {
   border-radius: 999px;
   background: var(--interactive-accent);
   color: var(--text-on-accent);
-  font-size: 10px;
+  font-size: 10px; /* 16px 固定圆角徽标内的数字，放大会溢出 */
   line-height: 1;
 }
 
@@ -11810,7 +11829,7 @@ body.is-mobile .qnalog-recent-filter-popover-templates {
 .qnalog-outline .qnalog-outline-recent-axis-primary {
   color: var(--qnalog-text-secondary, var(--text-muted));
   font-family: var(--font-monospace);
-  font-size: 11px;
+  font-size: var(--qnalog-font-ui-smallest);
   font-weight: 500;
   line-height: 1.2;
 }
@@ -11818,7 +11837,7 @@ body.is-mobile .qnalog-recent-filter-popover-templates {
 .qnalog-outline .qnalog-outline-recent-axis-secondary {
   margin-top: 3px;
   color: var(--qnalog-text-secondary, var(--text-muted));
-  font-size: 11px;
+  font-size: var(--qnalog-font-ui-smallest);
   line-height: 1.2;
 }
 
@@ -11916,7 +11935,7 @@ body.is-mobile .qnalog-recent-filter-popover-templates {
   min-width: 0;
   overflow: hidden;
   color: inherit;
-  font-size: 13px;
+  font-size: var(--font-ui-small);
   font-weight: 500;
   line-height: 1.2;
   text-overflow: ellipsis;
@@ -11926,14 +11945,14 @@ body.is-mobile .qnalog-recent-filter-popover-templates {
 .qnalog-outline .qnalog-outline-recent-group-today {
   flex: 0 0 auto;
   color: var(--qnalog-text-active, var(--interactive-accent));
-  font-size: 10px;
+  font-size: var(--qnalog-font-ui-smallest);
 }
 
 .qnalog-outline .qnalog-outline-recent-group-count {
   flex: 0 0 auto;
   order: 3;
   color: var(--qnalog-text-secondary, var(--text-muted));
-  font-size: 10.5px;
+  font-size: var(--qnalog-font-ui-smallest);
   white-space: nowrap;
 }
 
@@ -12004,7 +12023,7 @@ body.is-mobile .qnalog-recent-filter-popover-templates {
 .qnalog-outline .qnalog-outline-recent-name {
   overflow: hidden;
   color: var(--qnalog-text-primary, var(--text-normal));
-  font-size: 13px;
+  font-size: var(--font-ui-small);
   font-weight: 500;
   line-height: var(--qnalog-row-title-line);
   text-overflow: ellipsis;
@@ -12021,7 +12040,7 @@ body.is-mobile .qnalog-recent-filter-popover-templates {
   overflow: hidden;
   margin-top: 0;
   color: var(--qnalog-text-secondary, var(--text-muted));
-  font-size: 11px;
+  font-size: var(--qnalog-font-ui-smallest);
   line-height: var(--qnalog-row-meta-line);
   text-overflow: ellipsis;
   white-space: nowrap;
@@ -12135,7 +12154,7 @@ body.is-mobile .qnalog-recent-filter-popover-templates {
 }
 
 .qnalog-outline .qnalog-outline-recent-variant-name {
-  font-size: 12px;
+  font-size: var(--font-ui-smaller);
   line-height: 16px;
 }
 
@@ -12151,7 +12170,7 @@ body.is-mobile .qnalog-recent-filter-popover-templates {
   column-gap: 10px;
   row-gap: 2px;
   color: var(--text-muted);
-  font-size: 12px;
+  font-size: var(--font-ui-smaller);
   line-height: 18px;
 }
 
@@ -12229,7 +12248,7 @@ body.is-mobile .qnalog-recent-filter-popover-templates {
 .qnalog-outline .qnalog-outline-recent-folder-node-title .qnalog-outline-recent-group-weekday {
   order: 1;
   flex: 0 1 auto;
-  font-size: 12.5px;
+  font-size: var(--font-ui-smaller);
   font-weight: 600;
 }
 

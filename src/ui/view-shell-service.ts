@@ -82,6 +82,8 @@ export class ViewShellService {
   // 停靠式悬浮窗：只受总开关控制，不再依赖实时面板或侧边栏是否可见。
   syncBubbleVisibility() {
     if (!this.host.bubble) return;
+    // 按钮所在的窗口已经关闭（旧版本会把它挂进设置窗口）：先卸载，下面再按开关重新挂载。
+    if (this.host.bubble.wrapEl && !this.host.bubble.wrapEl.isConnected) this.host.bubble.unmount();
     const visible = !!this.host.settings.showFloatingBall;
     if (visible && !this.host.bubble.wrapEl) {
       this.host.bubble.mount(this.host.ribbonEl);
