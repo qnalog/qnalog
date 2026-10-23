@@ -3312,7 +3312,7 @@ button.qnalog-empty-state-action {
 }
 
 /* 发送/提问：裸主色图标按钮（同会中纪要 .qnalog-meeting-send） */
-.qnalog-note-ask-submit {
+button.qnalog-note-ask-submit {
   flex: 0 0 auto;
   display: inline-flex;
   align-items: center;
@@ -3526,7 +3526,7 @@ button.qnalog-note-ask-batch-btn:hover {
   color: var(--text-muted);
 }
 
-.qnalog-note-ask-write {
+button.qnalog-note-ask-write {
   flex: 0 0 auto;
   display: inline-flex;
   align-items: center;
@@ -11130,6 +11130,11 @@ button.qnalog-outline-segment-value {
   gap: 0;
 }
 
+/* 问一问：标题行与输入框之间留出间距（上一条把所有空闲视图分区的 gap 清零了）。 */
+.qnalog-outline > .qnalog-outline-section.qnalog-note-ask {
+  gap: 10px;
+}
+
 /* Recent-list styling is shared by idle, recording, and paused views. */
 .qnalog-outline .qnalog-outline-recent-filter-wrap {
   display: flex;
@@ -12129,21 +12134,29 @@ body.is-mobile .qnalog-recent-filter-popover-templates {
   outline-offset: 2px;
 }
 
-.qnalog-outline :is(input, textarea, [contenteditable="true"]):focus-visible,
-.qnalog-settings-root :is(input, textarea, [contenteditable="true"]):focus-visible,
-.qnalog-utility-modal :is(input, textarea, [contenteditable="true"]):focus-visible,
-.qnalog-wizard-modal :is(input, textarea, [contenteditable="true"]):focus-visible {
-  outline: 2px solid var(--interactive-accent);
-  outline-offset: 2px;
+/* 文字输入的焦点样式交给 Obsidian：输入框获得焦点时，原生规则已经改边框色并加一圈贴合圆角的阴影。
+   这里再加 outline 会在原生阴影外 2px 处多画一圈，与输入框圆角不重合。
+   输入框嵌在带边框的容器里（问一问、会中输入、笔记搜索）时，焦点样式画在容器上，输入框本身不画。 */
+.qnalog-outline :is(input, textarea):focus-visible,
+.qnalog-settings-root :is(input, textarea):focus-visible,
+.qnalog-utility-modal :is(input, textarea):focus-visible,
+.qnalog-wizard-modal :is(input, textarea):focus-visible {
+  outline: none;
 }
 
-.qnalog-outline .qnalog-outline-recent-search-box:focus-within{
+/* 可编辑文字（如笔记重命名）没有边框，原生也不画焦点，保留描边。 */
+.qnalog-outline [contenteditable="true"]:focus-visible,
+.qnalog-settings-root [contenteditable="true"]:focus-visible {
   outline: 2px solid var(--interactive-accent);
   outline-offset: 2px;
+  border-radius: var(--radius-s);
 }
 
-.qnalog-outline .qnalog-outline-recent-search:focus-visible {
-  outline: 0;
+.qnalog-outline .qnalog-outline-recent-search-box:focus-within,
+.qnalog-note-ask-input-wrap:focus-within,
+.qnalog-meeting-composer:focus-within {
+  border-color: color-mix(in srgb, var(--interactive-accent) 55%, var(--background-modifier-border));
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--interactive-accent) 16%, transparent);
 }
 
 .modal.qnalog-utility-modal {
