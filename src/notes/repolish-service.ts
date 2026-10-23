@@ -183,6 +183,10 @@ export class RepolishService {
       getModeOptions: () => getVisibleModeEntries(this.host.settings, false)
         .map(([value]) => ({ value, label: getModeDisplayName(this.host.settings, value) })),
       resolveLinkPath: (link, sourcePath) => this.host.app.metadataCache.getFirstLinkpathDest(link, sourcePath)?.path ?? null,
+      formatNoteFileName: (time) => {
+        const moment = window.moment(time);
+        return moment.isValid() ? moment.format(this.host.settings.noteFileNameFormatNew) : null;
+      },
       getAutoRenameWithTitle: () => this.host.settings.autoRenameWithTitle,
       renameWithGeneratedTitle: (file, polished, mode) => this.renameWithGeneratedTitle(file, polished, mode),
       stripModeSuggestionBlocks,
