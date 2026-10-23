@@ -23,6 +23,21 @@ function getBasesFolder(settings: Pick<PluginSettings, "basesFolder">): string {
   return obsidian.normalizePath((settings && settings.basesFolder) || DEFAULT_SETTINGS.basesFolder || DEFAULT_LIBRARY_PATHS.basesFolder);
 }
 
+/** styles.css 里 Bases 卡片样式的作用范围：只有带这个类的视图（打开的是 QnALog 生成的 Base 文件）才套用。 */
+export const QNALOG_BASE_VIEW_CLASS = "qnalog-base-view";
+
+/** path 是否是 QnALog 生成的 Base 文件：人员库 Base，或视图文件夹下的 .base 文件。 */
+export function isQnalogBasePath(
+  path: string,
+  settings: Pick<PluginSettings, "basesFolder" | "peopleBaseFile">,
+): boolean {
+  if (!path || !path.toLowerCase().endsWith(".base")) return false;
+  const normalized = obsidian.normalizePath(path);
+  const peopleBase = obsidian.normalizePath(settings.peopleBaseFile || DEFAULT_SETTINGS.peopleBaseFile);
+  if (normalized === peopleBase) return true;
+  return normalized.startsWith(getBasesFolder(settings) + "/");
+}
+
 export class LibraryViewService {
   declare host: LibraryViewHost;
   constructor(host: LibraryViewHost) {
@@ -60,6 +75,25 @@ export class LibraryViewService {
     const file = await this.host.people.ensurePeopleDirectoryFiles({ overwrite: false });
     if (file instanceof obsidian.TFile) await this.host.app.workspace.getLeaf(false).openFile(file);
     return file;
+  }
+
+  /**
+   * 给打开 QnALog Base 文件的标签页加 QNALOG_BASE_VIEW_CLASS，其它 Base 视图去掉它。
+   * 由装配入口在布局变化、切换标签页和打开文件时调用；插件卸载时调用 clearBaseViewScope。
+   */
+  syncBaseViewScope(): void {
+    this.host.app.workspace.iterateAllLeaves((leaf) => {
+      const view = leaf.view as obsidian.View & { file?: obsidian.TFile | null };
+      if (!view || !view.containerEl) return;
+      const path = view.file ? view.file.path : "";
+      view.containerEl.toggleClass(QNALOG_BASE_VIEW_CLASS, isQnalogBasePath(path, this.host.settings));
+    });
+  }
+
+  clearBaseViewScope(): void {
+    this.host.app.workspace.iterateAllLeaves((leaf) => {
+      if (leaf.view && leaf.view.containerEl) leaf.view.containerEl.removeClass(QNALOG_BASE_VIEW_CLASS);
+    });
   }
 
   async openDetailBase() {

@@ -615,6 +615,14 @@ class QnALogPlugin extends obsidian.Plugin {
     this.registerEvent(this.app.workspace.on("resize", () => this.shell.syncBubbleVisibility()));
     this.app.workspace.onLayoutReady(() => this.shell.syncBubbleVisibility());
 
+    // Bases 卡片样式只作用于 QnALog 生成的 Base 文件所在的标签页
+    const syncBaseViewScope = () => this.library.syncBaseViewScope();
+    this.registerEvent(this.app.workspace.on("layout-change", syncBaseViewScope));
+    this.registerEvent(this.app.workspace.on("active-leaf-change", syncBaseViewScope));
+    this.registerEvent(this.app.workspace.on("file-open", syncBaseViewScope));
+    this.app.workspace.onLayoutReady(syncBaseViewScope);
+    this.register(() => this.library.clearBaseViewScope());
+
     this.addCommand({ id: "toggle-recording", name: t("Start/Stop Recording"), callback: () => this.recording.toggleRecording() });
     this.addCommand({ id: "pause-resume-recording", name: t("Pause/Resume Recording"), callback: () => {
       const s = this.recorder.state;
