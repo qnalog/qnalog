@@ -112,6 +112,7 @@ import { RepolishService } from "./notes/repolish-service";
 import { InboxWatcherService } from "./imports/inbox-watcher-service";
 import { KnowledgeExtractionService } from "./indexing/knowledge-extraction-service";
 import { ContinuationService } from "./session/continuation-service";
+import { IntegrityRecordAvailability, createAdapterIntegrityReadPort, runRecordingIntegrityCheck } from "./audio/recording-integrity";
 /**
  * 按设置与 Obsidian 的界面语言，决定插件当前使用的语言并记录到 i18n 模块。
  *
@@ -777,6 +778,32 @@ class QnALogPlugin extends obsidian.Plugin {
       },
     });
 
+    // 录音完整性核对：只在笔记的转写账本有完整性记录时显示；核对只读，不改文件。
+    const integrityAvailability = new IntegrityRecordAvailability((path) => this.app.vault.adapter.read(path));
+    const checkRecordingIntegrity = (file: obsidian.TFile) => {
+      void runRecordingIntegrityCheck({
+        ...createAdapterIntegrityReadPort(this.app.vault.adapter),
+        notify: (message, timeoutMs) => { new obsidian.Notice(message, timeoutMs); },
+      }, file.path);
+    };
+    this.registerEvent(this.app.workspace.on("file-open", (file) => {
+      if (file instanceof obsidian.TFile && file.extension === "md") void integrityAvailability.refresh(file.path, file.stat.mtime);
+    }));
+    this.registerEvent(this.app.metadataCache.on("changed", (file) => {
+      if (file === this.app.workspace.getActiveFile()) void integrityAvailability.refresh(file.path, file.stat.mtime);
+    }));
+    this.addCommand({
+      id: "check-recording-integrity",
+      name: t("Check recording integrity of the current note"),
+      checkCallback: (checking) => {
+        const file = this.app.workspace.getActiveFile();
+        if (!(file instanceof obsidian.TFile) || file.extension !== "md") return false;
+        if (!integrityAvailability.availableNow(file.path, file.stat.mtime)) return false;
+        if (!checking) checkRecordingIntegrity(file);
+        return true;
+      },
+    });
+
     // 选中文字后可将词语或整段加入当前笔记的勘误表。
     //
     // 菜单标题用产品名 `QnALog`，名称里不要再引入 `&`：旧书面名 `Q&A Log` 的 `&`
@@ -876,6 +903,13 @@ class QnALogPlugin extends obsidian.Plugin {
             .setIcon("pencil")
             .onClick(() => { void openErrataForFile(this.app, this.errata, file); });
         });
+        if (integrityAvailability.availableNow(file.path, file.stat.mtime)) {
+          menu.addItem((item) => {
+            item.setTitle(t("QnALog: Check recording integrity"))
+              .setIcon("shield-check")
+              .onClick(() => checkRecordingIntegrity(file));
+          });
+        }
         const topicsPort = this.createTopicsUiPort();
         for (const topic of topicsPort.getTopicsSnapshot().filter((entry) => entry.members.includes(file.path))) {
           menu.addItem((item) => {

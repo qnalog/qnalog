@@ -1,5 +1,6 @@
 import { describe, expect, it, vi } from "vitest";
 import { readFileSync } from "node:fs";
+import { createHash } from "node:crypto";
 
 const notes = new Map<string, string>();
 let importedAudioTexts = ["Imported audio transcript"];
@@ -51,6 +52,18 @@ vi.mock("../src/asr/long-audio-transcription", async (importOriginal) => {
     transcribeImportedAudio: async () => {
       const text = importedAudioTexts[importedAudioIndex++] || "";
       return { text, durationMs: importedAudioResultDurationMs, rawText: text, units: importedAudioUnits, ...(importedAudioNoSpeech ? { noSpeech: true } : {}) };
+    },
+  };
+});
+const integrityControl = vi.hoisted(() => ({ fail: false, calls: 0 }));
+vi.mock("../src/transcript/source-integrity", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("../src/transcript/source-integrity")>();
+  return {
+    ...actual,
+    computeSourceIntegrity: async (buffer: ArrayBuffer) => {
+      integrityControl.calls++;
+      if (integrityControl.fail) throw new Error("hash exploded");
+      return actual.computeSourceIntegrity(buffer);
     },
   };
 });
@@ -603,5 +616,95 @@ describe("text import session ownership", () => {
     expect(blocks.map((block) => block.visibleBlock).join("\n")).toContain("long text.");
     expect(markdown.match(/<summary>(?:Index data|索引数据)<\/summary>/g)).toHaveLength(1);
     expect(markdown).not.toMatch(/<summary>(?:Index data|索引数据)<\/summary>[\s\S]*qnalog-transcript-start/);
+  });
+});
+
+describe("imported audio integrity record", () => {
+  function stubWindow(stamp: string) {
+    vi.stubGlobal("window", {
+      moment: () => ({
+        format: (format: string) => format === "YYYYMMDD-HHmmss" ? stamp : "2026-10-23",
+        toDate: () => new Date("2026-10-23T10:00:00.000Z"),
+      }),
+      setTimeout: () => 1,
+    });
+  }
+
+  it("records SHA-256 and byte count of the kept source audio in the ledger", async () => {
+    notes.clear();
+    integrityControl.fail = false;
+    integrityControl.calls = 0;
+    const { host, audioPath } = makeHost();
+    stubWindow("20261023-100001");
+    try {
+      await new ImportService(host).importAudioFiles([audioPath], "synthesis");
+    } finally {
+      vi.unstubAllGlobals();
+      importedAudioIndex = 0;
+    }
+    const [block] = readTranscriptBlocks([...notes.values()].join("\n"));
+    expect(integrityControl.calls).toBe(1);
+    expect(block.segment.transcript?.sourcePath).toBe(audioPath);
+    expect(block.segment.transcript?.sourceIntegrity).toMatchObject({
+      algo: "sha256",
+      sha256: createHash("sha256").update(new Uint8Array(importedAudioBinary)).digest("hex"),
+      bytes: importedAudioBinary.byteLength,
+    });
+  });
+
+  it("still transcribes and writes the note when the checksum fails", async () => {
+    notes.clear();
+    integrityControl.fail = true;
+    integrityControl.calls = 0;
+    const { host, audioPath, diagnostics, queuedTasks } = makeHost();
+    stubWindow("20261023-100002");
+    try {
+      const result = await new ImportService(host).importAudioFiles([audioPath], "synthesis");
+      expect(result).toMatchObject({ segmentCount: 1, pendingTranscriptionCount: 0 });
+    } finally {
+      vi.unstubAllGlobals();
+      importedAudioIndex = 0;
+      integrityControl.fail = false;
+    }
+    const markdown = [...notes.values()].join("\n");
+    const [block] = readTranscriptBlocks(markdown);
+    expect(integrityControl.calls).toBe(1);
+    expect(block.visibleBlock).toBe("Imported audio transcript");
+    expect(block.segment.transcript).not.toHaveProperty("sourceIntegrity");
+    expect(queuedTasks).toEqual([]);
+    expect(host.sessionFinalize.finalizeSession).toHaveBeenCalledOnce();
+    expect(diagnostics).toContainEqual(expect.arrayContaining(["warn", "audio.integrity_record_failed", expect.any(String), expect.objectContaining({ audioPath, source: "import" })]));
+  });
+
+  it("does not record a checksum for an external temporary source", async () => {
+    notes.clear();
+    integrityControl.calls = 0;
+    const { host, audioPath } = makeHost();
+    stubWindow("20261023-100003");
+    try {
+      await new ImportService(host).importAudioFiles([audioPath], "synthesis", { externalSource: { name: "inbox.wav", fingerprint: "f1" } });
+    } finally {
+      vi.unstubAllGlobals();
+      importedAudioIndex = 0;
+    }
+    expect(integrityControl.calls).toBe(0);
+    const [block] = readTranscriptBlocks([...notes.values()].join("\n"));
+    expect(block.segment.transcript).not.toHaveProperty("sourceIntegrity");
+  });
+
+  it("does not hash an empty file", async () => {
+    notes.clear();
+    integrityControl.calls = 0;
+    importedAudioBinary = new ArrayBuffer(0);
+    const { host, audioPath } = makeHost();
+    stubWindow("20261023-100004");
+    try {
+      await expect(new ImportService(host).importAudioFiles([audioPath], "synthesis")).rejects.toThrow();
+    } finally {
+      vi.unstubAllGlobals();
+      importedAudioIndex = 0;
+      importedAudioBinary = new Uint8Array([1, 2, 3]).buffer;
+    }
+    expect(integrityControl.calls).toBe(0);
   });
 });

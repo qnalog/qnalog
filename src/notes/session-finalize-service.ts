@@ -152,7 +152,7 @@ export class SessionFinalizeService {
   private transcriptSourcePort(): SessionTranscriptSourcePort {
     return {
       getVault: () => this.host.app.vault,
-      bindSegmentToAudio: (segment, path, name) => bindTranscriptSegmentToAudio(segment, path, name),
+      bindSegmentToAudio: (segment, path, name, integrity) => bindTranscriptSegmentToAudio(segment, path, name, integrity),
       logDiagnostic: (level, code, message, data) => this.host.diagnostics.logDiagnostic(level, code, message, data),
     };
   }

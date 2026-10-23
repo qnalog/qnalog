@@ -1,6 +1,7 @@
 import type { Segment } from "../shared/types";
 import { stableHash } from "../shared/stable-hash";
 import type { AsrTranscriptResult, AsrTranscriptUnit } from "../asr/transcript-result";
+import { sameSourceIntegrity, type SourceIntegrity } from "./source-integrity";
 
 export type TranscriptOrigin = "asr" | "streaming-transcript" | "text-import" | "legacy-transcript" | "edited-transcript";
 export type TranscriptTiming = "provider" | "audio-span" | "segment" | "unknown";
@@ -54,6 +55,8 @@ export interface TranscriptSegmentRecord {
   sourceName: string | null;
   currentRevision: number;
   revisions: TranscriptRevision[];
+  /** 录音完整性记录，对应本条的 `sourcePath`；旧账本没有此字段。不计入 `getTranscriptSourceRevision`。 */
+  sourceIntegrity?: SourceIntegrity;
 }
 
 const SENTENCE_END = new Set(["。", "！", "？", "!", "?", ";", "；", "."]);
@@ -63,6 +66,29 @@ export function getCurrentTranscript(record: TranscriptSegmentRecord): Transcrip
   const revision = record.revisions.find((item) => item.revision === record.currentRevision);
   if (!revision) throw new Error(`Transcript revision ${record.currentRevision} is missing for ${record.id}`);
   return revision;
+}
+
+/**
+ * 决定新记录携带的完整性记录：调用方显式给出的优先；否则沿用同一路径的已有记录。
+ * 路径变化时不沿用，因为旧记录描述的是另一个文件。
+ */
+function carriedSourceIntegrity(
+  existing: TranscriptSegmentRecord | undefined,
+  sourcePath: string | null,
+  explicit: SourceIntegrity | null | undefined,
+): SourceIntegrity | undefined {
+  if (explicit) return explicit;
+  if (existing?.sourceIntegrity && existing.sourcePath === sourcePath) return existing.sourceIntegrity;
+  return undefined;
+}
+
+/** 返回带（或不带）完整性记录的记录；字段相同则返回原对象，缺省时不写出该键。 */
+export function withSourceIntegrity(record: TranscriptSegmentRecord, integrity: SourceIntegrity | undefined): TranscriptSegmentRecord {
+  if (sameSourceIntegrity(record.sourceIntegrity, integrity)) return record;
+  const next: TranscriptSegmentRecord = { ...record };
+  if (integrity) next.sourceIntegrity = integrity;
+  else delete next.sourceIntegrity;
+  return next;
 }
 
 function safeSplitBoundary(text: string, start: number, limit: number): number {
@@ -214,15 +240,16 @@ export function attachTextTranscript(
   if (current && revisionContentKey(current) === revisionContentKey(nextRevision)) {
     return { ...segment, transcript: existing };
   }
-  const transcript: TranscriptSegmentRecord = {
+  const sourcePath = segment.sourcePath || segment.audioPath || null;
+  const transcript: TranscriptSegmentRecord = withSourceIntegrity({
     schemaVersion: 2,
     id: existing?.id || parentId,
     sourceId,
-    sourcePath: segment.sourcePath || segment.audioPath || null,
+    sourcePath,
     sourceName: segment.sourceName || segment.audioName || null,
     currentRevision: nextNumber,
     revisions: [...(existing?.revisions || []), nextRevision],
-  };
+  }, carriedSourceIntegrity(existing, sourcePath, null));
   return { ...segment, transcript };
 }
 
@@ -292,13 +319,16 @@ export function attachTranscriptResult(
   sourceId: string,
   result: AsrTranscriptResult | null,
   origin: TranscriptOrigin,
+  sourceIntegrity: SourceIntegrity | null = null,
 ): Segment {
   const existing = segment.transcript?.sourceId === sourceId ? segment.transcript : undefined;
   const parentId = existing?.id || `seg:${encodeURIComponent(sourceId)}:${segment.index}`;
   const visibleText = String(segment.text || "");
+  const sourcePath = segment.sourcePath || segment.audioPath || null;
+  const integrity = carriedSourceIntegrity(existing, sourcePath, sourceIntegrity);
   const hasEvidence = !!result && (!!result.rawText || result.units.length > 0 || !!result.text.trim());
   if (!hasEvidence) {
-    if (existing) return { ...segment, transcript: existing };
+    if (existing) return { ...segment, transcript: sourceIntegrity ? withSourceIntegrity(existing, sourceIntegrity) : existing };
     const emptyRevision: TranscriptRevision = {
       revision: 0,
       normalizationRevision: 1,
@@ -311,15 +341,15 @@ export function attachTranscriptResult(
     };
     return {
       ...segment,
-      transcript: {
+      transcript: withSourceIntegrity({
         schemaVersion: 2,
         id: parentId,
         sourceId,
-        sourcePath: segment.sourcePath || segment.audioPath || null,
+        sourcePath,
         sourceName: segment.sourceName || segment.audioName || null,
         currentRevision: 0,
         revisions: [emptyRevision],
-      },
+      }, integrity),
     };
   }
 
@@ -340,7 +370,7 @@ export function attachTranscriptResult(
     corrections: sameRawRevision ? previous.corrections : [],
   };
   if (sameRawRevision && revisionContentKey(previous) === revisionContentKey(candidate)) {
-    return { ...segment, transcript: existing };
+    return { ...segment, transcript: existing && sourceIntegrity ? withSourceIntegrity(existing, sourceIntegrity) : existing };
   }
   if (sameRawRevision) {
     const normalizationRevision = previous.normalizationRevision + 1;
@@ -365,15 +395,15 @@ export function attachTranscriptResult(
   else revisions.push(candidate);
   return {
     ...segment,
-    transcript: {
+    transcript: withSourceIntegrity({
       schemaVersion: 2,
       id: existing?.id || parentId,
       sourceId,
-      sourcePath: segment.sourcePath || segment.audioPath || null,
+      sourcePath,
       sourceName: segment.sourceName || segment.audioName || null,
       currentRevision: candidate.revision,
       revisions,
-    },
+    }, integrity),
   };
 }
 
