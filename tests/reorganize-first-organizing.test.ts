@@ -165,6 +165,7 @@ function makePort(content: string, options: { autoRename?: boolean; rename?: (fi
     getModeDisplayName: () => "",
     getModeOptions: vi.fn(() => modes),
     resolveLinkPath: vi.fn((link: string) => (link === "qnalog-20261017-125032.m4a" ? audioPath : null)),
+    formatNoteFileName: vi.fn(() => null),
     getAutoRenameWithTitle: vi.fn(() => options.autoRename ?? true),
     renameWithGeneratedTitle: vi.fn(options.rename ?? (async () => renamed)),
     getInFlight: () => new Set<string>(),

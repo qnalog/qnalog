@@ -60,6 +60,7 @@ function fixture(overrides: Record<string, unknown> = {}) {
     getCachedFrontmatter: () => ({ "qnalog_time": "2026-10-13T10:00:00", user_custom: "keep-me", tags: ["old"] }),
     loadErrata: vi.fn(async () => null),
     getDefaultMode: () => "general",
+    formatNoteFileName: () => null,
     detectNoteMode: vi.fn(() => null),
     getModeDisplayName: () => "General",
     getInFlight: () => new Set<string>(),
