@@ -29,15 +29,17 @@ Download `main.js`, `manifest.json`, `styles.css`, `LICENSE`, and `NOTICE` from 
 
 ## First-time setup
 
-1. Open **Settings → QnALog**. Choose **Setup Wizard** to select a preset, enter the required API key and model details, test the services, then choose **Apply and start**.
+1. Open **Settings → QnALog**. Choose **Setup Wizard**, select **Alibaba Cloud Bailian** or **OpenAI**, enter the API key (the built-in service address and models are filled in), test the services, then choose **Apply and start**.
 2. Open **Settings → QnALog → Open sidebar**. The wizard may appear automatically on first enable when setup is incomplete; reopen it from the settings home at any time.
 3. **Quick config** is a separate shortcut for a preset configuration. If a setup is already present, confirm before replacing it. To configure services individually, open **Settings → QnALog → API**.
-On the settings home, click the **AI Organize** status row to open its model field on the API tab. Under **API → Speech Recognition**, **Get models** lists models returned by the configured transcription service; if no usable catalogue is available, enter the model ID manually. Settings tab labels follow the selected interface language.
+On the settings home, click a status row to open the API tab. Under **Speech transcription**, **Get models** lists models returned by the selected transcription service; if no usable catalogue is available, enter the model ID manually. Settings tab labels follow the selected interface language.
+
+The API tab offers these services. **Speech transcription**: OpenAI, Groq, Alibaba Cloud Bailian, SiliconFlow, and Local / custom OpenAI-compatible. **AI organizing**: OpenAI, Anthropic Claude, Google Gemini, OpenRouter, DeepSeek, Alibaba Cloud Bailian, SiliconFlow, and Local / custom OpenAI-compatible. A service that is no longer in these lists keeps working if it is already selected; it is not offered for new selections. Each AI organizing service keeps its own address, access key, and model, so switching back restores them. Speaker recognition for imported audio, and saved configurations, are under **API → Advanced settings**, which is collapsed by default. The settings home lists speaker recognition only while it is enabled.
 
 
 Recording transcription needs a configured speech-to-text (ASR) service. Importing a complete audio file may use a separate transcription service. AI organization, questions, and knowledge extraction need a configured large language model (LLM); an ASR key alone does not enable those features. You can use local services where supported.
 
-Alibaba Cloud Bailian quick config uses Qwen-Audio-3.1-ASR-Flash over its native HTTP API for recording transcription and Qwen-Audio-3.1-ASR-Flash-Filetrans for whole-file imports with speaker diarization. Under **API → Speech Recognition**, **Get models** lists the service catalogue; selecting a recognized Bailian ASR model updates its endpoint and protocol together. Bailian models use their registered native HTTP, Chat Completions, file-transcription, task WebSocket, or Qwen3 event WebSocket path. WebSocket recording requires desktop Obsidian; Gummy one-sentence tasks rotate before the service's one-minute audio limit. The quick-config defaults remain unchanged. See [`MAINTAINING.md`](MAINTAINING.md) for protocol details and region-specific pricing.
+Alibaba Cloud Bailian quick config uses Qwen-Audio-3.1-ASR-Flash over its native HTTP API for recording transcription and Qwen-Audio-3.1-ASR-Flash-Filetrans for whole-file imports with speaker diarization. Under **Speech transcription**, **Get models** lists the service catalogue; selecting a recognized Bailian ASR model updates its endpoint and protocol together. Bailian models use their registered native HTTP, Chat Completions, file-transcription, task WebSocket, or Qwen3 event WebSocket path. WebSocket recording requires desktop Obsidian; Gummy one-sentence tasks rotate before the service's one-minute audio limit. The quick-config defaults remain unchanged. See [`MAINTAINING.md`](MAINTAINING.md) for protocol details and region-specific pricing.
 
 ## Basic usage
 
