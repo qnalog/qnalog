@@ -1,0 +1,54 @@
+{
+  "title": "Product sync (zh/en mixed)",
+  "language": "mixed",
+  "utterances": [
+    {
+      "speaker": "Alice",
+      "text": "大家好，今天我们过一下 roadmap。",
+      "startMs": 0,
+      "endMs": 4000
+    },
+    {
+      "speaker": "Bob",
+      "text": "好的，先看第一季度的 milestone。",
+      "startMs": 4200,
+      "endMs": 8000
+    },
+    {
+      "speaker": "Carol",
+      "text": "我这边 backend 已经完成了。",
+      "startMs": 8200,
+      "endMs": 11000
+    },
+    {
+      "speaker": "Alice",
+      "text": "那 release 定在下周五可以吗？",
+      "startMs": 11200,
+      "endMs": 14500
+    },
+    {
+      "speaker": "Bob",
+      "text": "可以，我会通知 QA team。",
+      "startMs": 14700,
+      "endMs": 17500
+    },
+    {
+      "speaker": "Carol",
+      "text": "另外 API 文档还需要更新。",
+      "startMs": 17700,
+      "endMs": 21000
+    },
+    {
+      "speaker": "Alice",
+      "text": "没问题，谁来负责？",
+      "startMs": 21200,
+      "endMs": 23500
+    },
+    {
+      "speaker": "Bob",
+      "text": "我来吧，周三之前完成。",
+      "startMs": 23700,
+      "endMs": 27000
+    }
+  ]
+}

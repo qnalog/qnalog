@@ -1,0 +1,79 @@
+{
+  "text": "大家好，今天我们过一下 roadmap。 好的，先看第一季度的 milestone。 我这边 backend 已经完成了。 那 release 定在下周伍可以吗？ 可以，我会通知 QA team。 另外 API 文档还需要更新。 没问题，谁来负责？ 我来吧，周三之前完成。",
+  "rawText": null,
+  "providerId": "fixture",
+  "units": [
+    {
+      "rawText": "大家好，今天我们过一下 roadmap。",
+      "normalizedText": "大家好，今天我们过一下 roadmap。",
+      "speakerId": "spk_2",
+      "speakerName": null,
+      "startMs": 40,
+      "endMs": 4000,
+      "timing": "provider"
+    },
+    {
+      "rawText": "好的，先看第一季度的 milestone。",
+      "normalizedText": "好的，先看第一季度的 milestone。",
+      "speakerId": "spk_0",
+      "speakerName": null,
+      "startMs": 4320,
+      "endMs": 8000,
+      "timing": "provider"
+    },
+    {
+      "rawText": "我这边 backend 已经完成了。",
+      "normalizedText": "我这边 backend 已经完成了。",
+      "speakerId": "spk_1",
+      "speakerName": null,
+      "startMs": 8240,
+      "endMs": 11000,
+      "timing": "provider"
+    },
+    {
+      "rawText": "那 release 定在下周五可以吗？",
+      "normalizedText": "那 release 定在下周五可以吗？",
+      "speakerId": "spk_2",
+      "speakerName": null,
+      "startMs": 11320,
+      "endMs": 14500,
+      "timing": "provider"
+    },
+    {
+      "rawText": "可以，我会通知 QA team。",
+      "normalizedText": "可以，我会通知 QA team。",
+      "speakerId": "spk_1",
+      "speakerName": null,
+      "startMs": 14740,
+      "endMs": 17500,
+      "timing": "provider"
+    },
+    {
+      "rawText": "另外 API 文档还需要更新。",
+      "normalizedText": "另外 API 文档还需要更新。",
+      "speakerId": "spk_1",
+      "speakerName": null,
+      "startMs": 17820,
+      "endMs": 21000,
+      "timing": "provider"
+    },
+    {
+      "rawText": "没问题，谁来负责？",
+      "normalizedText": "没问题，谁来负责？",
+      "speakerId": "spk_2",
+      "speakerName": null,
+      "startMs": null,
+      "endMs": null,
+      "timing": "unknown"
+    },
+    {
+      "rawText": "我来吧，周三之前完成。",
+      "normalizedText": "我来吧，周三之前完成。",
+      "speakerId": "spk_0",
+      "speakerName": null,
+      "startMs": 23820,
+      "endMs": 27000,
+      "timing": "provider"
+    }
+  ]
+}
