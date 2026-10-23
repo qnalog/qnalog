@@ -232,7 +232,7 @@ button.qnalog-text-action:focus-visible {
   color: var(--text-muted);
 }
 
-.qnalog-bubble-jump {
+button.qnalog-bubble-jump {
   appearance: none;
   -webkit-appearance: none;
   margin: 0;
@@ -257,8 +257,8 @@ button.qnalog-text-action:focus-visible {
 /* 关键：Obsidian setIcon 生成的 <svg class="svg-icon"> 默认读 --icon-size，
    会把图标压成 Obsidian 全局尺寸。这里在按钮上直接覆盖 --icon-size，
    并用 .qnalog-bubble 父链提特异性强制显式尺寸 + min 防塌缩，确保 file-text 真正画到 18px。 */
-.qnalog-bubble-jump,
-.qnalog-bubble-btn {
+button.qnalog-bubble-jump,
+button.qnalog-bubble-btn {
   --icon-size: var(--qnalog-bubble-icon-size);
 }
 .qnalog-bubble .qnalog-bubble-jump svg,
@@ -325,7 +325,7 @@ button.qnalog-text-action:focus-visible {
   border-left: 0;
 }
 
-.qnalog-bubble-btn {
+button.qnalog-bubble-btn {
   appearance: none;
   -webkit-appearance: none;
   margin: 0;
@@ -1232,7 +1232,7 @@ body .qnalog-bubble-wrap .qnalog-bubble button.qnalog-bubble-btn.is-stop-icon::b
   .qnalog-progress-activity-icon svg,
   .qnalog-bubble-wrap,
   .qnalog-bubble-chip,
-  .qnalog-bubble-btn,
+  button.qnalog-bubble-btn,
   .qnalog-bubble-main,
   .qnalog-bubble.is-recording .qnalog-bubble-timer::before,
   .qnalog-outline-recent-failure-status.is-processing .qnalog-outline-recent-failure-icon svg,
@@ -1293,8 +1293,9 @@ body .qnalog-bubble-wrap .qnalog-bubble button.qnalog-bubble-btn.is-stop-icon::b
   margin: 0 0 var(--size-2-2);
 }
 
-.qnalog-import-category-button {
+button.qnalog-import-category-button {
   display: inline-flex;
+  height: auto;
   align-items: center;
   gap: var(--size-2-1);
   padding: 4px 9px;
@@ -3181,7 +3182,7 @@ body .qnalog-menu .menu-item.selected .menu-item-icon {
   line-height: 1.6;
 }
 
-.qnalog-empty-state-action {
+button.qnalog-empty-state-action {
   display: inline-flex;
   align-items: center;
   justify-content: center;
@@ -3425,7 +3426,7 @@ body .qnalog-menu .menu-item.selected .menu-item-icon {
   border-top: 0.5px solid var(--qnalog-line);
 }
 
-.qnalog-note-ask-batch-btn {
+button.qnalog-note-ask-batch-btn {
   display: inline-flex;
   align-items: center;
   justify-content: center;
@@ -3439,6 +3440,11 @@ body .qnalog-menu .menu-item.selected .menu-item-icon {
   font-size: var(--font-ui-smaller);
   box-shadow: none;
   cursor: pointer;
+}
+
+button.qnalog-note-ask-batch-btn:hover {
+  border-color: var(--interactive-accent-hover);
+  background: var(--interactive-accent-hover);
 }
 
 .qnalog-note-ask-batch-btn:not(:disabled):hover {
@@ -3610,7 +3616,7 @@ body .qnalog-menu .menu-item.selected .menu-item-icon {
   gap: 8px;
 }
 
-.qnalog-note-ask-suggest-chip {
+button.qnalog-note-ask-suggest-chip {
   max-width: 100%;
   text-align: left;
   padding: 7px 13px;
@@ -3620,6 +3626,9 @@ body .qnalog-menu .menu-item.selected .menu-item-icon {
   color: var(--text-normal);
   font-size: var(--font-ui-smaller);
   line-height: 1.4;
+  /* Obsidian 的 button 默认固定高度且不换行，长问题会溢出按钮；这里恢复为随文字换行、高度自适应。 */
+  height: auto;
+  white-space: normal;
   cursor: pointer;
   box-shadow: none;
 }
@@ -4483,7 +4492,7 @@ body .qnalog-menu .menu-item.selected .menu-item-icon {
   gap: 7px;
   row-gap: 7px;
 }
-.qnalog-todo-inline-preset {
+button.qnalog-todo-inline-preset {
   font-size: var(--font-ui-smaller);
   padding: 4px 13px;
   border: 0.5px solid var(--background-modifier-border);
@@ -4865,7 +4874,7 @@ body .qnalog-menu .menu-item.selected .menu-item-icon {
   font-size: 11px;
 }
 
-.qnalog-sediment-checkbox {
+button.qnalog-sediment-checkbox {
   /* 它是 <button>，iOS/iPadOS Safari 会给原生按钮加 chrome → 变成实心方块。
      必须清掉原生外观，box-sizing 让 14px 含边框不被撑大。 */
   appearance: none;
@@ -4886,6 +4895,10 @@ body .qnalog-menu .menu-item.selected .menu-item-icon {
 
 .qnalog-sediment-multiselect-header .qnalog-sediment-checkbox {
   margin-top: 0;
+}
+
+button.qnalog-sediment-checkbox:hover {
+  border-color: var(--qnalog-sediment-accent);
 }
 
 .qnalog-sediment-checkbox.is-checked,
@@ -5045,7 +5058,7 @@ body .qnalog-menu .menu-item.selected .menu-item-icon {
   color: var(--qnalog-sediment-faint);
 }
 
-.qnalog-sediment-button {
+button.qnalog-sediment-button {
   min-height: 30px;
   padding: 4px 12px;
   border-radius: var(--radius-s);
@@ -5500,7 +5513,7 @@ body .qnalog-menu .menu-item.selected .menu-item-icon {
   margin-top: 0;
 }
 
-.qnalog-outline-recent-action {
+button.qnalog-outline-recent-action {
   height: 24px;
   min-width: 24px;
   display: inline-flex;
@@ -5812,7 +5825,7 @@ body .qnalog-menu .menu-item.selected .menu-item-icon {
   line-height: 1.35;
 }
 
-.qnalog-sediment-toast-action {
+button.qnalog-sediment-toast-action {
   flex: 0 0 auto;
   border: none;
   box-shadow: none;
@@ -6060,7 +6073,7 @@ body .qnalog-menu .menu-item.selected .menu-item-icon {
   margin: 0 0 var(--size-2-2);
 }
 
-.qnalog-object-overview-card {
+button.qnalog-object-overview-card {
   position: relative;
   display: flex;
   flex-direction: column;
@@ -6291,7 +6304,7 @@ body .qnalog-menu .menu-item.selected .menu-item-icon {
   font-size: var(--font-ui-smaller);
 }
 
-.qnalog-audio-channel-detect {
+button.qnalog-audio-channel-detect {
   flex: 0 0 auto;
   min-height: 28px;
   padding: 3px var(--size-4-2);
@@ -6706,9 +6719,9 @@ body .qnalog-menu .menu-item.selected .menu-item-icon {
   gap: var(--size-2-2);
 }
 
-.qnalog-progress-queue-retry,
-.qnalog-progress-queue-cancel,
-.qnalog-progress-foot-link {
+button.qnalog-progress-queue-retry,
+button.qnalog-progress-queue-cancel,
+button.qnalog-progress-foot-link {
   min-height: var(--input-height);
   padding: 0 var(--size-4-2);
   border: 1px solid var(--background-modifier-border);
@@ -6726,8 +6739,8 @@ body .qnalog-menu .menu-item.selected .menu-item-icon {
   background: var(--background-modifier-hover);
 }
 
-.qnalog-progress-queue-cancel,
-.qnalog-progress-foot-link {
+button.qnalog-progress-queue-cancel,
+button.qnalog-progress-foot-link {
   border-color: transparent;
   color: var(--text-muted);
 }
@@ -6929,7 +6942,7 @@ body .qnalog-menu .menu-item.selected .menu-item-icon {
   margin-bottom: var(--size-4-3);
 }
 
-.qnalog-vcable-tab {
+button.qnalog-vcable-tab {
   background: transparent;
   border: none;
   border-radius: 0;
@@ -8165,8 +8178,8 @@ body .qnalog-menu .menu-item.selected .menu-item-icon {
   min-height: 44px;
 }
 
-.qnalog-recording-player-primary,
-.qnalog-inline-player-play {
+button.qnalog-recording-player-primary,
+button.qnalog-inline-player-play {
   appearance: none;
   -webkit-appearance: none;
   margin: 0;
@@ -8266,8 +8279,8 @@ body .qnalog-menu .menu-item.selected .menu-item-icon {
   font-variant-numeric: tabular-nums;
 }
 
-.qnalog-recording-player-secondary,
-.qnalog-inline-player-icon-btn {
+button.qnalog-recording-player-secondary,
+button.qnalog-inline-player-icon-btn {
   appearance: none;
   -webkit-appearance: none;
   margin: 0;
@@ -8443,7 +8456,7 @@ body .qnalog-menu .menu-item.selected .menu-item-icon {
   color: var(--qnalog-warning-text);
 }
 
-.qnalog-recording-alert-action {
+button.qnalog-recording-alert-action {
   flex: 0 0 auto;
   border: 0.5px solid var(--qnalog-border-line);
   border-radius: 6px;
@@ -8775,7 +8788,7 @@ body .qnalog-menu .menu-item.selected .menu-item-icon {
 .qnalog-outline-mini-wave-bar:nth-child(3) { height: 4px; }
 .qnalog-outline-mini-wave-bar:nth-child(4) { height: 8px; }
 
-.qnalog-back-to-current {
+button.qnalog-back-to-current {
   position: sticky;
   bottom: 18px;
   left: 50%;
@@ -8972,26 +8985,41 @@ body .qnalog-menu .menu-item.selected .menu-item-icon {
   margin-top: 16px;
 }
 
-.qnalog-recording-blocker-secondary,
-.qnalog-recording-blocker-primary {
+button.qnalog-recording-blocker-secondary,
+button.qnalog-recording-blocker-primary {
   border-radius: 8px;
   font-size: 12px;
   padding: 7px 12px;
 }
 
-.qnalog-recording-blocker-secondary {
+button.qnalog-recording-blocker-secondary {
   border: 0.5px solid var(--qnalog-border-line);
   background: transparent;
   color: var(--qnalog-text-secondary);
 }
 
-.qnalog-recording-blocker-primary {
+button.qnalog-recording-blocker-primary {
   display: inline-flex;
   align-items: center;
   gap: 6px;
   border: 0;
   background: var(--qnalog-primary-action);
   color: var(--text-on-accent);
+}
+
+/* 选择器带 button 之后，Obsidian 的 button:hover 不再覆盖这些按钮，悬停反馈由这里提供。 */
+button.qnalog-recording-blocker-secondary:hover,
+button.qnalog-recording-alert-action:hover {
+  background: var(--background-modifier-hover);
+  color: var(--text-normal);
+}
+
+button.qnalog-recording-blocker-primary:hover {
+  background: var(--qnalog-primary-hover, var(--interactive-accent-hover));
+}
+
+button.qnalog-back-to-current:hover {
+  background: color-mix(in srgb, var(--qnalog-bg-toast) 90%, var(--background-primary));
 }
 
 @keyframes qnalog-wave {
@@ -9068,7 +9096,7 @@ body .qnalog-menu .menu-item.selected .menu-item-icon {
    ============================================================ */
 
 /* 大纲播放器三角 → 主题强调色（白色三角在浅底按钮上看不见的 bug 修复） */
-.qnalog-inline-player-play {
+button.qnalog-inline-player-play {
   background: transparent;
   color: var(--qnalog-primary);
   border: 0;
@@ -9214,7 +9242,7 @@ body .qnalog-menu .menu-item.selected .menu-item-icon {
   stroke: currentColor;
 }
 
-.qnalog-inline-player-icon-btn {
+button.qnalog-inline-player-icon-btn {
   background: transparent;
   box-shadow: none;
 }
@@ -9470,7 +9498,7 @@ body .qnalog-menu .menu-item.selected .menu-item-icon {
   gap: 4px;
 }
 
-.qnalog-todo-popover-preset {
+button.qnalog-todo-popover-preset {
   padding: 4px 10px;
   border: 1px solid var(--background-modifier-border);
   background: transparent;
@@ -9487,7 +9515,7 @@ body .qnalog-menu .menu-item.selected .menu-item-icon {
   background: color-mix(in srgb, var(--interactive-accent) 8%, transparent);
 }
 
-.qnalog-todo-popover-clear {
+button.qnalog-todo-popover-clear {
   align-self: flex-start;
   background: transparent;
   border: none;
@@ -9514,7 +9542,7 @@ body .qnalog-menu .menu-item.selected .menu-item-icon {
   align-items: center;
 }
 
-.qnalog-todo-popover-subtask-del {
+button.qnalog-todo-popover-subtask-del {
   flex: 0 0 auto;
   width: 24px;
   height: 28px;
@@ -9545,7 +9573,7 @@ body .qnalog-menu .menu-item.selected .menu-item-icon {
 }
 
 /* 覆盖 Obsidian 默认 mod-cta 样式（粉色填充太突兀） */
-.qnalog-todo-popover-save,
+button.qnalog-todo-popover-save,
 .qnalog-todo-popover-save.mod-cta {
   appearance: none;
   -webkit-appearance: none;
@@ -9809,7 +9837,7 @@ body .qnalog-menu .menu-item.selected .menu-item-icon {
 .qnalog-topics-operation-icon, .qnalog-topics-operation-icon svg { width: 14px; height: 14px; flex: 0 0 14px; color: var(--text-muted); }
 .qnalog-topics-preview-item.is-conflict { background: var(--background-secondary); border-inline-start: 2px solid var(--text-warning, var(--interactive-accent)); }
 .qnalog-topics-preview-text { flex: 1; min-width: 0; white-space: pre-wrap; line-height: 1.55; }
-.qnalog-topics-source-link { border: 0; padding: 2px 6px; border-radius: 999px; background: var(--background-secondary); color: var(--text-muted); font-size: var(--font-ui-smaller); }
+button.qnalog-topics-source-link { border: 0; padding: 2px 6px; border-radius: 999px; background: var(--background-secondary); color: var(--text-muted); font-size: var(--font-ui-smaller); }
 .qnalog-topics-undo { margin-inline-start: 8px; }
 
 /* Topic dialogs keep their heading and actions visible while the evidence list scrolls.
@@ -9853,7 +9881,9 @@ body .qnalog-menu .menu-item.selected .menu-item-icon {
 .qnalog-topics-preview-meta-right { display: flex; align-items: center; gap: var(--qnalog-topic-space-sm); min-width: 0; }
 .qnalog-topics-preview-meta-left { flex: 1 1 auto; flex-wrap: wrap; margin-right: auto; }
 .qnalog-topics-preview-meta-right { flex: 0 1 auto; flex-wrap: wrap; justify-content: flex-end; max-width: 100%; }
-.qnalog-topics-source-link { flex: 0 1 auto; min-width: 0; max-width: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; border-radius: var(--radius-s, 4px); background: var(--background-modifier-hover); font-size: var(--font-ui-smaller); }
+button.qnalog-topics-source-link { flex: 0 1 auto; min-width: 0; max-width: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; border-radius: var(--radius-s, 4px); background: var(--background-modifier-hover); font-size: var(--font-ui-smaller); }
+button.qnalog-topics-source-link { height: auto; box-shadow: none; }
+button.qnalog-topics-source-link:hover { background: var(--background-modifier-active-hover); color: var(--text-normal); }
 .qnalog-topics-preview-date { color: var(--text-faint); font-size: var(--font-ui-smaller); white-space: nowrap; }
 .qnalog-topics-preview-badge,
 .qnalog-topics-unverified { display: inline-flex; align-items: center; flex: 0 0 auto; width: fit-content; padding: 1px 5px; border-radius: 999px; background: var(--background-secondary); color: var(--text-muted); font-size: 10px; line-height: 1.4; white-space: nowrap; }
@@ -9960,7 +9990,7 @@ body .qnalog-menu .menu-item.selected .menu-item-icon {
   flex-direction: column;
   gap: 2px;
 }
-.qnalog-pick-item {
+button.qnalog-pick-item {
   text-align: left;
   width: 100%;
   background: transparent;
@@ -10059,7 +10089,7 @@ body .qnalog-menu .menu-item.selected .menu-item-icon {
   line-height: 1;
 }
 
-.qnalog-outline-segment-value {
+button.qnalog-outline-segment-value {
   min-width: 34px;
   min-height: 24px;
   padding: 2px 4px;
@@ -12256,7 +12286,7 @@ body.is-mobile .qnalog-recent-filter-popover-templates {
    弱化文字 = 退出类动作。向导不在 .qnalog-outline 作用域内，项目变量经回退取得同源值。 */
 
 /* 退出类动作：不与主按钮争夺注意力，弱化文字但保留正常点击面积（左右内边距）。 */
-.qnalog-wizard-btn-quiet {
+button.qnalog-wizard-btn-quiet {
   background: none;
   border: none;
   box-shadow: none;
@@ -12270,7 +12300,7 @@ body.is-mobile .qnalog-recent-filter-popover-templates {
 }
 
 /* 备选路径 / 工具按钮：透明底 + 描边强调色，与灰底默认按钮拉开区分度。 */
-.qnalog-wizard-btn-secondary {
+button.qnalog-wizard-btn-secondary {
   color: var(--text-accent);
   background: transparent;
   border: 1px solid color-mix(in srgb, var(--interactive-accent) 42%, var(--background-modifier-border));
