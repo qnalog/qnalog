@@ -41,6 +41,9 @@ describe("topic prompt row", () => {
     expect(parent.children.filter((item) => item.cls === "qnalog-outline-recent-row").map((item) => item.text)).toEqual(["note one", "note two"]);
     expect(text(parent)).toContain("May belong to topic “Alpha”");
     expect(text(parent)).toContain("+1");
+    // Actions render as inline text actions, not as Obsidian's default boxed buttons.
+    expect(flatten(parent).filter((item) => item.text === "Integrate").map((item) => item.cls)).toEqual(["qnalog-text-action", "qnalog-text-action"]);
+    expect(flatten(parent).filter((item) => item.text === "Ignore").map((item) => item.cls)).toEqual(["qnalog-text-action is-muted", "qnalog-text-action is-muted"]);
 
     const firstIgnore = flatten(parent).find((item) => item.text === "Ignore");
     firstIgnore?.handlers.get("click")?.({ stopPropagation() {} });

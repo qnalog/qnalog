@@ -11,6 +11,55 @@
    ============================================================ */
 
 /* ============================================================
+   0. 共享控件
+   ============================================================ */
+
+/* 文字操作按钮：在一行说明文字里以链接样式出现的按钮。
+   Obsidian 的 button 基础样式带 height: var(--input-height)、--input-shadow 与悬停底色，
+   三者在这里清掉，按钮才能与同行文字对齐、不显得比文字重。 */
+button.qnalog-text-action,
+button.qnalog-text-action:hover,
+button.qnalog-text-action.mobile-tap {
+  --text-color: var(--text-accent);
+  height: auto;
+  min-height: 0;
+  padding: 0 2px;
+  border: 0;
+  border-radius: var(--radius-s);
+  background: transparent;
+  box-shadow: none;
+  font-size: inherit;
+  font-weight: var(--font-medium);
+  line-height: inherit;
+  vertical-align: baseline;
+}
+
+button.qnalog-text-action.is-muted {
+  --text-color: var(--text-muted);
+  font-weight: inherit;
+}
+
+button.qnalog-text-action:hover {
+  --text-color: var(--text-accent-hover);
+  text-decoration: underline;
+  text-underline-offset: 2px;
+}
+
+button.qnalog-text-action.is-muted:hover {
+  --text-color: var(--text-normal);
+}
+
+button.qnalog-text-action:focus-visible {
+  box-shadow: 0 0 0 2px var(--background-modifier-border-focus);
+}
+
+/* 移动端扩大点按区域，负外边距让行高保持不变。 */
+.is-mobile button.qnalog-text-action {
+  padding: 6px 4px;
+  margin-block: -6px;
+}
+
+/* ============================================================
    1. 浮窗气泡 (Bubble Widget)
    ============================================================ */
 
@@ -9713,7 +9762,7 @@ body .qnalog-menu .menu-item.selected .menu-item-icon {
   padding-bottom: 8px;
 }
 
-.qnalog-topics-create button:focus-visible, .qnalog-topics-preview button:focus-visible, .qnalog-topics-prompt-row button:focus-visible { outline: 2px solid var(--interactive-accent); outline-offset: 2px; }
+.qnalog-topics-create button:focus-visible, .qnalog-topics-preview button:focus-visible { outline: 2px solid var(--interactive-accent); outline-offset: 2px; }
 .qnalog-topics-panel .qnalog-outline-recent-row:focus-visible, .qnalog-topics-panel .qnalog-outline-recent-action:focus-visible { outline: 2px solid var(--interactive-accent); outline-offset: 2px; }
 .qnalog-topics-pending { display: none; width: fit-content; margin: 0 4px 0 0; padding: 2px 6px; border-radius: 10px; color: var(--text-accent); background: color-mix(in srgb, var(--interactive-accent) 12%, transparent); font-size: var(--font-ui-smaller); }
 .qnalog-topics-pending.is-visible { display: inline-block; }
@@ -9762,10 +9811,6 @@ body .qnalog-menu .menu-item.selected .menu-item-icon {
 .qnalog-topics-preview-text { flex: 1; min-width: 0; white-space: pre-wrap; line-height: 1.55; }
 .qnalog-topics-source-link { border: 0; padding: 2px 6px; border-radius: 999px; background: var(--background-secondary); color: var(--text-muted); font-size: var(--font-ui-smaller); }
 .qnalog-topics-undo { margin-inline-start: 8px; }
-.qnalog-topics-prompt-row { display: flex; flex-wrap: wrap; align-items: center; gap: 5px; padding: 3px 8px 7px 34px; color: var(--text-muted); font-size: var(--font-ui-smaller); }
-.qnalog-topics-prompt-row button { border: 0; padding: 2px 5px; background: transparent; color: var(--text-accent); font-size: inherit; }
-.qnalog-topics-prompt-text { min-width: 0; }
-.qnalog-topics-prompt-more { color: var(--text-faint); }
 
 /* Topic dialogs keep their heading and actions visible while the evidence list scrolls.
    Width comes from Obsidian's .modal (560px, max-width min(720px, 92vw)); this content box fills it and sets no fixed width of its own. */
@@ -9828,9 +9873,6 @@ body .qnalog-menu .menu-item.selected .menu-item-icon {
 .qnalog-topics-preview button:focus-visible, .qnalog-topics-create button:focus-visible {
   outline: 2px solid var(--interactive-accent);
   outline-offset: 2px;
-}
-@media (max-width: 420px) {
-  .qnalog-topics-prompt-row { padding-inline-start: 24px; }
 }
 @media (prefers-reduced-motion: reduce) {
   .qnalog-topics-progress-fill { transition: none; }
@@ -11542,10 +11584,6 @@ body.is-mobile .qnalog-recent-filter-popover-templates {
   margin-block: -10px;
 }
 
-.qnalog-outline.is-mobile .qnalog-topics-prompt-row {
-  padding-inline-start: 52px;
-}
-
 .qnalog-outline .qnalog-outline-recent.qnalog-outline-recent--flat-root {
   padding-left: 0;
 }
@@ -11957,26 +11995,29 @@ body.is-mobile .qnalog-recent-filter-popover-templates {
   line-height: 16px;
 }
 
+/* 主题归属提示：一行弱提示 + 两个文字操作，起点与版本行（52px）对齐；窄屏时操作整体换到下一行。 */
 .qnalog-outline .qnalog-topics-prompt-row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
   box-sizing: border-box;
   width: 100%;
-  min-height: 32px;
   margin: 0;
-  padding: 4px 8px 4px 52px;
-  gap: 8px;
-  border-radius: 8px;
+  padding: 2px 8px 6px 52px;
+  column-gap: 10px;
+  row-gap: 2px;
+  color: var(--text-muted);
   font-size: 12px;
-  line-height: 16px;
+  line-height: 18px;
 }
 
-.qnalog-outline .qnalog-topics-prompt-row:hover {
-  background: var(--background-modifier-hover);
+.qnalog-outline .qnalog-topics-prompt-text {
+  min-width: 0;
+  overflow-wrap: anywhere;
 }
 
-.qnalog-outline .qnalog-topics-prompt-row button {
-  min-height: 24px;
-  padding: 4px;
-  line-height: 16px;
+.qnalog-outline .qnalog-topics-prompt-more {
+  color: var(--text-faint);
 }
 
 .qnalog-outline .qnalog-outline-recent-folder-content {

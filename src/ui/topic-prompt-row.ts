@@ -15,12 +15,12 @@ export function renderTopicPromptRow(
   const row = parent.createDiv({ cls: "qnalog-topics-prompt-row" });
   visible.forEach((prompt, index) => {
     row.createSpan({ cls: "qnalog-topics-prompt-text", text: port.text("May belong to topic “{0}”").replace("{0}", prompt.title) });
-    const integrate = row.createEl("button", { text: port.text("Integrate"), attr: { type: "button" } });
+    const integrate = row.createEl("button", { cls: "qnalog-text-action", text: port.text("Integrate"), attr: { type: "button" } });
     integrate.addEventListener("click", (event) => {
       event.stopPropagation();
       onIntegrate(prompt.topicId);
     });
-    const ignore = row.createEl("button", { text: port.text("Ignore"), attr: { type: "button" } });
+    const ignore = row.createEl("button", { cls: "qnalog-text-action is-muted", text: port.text("Ignore"), attr: { type: "button" } });
     ignore.addEventListener("click", (event) => {
       event.stopPropagation();
       void port.ignoreNote(prompt.topicId, path).then(() => {
