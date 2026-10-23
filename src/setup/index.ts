@@ -18,6 +18,8 @@ import type { LlmProfile, PluginSettings, TranscribeProviderSettings } from "../
 
 import { t } from "../shared/i18n";
 import { resolveBailianRecordingProvider } from "../asr/bailian-model-capabilities";
+import { rememberWorkingLlmConfig } from "./llm-service-switch";
+import { currentLlmServiceId, llmServiceIdForPreset } from "./service-catalog";
 /**
  * 预设允许写入的设置键。
  * 这张表之外的一律不碰——`tests/setup.test.ts` 会拿一份完整设置逐项核对。
@@ -34,6 +36,8 @@ export const PRESET_WRITTEN_FIELDS: Record<string, true> = {
   llmApiKey: true,
   llmProfiles: true,
   activeLlmProfile: true,
+  // 套用预设前，把原来的 AI 整理工作配置记到原服务名下，之后切回去还能恢复。
+  llmServiceMemory: true,
 };
 
 /**
@@ -219,6 +223,14 @@ export function planPresetApplication(settings: PluginSettings, request: PresetR
   // 说话人识别是可选项，不是「配置完整」的前提——两件套预设照样能录、能整理。
   const importConfigured = !!importProviderId || asrTarget === "import";
   changes.importSpeakerDiarization = importConfigured;
+
+  // 预设改写的是 AI 整理工作配置：目标服务不是当前服务时，先把当前配置存到原服务名下，目标服务自己的记忆转为当前。
+  const targetServiceId = llmServiceIdForPreset(llmPresetId) || llmPresetId;
+  if (settings && targetServiceId && targetServiceId !== currentLlmServiceId(settings)) {
+    const memory = rememberWorkingLlmConfig(settings);
+    delete memory[targetServiceId];
+    changes.llmServiceMemory = memory;
+  }
 
   changes.llmServicePreset = llmPresetId;
   changes.llmEndpoint = llmEndpoint;

@@ -13,6 +13,7 @@ import { formatDetectionReport, resolvePresetEndpoint } from "../setup";
 import type { PresetDefinition } from "../setup";
 import { diarizationModelCandidates, transcriptionListQuery, wizardModelCandidates } from "../setup/model-catalog";
 import type { WizardModelCategory } from "../setup/model-catalog";
+import { listQuickSetupProviders } from "../setup/service-catalog";
 import { SetupWizardController } from "../setup/wizard-controller";
 import type { SetupWizardDeps } from "../setup/wizard-controller";
 import { t } from "../shared/i18n";
@@ -104,10 +105,12 @@ export class SetupWizardModal<T extends { settings: PluginSettings }> extends ob
       cls: "qnalog-wizard-desc",
       text: t("Pick a preset plan below, choose a provider, and enter its API key to start recording voice notes and organizing them automatically."),
     });
-    for (const [id, preset] of Object.entries(PRESET_VIEW)) {
+    for (const provider of listQuickSetupProviders()) {
+      const { id } = provider;
+      const preset = PRESET_VIEW[id] || {};
       const row = root.createDiv({ cls: "qnalog-wizard-preset" });
       const head = row.createDiv({ cls: "qnalog-wizard-preset-head" });
-      head.createSpan({ cls: "qnalog-wizard-preset-label", text: preset.label || id });
+      head.createSpan({ cls: "qnalog-wizard-preset-label", text: provider.label });
       const use = head.createEl("button", { text: t("Use this plan"), cls: "mod-cta" });
       use.onclick = () => { this.controller.selectPreset(id); this.render(); };
       if (preset.applyDesc) row.createDiv({ cls: "qnalog-wizard-preset-desc", text: t(preset.applyDesc) });

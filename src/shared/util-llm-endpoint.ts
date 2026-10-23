@@ -108,6 +108,19 @@ export function isPoeLlmEndpoint(endpoint) {
   }
 }
 
+/**
+ * Anthropic 的 OpenAI 兼容接口：Claude 4.7 及之后的模型对低于 1 的 temperature 返回 400，
+ * 因此请求里不带该字段（见 Anthropic 兼容性文档的 temperature 一行）。
+ */
+export function isAnthropicApiEndpoint(endpoint) {
+  try {
+    const host = new URL(normalizeLlmEndpoint(endpoint)).hostname.toLowerCase();
+    return host === "api.anthropic.com";
+  } catch {
+    return false;
+  }
+}
+
 export function isMoonshotKimiModel(endpoint, model) {
   try {
     const url = new URL(normalizeLlmEndpoint(endpoint));

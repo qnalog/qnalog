@@ -1,7 +1,7 @@
 ﻿/* eslint-disable @typescript-eslint/no-unsafe-assignment, @typescript-eslint/no-unsafe-member-access, @typescript-eslint/no-unsafe-call, @typescript-eslint/no-unsafe-argument, @typescript-eslint/no-unsafe-return -- QnALog's settings/data layer is intentionally dynamically typed (files use @ts-nocheck and read untyped JSON from loadData); these type-only rules yield no actionable findings here and are tracked for incremental typing */
 // 由 main.ts 抽出（模块化拆解，提升工程稳定性；纯搬迁、零行为改动）。
 import * as obsidian from "obsidian";
-import { normalizeLlmEndpoint, isPoeLlmEndpoint, isMoonshotKimiModel, buildLlmHeaders, assertSafeServiceEndpoint, canOmitServiceApiKey, getServiceEndpointSecurityIssue } from '../shared/util-llm-endpoint';
+import { normalizeLlmEndpoint, isPoeLlmEndpoint, isMoonshotKimiModel, isAnthropicApiEndpoint, buildLlmHeaders, assertSafeServiceEndpoint, canOmitServiceApiKey, getServiceEndpointSecurityIssue } from '../shared/util-llm-endpoint';
 import { applyThinkingParam } from './thinking';
 import { delayMs } from '../shared/util-audio';
 import { extractLlmContent } from '../shared/util-json';
@@ -323,7 +323,7 @@ export async function requestLlmChatCompletion(plugin, messages, options) {
     stream: false,
     temperature: undefined,
   };
-  if (!isMoonshotKimiModel(endpoint, llmModel)) basePayload.temperature = 0.3;
+  if (!isMoonshotKimiModel(endpoint, llmModel) && !isAnthropicApiEndpoint(endpoint)) basePayload.temperature = 0.3;
   const payload = applyLearnedLlmCapability(plugin.settings, Object.assign(basePayload, options && options.payload ? options.payload : {}));
   // 思考档：default 不动请求；fast 关思维链 / reasoning 显式开——仅对已核实可控的服务注入对应参数，其它不动。
   try { applyThinkingParam(payload, (options && options.thinkingMode) || plugin.settings.thinkingMode, endpoint, llmModel); } catch { /* intentionally empty */ }

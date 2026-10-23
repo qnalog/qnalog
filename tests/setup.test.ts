@@ -439,3 +439,51 @@ describe("说话人分离模型的自定义覆盖", () => {
     expect(after.importSpeakerDiarization).toBe(false);
   });
 });
+
+describe("OpenAI 一站式方案与 AI 整理记忆", () => {
+  it("OpenAI 预设一把密钥配好录音转写与 AI 整理，不动导入转写和其它键", () => {
+    const before = completedSettings();
+    const plan = planPresetApplication(before, { providerId: "openai", apiKey: "sk-openai-new" });
+    expect(plan.ok).toBe(true);
+    expect(plan.asrTarget).toBe("recording");
+    expect(plan.importAsrProviderId).toBe("");
+    const after = applyPresetPlan(before, plan);
+    expect(after.activeTranscribeProvider).toBe("openai");
+    expect(after.transcribeProviders.openai).toMatchObject({
+      apiKey: "sk-openai-new",
+      model: "gpt-4o-transcribe",
+      endpoint: "https://api.openai.com/v1/audio/transcriptions",
+    });
+    expect(after).toMatchObject({
+      llmServicePreset: "openai",
+      llmEndpoint: "https://api.openai.com/v1",
+      llmModel: "gpt-4.1-mini",
+      llmApiKey: "sk-openai-new",
+      importSpeakerDiarization: false,
+    });
+    expect(after.importTranscribeProvider).toBe(before.importTranscribeProvider);
+    const written: Record<string, true> = PRESET_WRITTEN_FIELDS;
+    for (const key of Object.keys(plan.changes)) expect(written[key], key).toBe(true);
+  });
+
+  it("套用预设前，原 AI 整理配置记到原服务名下，切回去能恢复", () => {
+    const before = completedSettings();
+    before.llmServicePreset = "dashscope";
+    before.llmEndpoint = "https://dashscope.aliyuncs.com/compatible-mode/v1";
+    before.llmApiKey = "sk-bailian-old";
+    before.llmModel = "qwen-plus";
+    const after = applyPresetPlan(before, planPresetApplication(before, { providerId: "openai", apiKey: "sk-openai-new" }));
+    expect(after.llmServiceMemory.dashscope).toEqual({
+      endpoint: "https://dashscope.aliyuncs.com/compatible-mode/v1",
+      apiKey: "sk-bailian-old",
+      model: "qwen-plus",
+    });
+  });
+
+  it("检测不通过或取消时不写入：计划是纯函数，传入设置逐字不变", () => {
+    const before = completedSettings();
+    const snapshot = JSON.stringify(before);
+    planPresetApplication(before, { providerId: "openai", apiKey: "sk-x" });
+    expect(JSON.stringify(before)).toBe(snapshot);
+  });
+});

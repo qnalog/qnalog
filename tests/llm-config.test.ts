@@ -163,10 +163,10 @@ describe("LLM 服务预设", () => {
     expect(inferLlmServicePresetId({ llmEndpoint: "https://dashscope.aliyuncs.com/compatible-mode/v1" })).toBe("dashscope");
   });
 
-  it("快速配置只列三家：MiMo、百炼、OpenRouter", () => {
-    // 下拉按注册表顺序渲染（settings-tab 的 Object.entries 循环），成员与顺序就是用户看到的列表。
-    // 硅基流动已退出：有合适的语音模型，但大语言模型价格偏高，不进快捷配置（2026-09-23 维护者决定）。
-    expect(Object.keys(ONE_CARD_PROVIDERS)).toEqual(["mimo", "bailian", "openrouter"]);
+  it("一站式方案注册表保留旧成员（MiMo、OpenRouter 仍可解析），新增 OpenAI", () => {
+    // 注册表是代码层的事实来源；新用户能选哪些由 src/setup/service-catalog.ts 的快速配置清单决定
+    //（tests/service-catalog.test.ts）。旧成员保留，已有 MiMo / OpenRouter 方案的用户不受影响。
+    expect(Object.keys(ONE_CARD_PROVIDERS)).toEqual(["mimo", "bailian", "openai", "openrouter"]);
   });
   it("restores Bailian routing from the selected model instead of the provider default", () => {
     const settings = {

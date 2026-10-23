@@ -398,6 +398,7 @@ QnALog 长期以 MIT 开源维护，可审计性是隐私承诺的依据。可�
 | `llmServicePreset` | 服务预设 id，用于填地址与请求头适配 | `composer.servicePreset` | — |
 | `llmProfiles` | 已保存的 API 方案（转写+AI 整理为一套） | `composer.profiles` | — |
 | `activeLlmProfile` | 当前启用的 API 方案 id | `composer.activeProfile` | — |
+| `llmServiceMemory` | 各 AI 整理服务上次使用的地址/密钥/模型，切换服务时恢复（密钥同样进 SecretStorage） | `composer.serviceMemory` | — |
 | `polishMode` | 默认整理方式 | `composer.defaultMode` | — |
 | `polishPromptInterview` | 该模式的提示词回退来源：模板为空时使用（`legacyPromptFieldForMode`）；内部字段，不进设置界面 | `composer.modePromptOverrides.interview` | `promptOverrides.interview` |
 | `polishPromptMeeting` | 同上（Meeting 模式的回退提示词）；内部字段，不进设置界面 | `composer.modePromptOverrides.meeting` | `promptOverrides.meeting` |

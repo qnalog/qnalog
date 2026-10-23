@@ -9,7 +9,9 @@ import { isLocalServiceEndpoint } from '../shared/util-note';
 import { compareVersions, isMobileRuntime } from '../shared/util-platform';
 import { getEffectivePolishMode, getModeDisplayName, getModeMeta, getVisibleModeEntries } from '../shared/mode-meta';
 import { UI_LANGUAGES, getActiveUiLanguage, t } from '../shared/i18n';
-import { LLM_SERVICE_PRESETS, ONE_CARD_PROVIDERS, applyLlmProfileToWorkingConfig, applyLlmServicePresetToWorkingConfig, findLlmProfile, getActiveLlmServicePresetId, getLlmServicePreset, inferLlmServicePresetId, normalizeLlmProfiles, syncWorkingConfigToLlmProfile } from '../llm/config';
+import { applyLlmProfileToWorkingConfig, findLlmProfile, getActiveLlmServicePresetId, getLlmServicePreset, inferLlmServicePresetId, normalizeLlmProfiles, syncWorkingConfigToLlmProfile } from '../llm/config';
+import { currentLlmServiceId, currentRecordingServiceId, defaultQuickSetupProviderId, listLlmServices, listQuickSetupProviders, listRecordingServices, selectRecordingService } from "../setup/service-catalog";
+import { switchLlmService } from "../setup/llm-service-switch";
 import { fetchLlmModelList, testLlmConnection } from '../llm/core';
 import { snapshotActiveAsr, syncWorkingAsrToActiveScheme } from '../llm/asr-scheme';
 import { isDashScopeFlashNoWordsError } from "../asr/dashscope-flash-asr";
@@ -427,13 +429,13 @@ export class QnALogSettingTab extends obsidian.PluginSettingTab {
     // 选服务商，而不是固定某一家。决定因素是「你所在网络能不能连上」，
     // 与界面语言无关——英文用户在中国大陆、中文用户在海外都很常见。
     // 默认项按界面语言给一个常见答案，但用户随时可以在下拉里改。
-    let oneCardProvider = getActiveUiLanguage().id === "en" ? "openrouter" : "bailian";
+    let oneCardProvider = defaultQuickSetupProviderId(getActiveUiLanguage().id);
     let oneCardKey = "";
     const providerRow = new obsidian.Setting(oneCard).setName(t("Provider"));
     providerRow.setDesc(t("Enter the API key for this provider. QnALog stores keys through Obsidian SecretStorage, not in its plugin settings file."));
     providerRow.addDropdown(d => {
-      for (const [id, preset] of Object.entries(ONE_CARD_PROVIDERS)) {
-        d.addOption(id, preset.label);
+      for (const provider of listQuickSetupProviders()) {
+        d.addOption(provider.id, provider.label);
       }
       d.setValue(oneCardProvider).onChange(v => { oneCardProvider = v; });
     });
@@ -496,7 +498,7 @@ export class QnALogSettingTab extends obsidian.PluginSettingTab {
     }));
     oneCard.createDiv({
       cls: "qnalog-home-prep-desc",
-      text: t("Other services (OpenAI, SiliconFlow, local models) can be configured individually on the API tab. This path only compresses first-time setup into one step."),
+      text: t("Other services (SiliconFlow, Groq, OpenRouter, local models) can be configured individually on the API tab. This path only compresses first-time setup into one step."),
     });
     }
 
@@ -1370,14 +1372,10 @@ export class QnALogSettingTab extends obsidian.PluginSettingTab {
     new obsidian.Setting(c).setName(t("Transcription Service"))
       .setDesc(t("Choose the service currently used for speech transcription. Only the settings for the selected service are shown below."))
       .addDropdown(d => {
-        for (const id of Object.keys(this.plugin.settings.transcribeProviders)) {
-          const p = this.plugin.settings.transcribeProviders[id];
-          const optProfile = this.getTranscribeProviderProfile(id, p);
-          d.addOption(id, optProfile.title || id);
-        }
-        d.setValue(this.plugin.settings.activeTranscribeProvider || "siliconflow")
+        for (const service of listRecordingServices(this.plugin.settings)) d.addOption(service.id, service.label);
+        d.setValue(currentRecordingServiceId(this.plugin.settings))
           .onChange(async v => {
-            this.plugin.settings.activeTranscribeProvider = v;
+            Object.assign(this.plugin.settings, selectRecordingService(this.plugin.settings, v));
             await this.plugin.saveSettings();
             this.renderSettings();
           });
@@ -1566,21 +1564,17 @@ export class QnALogSettingTab extends obsidian.PluginSettingTab {
     const activeLlmPresetId = getActiveLlmServicePresetId(this.plugin.settings);
     const activeLlmPreset = getLlmServicePreset(activeLlmPresetId);
     new obsidian.Setting(c).setName(t("Service Preset"))
-      .setDesc(t("Selecting a service preset clears the current access key. SiliconFlow reuses its saved transcription key when available. Enter the model ID shown in the provider or relay console."))
+      .setDesc(t("Each service keeps its own service URL, access key and model. Switching restores what you used last with that service; a service you have not used yet starts with its defaults and an empty key."))
       .addDropdown(d => {
-        d.addOption("", t("Custom service…"));
-        for (const preset of LLM_SERVICE_PRESETS) d.addOption(preset.id, preset.label);
-        d.setValue(activeLlmPresetId || "");
+        for (const service of listLlmServices(this.plugin.settings)) d.addOption(service.id, service.label);
+        d.setValue(currentLlmServiceId(this.plugin.settings));
         d.onChange(async id => {
-          const preset = getLlmServicePreset(id);
-          Object.assign(this.plugin.settings, applyLlmServicePresetToWorkingConfig(this.plugin.settings, id));
-          if (!preset) {
-            await this.plugin.saveSettings();
-            this.renderSettings();
-            return;
-          }
+          const update = switchLlmService(this.plugin.settings, id);
+          if (!update) return;
+          Object.assign(this.plugin.settings, update);
           await this.plugin.saveSettings();
-          new obsidian.Notice(`${t("Applied service preset:")}${preset.label}${t(". Confirm the access key and model ID, then test the connection.")}`, 6000);
+          const label = listLlmServices(this.plugin.settings).find(service => service.id === id);
+          new obsidian.Notice(`${t("Applied service preset:")}${label ? label.label : id}${t(". Confirm the access key and model ID, then test the connection.")}`, 6000);
           this.renderSettings();
         });
       });

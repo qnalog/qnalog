@@ -26,6 +26,15 @@ export const LLM_SERVICE_PRESETS = [
     modelHelp: "Enter a chat/completions model name supported by the OpenAI platform.",
   },
   {
+    id: "anthropic",
+    label: "Anthropic Claude",
+    endpoint: "https://api.anthropic.com/v1",
+    endpointHelp: "Anthropic's OpenAI SDK compatibility endpoint. Enter up to /v1; QnALog will append /chat/completions automatically. Anthropic describes this layer as meant for testing and comparison.",
+    keyHelp: "Enter the access key (API Key) created in the Anthropic Console.",
+    modelPlaceholder: "Enter a Claude model name from the Anthropic documentation",
+    modelHelp: "Enter a Claude model name such as claude-sonnet-5-5. Requests go through the compatibility endpoint, so Claude-only features are not used.",
+  },
+  {
     id: "poe",
     label: "Poe",
     endpoint: "https://api.poe.com/v1",
@@ -227,6 +236,21 @@ export const ONE_CARD_PROVIDERS = {
     llmEndpoint: "https://dashscope.aliyuncs.com/compatible-mode/v1",
     llmModel: "qwen3.8-flash",
     applyDesc: "Recording transcription, audio import, and AI organizing are configured with a single Bailian key.",
+  },
+  // 面向中国大陆以外用户的默认一站式方案：一把 OpenAI Key 配好录音转写与 AI 整理。
+  // 整理模型选 gpt-4.1-mini：QnALog 的请求固定带 temperature，gpt-5 系列推理模型只接受默认温度，
+  // 会返回 400；gpt-4.1 系列接受该参数。OpenAI 没有适配本插件的说话人分离整文件服务，因此不配置导入转写。
+  openai: {
+    label: "OpenAI",
+    scope: "asr-llm",
+    asrProvider: "openai",
+    asrTarget: "recording",
+    asrEndpoint: "https://api.openai.com/v1/audio/transcriptions",
+    asrModel: "gpt-4o-transcribe",
+    llmPreset: "openai",
+    llmEndpoint: "https://api.openai.com/v1",
+    llmModel: "gpt-4.1-mini",
+    applyDesc: "Recording transcription (gpt-4o-transcribe) and AI organizing (gpt-4.1-mini) are configured with a single OpenAI key.",
   },
   // 面向中国大陆以外用户：一把 OpenRouter Key 配好「录音转写 / 导入音频 / AI 整理」三段。
   // 与百炼的区别是「能不能连上」而不是界面语言——两者都在下拉里，由用户按网络环境自选。

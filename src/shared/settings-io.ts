@@ -12,6 +12,7 @@ import { isTrustedUpdateSourceUrl } from "../update/update-source";
 import { MODE_META } from "./catalog-modes";
 import { normalizeAudioInputMode } from "../audio/audio-input";
 import { t } from "./i18n";
+import { normalizeLlmServiceMemory } from "./llm-service-memory";
 import {
   isCustomPromptModeTemplate,
   normalizeAsrConcurrency,
@@ -309,6 +310,7 @@ export function normalizePluginSettings(savedData: unknown): PluginSettings {
   s.llmProfiles = normalizeLlmProfiles(firstArray(composer.profiles, raw.llmProfiles));
   s.activeLlmProfile = firstString(defaults.activeLlmProfile, composer.activeProfile, raw.activeLlmProfile);
   if (s.activeLlmProfile && !s.llmProfiles.some(profile => profile.id === s.activeLlmProfile)) s.activeLlmProfile = "";
+  s.llmServiceMemory = normalizeLlmServiceMemory(firstRecord(composer.serviceMemory, raw.llmServiceMemory));
   s.polishMode = firstString(defaults.polishMode, composer.defaultMode, raw.polishMode);
   s.polishPromptInterview = firstString(defaults.polishPromptInterview, promptOverrides.interview, raw.polishPromptInterview);
   s.polishPromptMeeting = firstString(defaults.polishPromptMeeting, promptOverrides.meeting, raw.polishPromptMeeting);
@@ -480,6 +482,7 @@ export function serializePluginSettings(s: PluginSettings): PersistedPluginSetti
       servicePreset: s.llmServicePreset,
       profiles: normalizeLlmProfiles(s.llmProfiles),
       activeProfile: s.activeLlmProfile || "",
+      serviceMemory: normalizeLlmServiceMemory(s.llmServiceMemory),
       defaultMode: s.polishMode,
       modePromptOverrides: {
         interview: s.polishPromptInterview || "",
