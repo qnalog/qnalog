@@ -2893,7 +2893,7 @@ body .qnalog-menu .menu-item.selected .menu-item-icon {
 
 .qnalog-outline-head.is-idle .qnalog-outline-actions {
   display: grid;
-  grid-template-columns: minmax(0, 1.8fr) repeat(3, minmax(0, 0.8fr));
+  grid-template-columns: minmax(0, 1fr) auto;
   gap: 7px;
   margin-left: 0;
   margin-top: 4px;
@@ -2963,7 +2963,7 @@ body .qnalog-menu .menu-item.selected .menu-item-icon {
   }
 
   .qnalog-outline-head.is-idle .qnalog-outline-actions {
-    grid-template-columns: minmax(0, 1.8fr) repeat(3, minmax(0, 0.8fr));
+    grid-template-columns: minmax(0, 1fr) auto;
   }
 
   .qnalog-outline-head.is-idle .qnalog-outline-action-button.is-record {
@@ -8001,7 +8001,7 @@ button.qnalog-vcable-tab {
 }
 
 .qnalog-outline-head.is-idle .qnalog-outline-actions {
-  grid-template-columns: minmax(0, 1.8fr) repeat(3, minmax(0, 0.8fr));
+  grid-template-columns: minmax(0, 1fr) auto;
   gap: 7px;
   margin-top: 3px;
 }
@@ -9703,7 +9703,7 @@ button.qnalog-todo-popover-save,
 
 .qnalog-outline.is-mobile .qnalog-outline-actions {
   display: grid;
-  grid-template-columns: minmax(0, 1.45fr) repeat(3, minmax(0, 0.85fr));
+  grid-template-columns: minmax(0, 1fr) auto;
   gap: 8px;
   margin: 0;
 }
@@ -10981,7 +10981,7 @@ button.qnalog-pick-item {
 
 .qnalog-outline.is-idle-view .qnalog-outline-action-cluster {
   display: flex;
-  flex: 0 0 96px;
+  flex: 0 0 auto;
   height: 30px;
   overflow: hidden;
   border: var(--border-width, 1px) solid var(--qnalog-border-line, var(--background-modifier-border));
