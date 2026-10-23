@@ -3,7 +3,7 @@
 import { delayMs, extFromMime, mimeFromExt, isAsrTransportError } from '../shared/util-audio';
 import { extractLlmContent } from '../shared/util-json';
 import { isLocalServiceEndpoint } from '../shared/util-note';
-import { assertSafeServiceEndpoint, canOmitServiceApiKey } from '../shared/util-llm-endpoint';
+import { assertSafeServiceEndpoint, canOmitServiceApiKey, isOpenAiGptTranscribeModel } from '../shared/util-llm-endpoint';
 import { buildVocabularyPrompt, applyVocabularyCorrections, loadVocabularyGroups } from '../vocabulary';
 import { buildPeopleHotwordsForAsr } from '../people';
 import { qnalogArrayBufferToBase64 } from './clients';
@@ -1163,7 +1163,7 @@ export async function transcribeAudio(
   const ext = extFromMime(mime);
   form.append("file", blob, `recording.${ext}`);
   form.append("model", p.model);
-  if (p.language && p.language !== "auto") form.append("language", p.language);
+  if (p.language && p.language !== "auto" && !isOpenAiGptTranscribeModel(p.endpoint, p.model)) form.append("language", p.language);
   form.append("response_format", diarizationOptions.responseFormat);
   if (diarizationOptions.chunkingStrategy) form.append("chunking_strategy", diarizationOptions.chunkingStrategy);
   const peopleHotwords = await buildPeopleHotwordsForAsr(plugin, p);

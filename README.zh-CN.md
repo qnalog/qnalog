@@ -29,15 +29,17 @@
 
 ## 首次配置
 
-1. 打开「设置 → QnALog」，选择 **Setup Wizard**（配置向导），选择预设，填写所需 API Key 和模型信息，检测服务后选择 **Apply and start**（应用并开始）。
+1. 打开「设置 → QnALog」，选择 **Setup Wizard**（配置向导），选择「阿里云百炼」或 **OpenAI**，填写 API Key（服务地址和模型已内置），检测服务后选择 **Apply and start**（应用并开始）。
 2. 打开「设置 → QnALog → Open sidebar」（打开侧栏）。首次启用且配置不完整时，向导可能自动出现；之后可随时从设置首页重新打开。
 3. **Quick config**（快速配置）是独立的预设配置捷径。已有配置时，替换前需要确认。要分别配置服务，请打开「设置 → QnALog → API」。
-在设置首页点击「AI 整理」状态行，可直接打开 API 页的模型设置。「API → 语音识别」中的「获取模型」会列出当前转写服务实际返回的模型；没有可用目录时，可以手动填写模型标识。设置标签会随所选界面语言切换。
+在设置首页点击任一状态行，可直接打开 API 页。「语音转写」卡片中的「获取模型」会列出当前转写服务实际返回的模型；没有可用目录时，可以手动填写模型标识。设置标签会随所选界面语言切换。
+
+API 页提供以下服务。**语音转写**：OpenAI、Groq、阿里云百炼、SiliconFlow、本地 / 自定义 OpenAI 兼容服务。**AI 整理**：OpenAI、Anthropic Claude、Google Gemini、OpenRouter、DeepSeek、阿里云百炼、SiliconFlow、本地 / 自定义 OpenAI 兼容服务。已选用但不在上述列表中的服务仍可继续使用，只是新选择时不再列出。每个 AI 整理服务分别记住自己的服务地址、API Key 和模型，切换回去即恢复。导入音频的说话人识别与已保存的配置位于 **API → 进阶设置**，默认折叠。设置首页只在说话人识别启用时显示它的状态行。
 
 
 录音转写需要配置语音转文字（ASR）服务。导入完整音频可以使用单独的转写服务。AI 整理、问一问和资料提取需要配置大语言模型（LLM）；只有 ASR 密钥不能使用这些功能。支持的场景也可以使用本地服务。
 
-百炼快捷配置使用 Qwen-Audio-3.1-ASR-Flash 原生 HTTP 接口转写录音，并使用 Qwen-Audio-3.1-ASR-Flash-Filetrans 对导入整文件进行异步识别和说话人分离。「API → 语音识别」中的「获取模型」会列出服务目录；选择已识别的百炼 ASR 模型时，程序会同时更新接口地址和协议。百炼模型按登记的类型使用原生 HTTP、Chat Completions、整文件转写、任务式 WebSocket 或 Qwen3 事件式 WebSocket。WebSocket 录音需要使用 Obsidian 桌面端；Gummy 单句任务会在服务端一分钟音频时限之前轮换。快捷配置默认值不变。协议说明和分地域价格见 [`MAINTAINING.md`](MAINTAINING.md)。
+百炼快捷配置使用 Qwen-Audio-3.1-ASR-Flash 原生 HTTP 接口转写录音，并使用 Qwen-Audio-3.1-ASR-Flash-Filetrans 对导入整文件进行异步识别和说话人分离。「语音转写」卡片中的「获取模型」会列出服务目录；选择已识别的百炼 ASR 模型时，程序会同时更新接口地址和协议。百炼模型按登记的类型使用原生 HTTP、Chat Completions、整文件转写、任务式 WebSocket 或 Qwen3 事件式 WebSocket。WebSocket 录音需要使用 Obsidian 桌面端；Gummy 单句任务会在服务端一分钟音频时限之前轮换。快捷配置默认值不变。协议说明和分地域价格见 [`MAINTAINING.md`](MAINTAINING.md)。
 
 ## 基本使用
 

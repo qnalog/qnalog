@@ -149,15 +149,24 @@ export const DEFAULT_SETTINGS: PluginSettings = {
       apiKey: "",
       model: "FunAudioLLM/SenseVoiceSmall",
       language: "auto",
-      hint: "Stable access in China, cheap. Moderate accuracy.",
+      hint: "Stable access in China. Moderate accuracy.",
     },
     openai: {
       name: "OpenAI Official",
       endpoint: "https://api.openai.com/v1/audio/transcriptions",
       apiKey: "",
-      model: "gpt-4o-transcribe",
+      model: "gpt-transcribe",
       language: "",
       hint: "Chunked transcription. The accuracy ceiling. Strong at recognizing Chinese names/technical terms. Requires overseas network.",
+    },
+    groq: {
+      name: "Groq · Whisper Transcription",
+      // Groq 的转写接口与 OpenAI 的 multipart 形状相同（file + model），复用现有 OpenAI 兼容上传路径。
+      endpoint: "https://api.groq.com/openai/v1/audio/transcriptions",
+      apiKey: "",
+      model: "whisper-large-v3-turbo",
+      language: "",
+      hint: "Whisper models over an OpenAI-compatible upload. Globally accessible; usage-based billing.",
     },
     "openai-diarize": {
       name: "OpenAI · Speaker Diarization",
@@ -183,7 +192,7 @@ export const DEFAULT_SETTINGS: PluginSettings = {
       apiKey: "",
       model: "gpt-realtime-whisper",
       language: "",
-      hint: "Streaming ASR, subtitles as you speak. $0.017/min ≈ ¥7.2/hour.",
+      hint: "Streaming ASR, subtitles as you speak.",
     },
     "openai-realtime-translate": {
       name: "OpenAI Realtime · Speech Translation",
@@ -192,7 +201,7 @@ export const DEFAULT_SETTINGS: PluginSettings = {
       model: "gpt-realtime-translate",
       language: "",
       targetLanguage: "zh",
-      hint: "Streaming translation, 70+ inputs → 13 outputs. $0.034/min ≈ ¥14.4/hour.",
+      hint: "Streaming translation, 70+ inputs → 13 outputs.",
     },
     openrouter: {
       name: "OpenRouter · Speech Transcription",
@@ -289,6 +298,8 @@ export const DEFAULT_SETTINGS: PluginSettings = {
   // 所有调用大模型的代码仍只读 llmEndpoint/llmApiKey/llmModel，不受影响。
   llmProfiles: [],           // [{ id, name, endpoint, apiKey, model }]
   activeLlmProfile: "",      // 当前选中的配置 id；空 = 未保存为配置（临时）
+  // 各 AI 整理服务上次使用的地址/密钥/模型，切换服务时据此恢复（见 src/setup/llm-service-switch.ts）。
+  llmServiceMemory: {},
 
   polishMode: "general",
   polishPromptInterview: "",

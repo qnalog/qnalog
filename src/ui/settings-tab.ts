@@ -3,21 +3,21 @@
 // 由 main.ts 抽出（模块化拆解，提升工程稳定性；纯搬迁、零行为改动）。
 import * as obsidian from "obsidian";
 import { DEFAULT_SETTINGS } from '../shared/defaults';
-import { genId } from '../shared/util-common';
 import { assertEndpointAllowed, canOmitServiceApiKey, isLocalLlmEndpoint, isSharedAddressSpaceEndpoint } from '../shared/util-llm-endpoint';
 import { isLocalServiceEndpoint } from '../shared/util-note';
 import { compareVersions, isMobileRuntime } from '../shared/util-platform';
 import { getEffectivePolishMode, getModeDisplayName, getModeMeta, getVisibleModeEntries } from '../shared/mode-meta';
+import { renderApiTab } from "./settings-api-tab";
 import { UI_LANGUAGES, getActiveUiLanguage, t } from '../shared/i18n';
-import { LLM_SERVICE_PRESETS, ONE_CARD_PROVIDERS, applyLlmProfileToWorkingConfig, applyLlmServicePresetToWorkingConfig, findLlmProfile, getActiveLlmServicePresetId, getLlmServicePreset, inferLlmServicePresetId, normalizeLlmProfiles, syncWorkingConfigToLlmProfile } from '../llm/config';
-import { fetchLlmModelList, testLlmConnection } from '../llm/core';
-import { snapshotActiveAsr, syncWorkingAsrToActiveScheme } from '../llm/asr-scheme';
+import { getActiveLlmServicePresetId, getLlmServicePreset } from '../llm/config';
+import { defaultQuickSetupProviderId, listQuickSetupProviders } from "../setup/service-catalog";
+import { testLlmConnection } from '../llm/core';
 import { isDashScopeFlashNoWordsError } from "../asr/dashscope-flash-asr";
 import { normalizeAsrConcurrency, resolveTranscribeProvider, transcribeAudio } from '../asr/transcribe';
 import { countVocabularyGroups, parseVocabularyGroups, summarizeVocabularyGroups } from '../vocabulary';
 import { openVocabularyFile as openVocabularyFileAction } from "../vocabulary/open-vocabulary-file";
 import { hasPeopleHotwordsConsent, loadPeopleDirectory, normalizePeopleContextMode, normalizePeopleSuggestionCache, normalizePeopleSuggestionIgnores } from '../people';
-import { QNALOG_UPDATE_REPO_URL, countKnowledgeExtractionHistory, enumerateAudioDevices, openExternalUrl, openPickListModal, pluginBasePath, resolveUpdateRawBases, qnalogConfirm, qnalogPromptText, trashVaultFileRef } from './helpers';
+import { QNALOG_UPDATE_REPO_URL, countKnowledgeExtractionHistory, enumerateAudioDevices, openExternalUrl, openPickListModal, pluginBasePath, resolveUpdateRawBases, qnalogConfirm, trashVaultFileRef } from './helpers';
 import { audioInputModeLabel, classifyAudioInputDevices, describeAudioDeviceAvailability, isVirtualCableLabel, normalizeAudioInputMode, pickComputerAudioDevices } from '../audio/audio-input';
 import { PeopleHotwordsConsentModal, PromptTemplateModal, QueueModal, VirtualCableSetupModal } from './modals';
 import { createStreamingTranscriptionClient } from '../notes/recording-issues';
@@ -28,10 +28,8 @@ import {
   normalizeAudioChannelMode,
 } from '../audio/channel-speakers';
 import { analyzeRecordedAudioChannels } from '../asr/channel-transcription';
-import { isImportCapableTranscribeProvider, isSpeakerDiarizationProvider } from '../asr/diarization';
+import { isSpeakerDiarizationProvider } from '../asr/diarization';
 import { fetchImportTranscribeModels, testImportTranscribeProvider } from '../asr/long-audio-transcription';
-import { fetchRecordingTranscribeModels } from "../asr/recording-model-catalog";
-import { resolveBailianAsrRoute, selectBailianAsrModel } from "../asr/bailian-asr-registry";
 import {
   applyPresetPlan,
   buildProbeHost,
@@ -43,9 +41,8 @@ import {
   planPresetApplication,
   runPresetDetection,
   setupServiceIssue,
-  SETUP_STATE_LABELS,
 } from '../setup';
-import { isQuickSetupVisible, quickSetupNeedsConfirm, resolvePanelOpen, resolveScrollTop } from '../setup/settings-view-state';
+import { isQuickSetupVisible, quickSetupNeedsConfirm, resolveScrollTop } from '../setup/settings-view-state';
 
 function pickChannelProbeMime() {
   const candidates = ["audio/webm;codecs=opus", "audio/webm", "audio/ogg;codecs=opus"];
@@ -114,9 +111,7 @@ export class QnALogSettingTab extends obsidian.PluginSettingTab {
     this._quickSetupDismissed = false;
     // 上一次渲染时卡片是否可见，供「快速配置」按钮决定要不要先确认。
     this._quickSetupShown = false;
-    // 服务商面板的展开状态与上次渲染的标签页，用于重画后保持界面位置。
-    this._providerPanelOpen = Object.create(null);
-    this._providerPanelSeq = 0;
+    // 上次渲染的标签页，用于重画后保持界面位置。
     this._lastRenderedTab = null;
     this._audioDeviceInfo = null;
   }
@@ -162,7 +157,6 @@ export class QnALogSettingTab extends obsidian.PluginSettingTab {
     // 重画前记下滚动位置：empty() 之后内容变短，浏览器会把位置夹到顶部。
     const scroller = this.findSettingsScroller();
     const previousScrollTop = scroller ? scroller.scrollTop : 0;
-    this._providerPanelSeq = 0;
     this.containerEl.addClass("qnalog-settings-root");
     this.containerEl.empty();
 
@@ -269,7 +263,7 @@ export class QnALogSettingTab extends obsidian.PluginSettingTab {
   renderDataRiskNotice(parent, variant = "") {
     const cls = ["qnalog-risk-notice", variant].filter(Boolean).join(" ");
     const box = parent.createEl("details", { cls });
-    box.createEl("summary", { cls: "qnalog-risk-title", text: t("AI has not read this note yet") });
+    box.createEl("summary", { cls: "qnalog-risk-title", text: t("Where your data is sent") });
     box.createDiv({
       cls: "qnalog-risk-body",
       text: t("QnALog has no cloud storage of its own and does not upload recordings to a QnALog server; recordings are saved in the local Obsidian vault path you choose. During transcription and AI organizing, the audio, transcript text, and prompts are sent to the currently configured cloud API or local model. For sensitive content, use local transcription and a local LLM, and avoid processing confidential, private, customer, medical, legal, or HR information through a cloud API."),
@@ -356,6 +350,11 @@ export class QnALogSettingTab extends obsidian.PluginSettingTab {
     let statusList;
     const jump = (tab, stage) => {
       this.activeTab = tab;
+      // 说话人识别已移入 API 页的「进阶设置」（默认折叠）：跳过去时先展开它。
+      if (tab === "api" && stage === "speaker") {
+        if (!this._apiTabUiState) this._apiTabUiState = { advancedOpen: false, guideOpen: Object.create(null) };
+        this._apiTabUiState.advancedOpen = true;
+      }
       this.renderSettings();
       if (tab !== "api" || stage !== "llm") return;
       const modelRow = this.containerEl.querySelector(".qnalog-ai-model-setting");
@@ -427,13 +426,13 @@ export class QnALogSettingTab extends obsidian.PluginSettingTab {
     // 选服务商，而不是固定某一家。决定因素是「你所在网络能不能连上」，
     // 与界面语言无关——英文用户在中国大陆、中文用户在海外都很常见。
     // 默认项按界面语言给一个常见答案，但用户随时可以在下拉里改。
-    let oneCardProvider = getActiveUiLanguage().id === "en" ? "openrouter" : "bailian";
+    let oneCardProvider = defaultQuickSetupProviderId(getActiveUiLanguage().id);
     let oneCardKey = "";
     const providerRow = new obsidian.Setting(oneCard).setName(t("Provider"));
     providerRow.setDesc(t("Enter the API key for this provider. QnALog stores keys through Obsidian SecretStorage, not in its plugin settings file."));
     providerRow.addDropdown(d => {
-      for (const [id, preset] of Object.entries(ONE_CARD_PROVIDERS)) {
-        d.addOption(id, preset.label);
+      for (const provider of listQuickSetupProviders()) {
+        d.addOption(provider.id, provider.label);
       }
       d.setValue(oneCardProvider).onChange(v => { oneCardProvider = v; });
     });
@@ -496,7 +495,7 @@ export class QnALogSettingTab extends obsidian.PluginSettingTab {
     }));
     oneCard.createDiv({
       cls: "qnalog-home-prep-desc",
-      text: t("Other services (OpenAI, SiliconFlow, local models) can be configured individually on the API tab. This path only compresses first-time setup into one step."),
+      text: t("Other services (SiliconFlow, Groq, OpenRouter, local models) can be configured individually on the API tab. This path only compresses first-time setup into one step."),
     });
     }
 
@@ -531,6 +530,7 @@ export class QnALogSettingTab extends obsidian.PluginSettingTab {
         : setupServiceIssue(buildServiceView(speakerProvider, !!speakerProfile.requiresKey && !canOmitServiceApiKey(speakerProvider.endpoint)));
 
     const status = buildSetupStatus({
+      speakerEnabled,
       transcribe: {
         value: transcribeServiceIssue || (transcribeProfile.title || transcribeProviderId),
         detail: transcribeServiceIssue ? "" : (transcribeProvider.model || ""),
@@ -1075,59 +1075,6 @@ export class QnALogSettingTab extends obsidian.PluginSettingTab {
     return this.plugin.profiles.getTranscribeProviderProfile(id, provider);
   }
 
-  renderTranscribeProviderGuide(c, activeId, provider, profile) {
-    const p = provider || {};
-    const needsKey = !!profile.requiresKey && !canOmitServiceApiKey(p.endpoint);
-    const ready = !!(p.endpoint && p.model && (!needsKey || p.apiKey));
-    const missing = [];
-    if (!p.endpoint) missing.push(t("Service URL"));
-    if (!p.model) missing.push(t("Model Name"));
-    if (needsKey && !p.apiKey) missing.push(t("Access Key"));
-
-    const panel = c.createEl("details", { cls: "qnalog-provider-panel" });
-    const panelKey = `${this.activeTab}:${this._providerPanelSeq++}:${activeId}`;
-    panel.open = resolvePanelOpen(this._providerPanelOpen, panelKey, !ready);
-    panel.addEventListener("toggle", () => { this._providerPanelOpen[panelKey] = !!panel.open; });
-    const head = panel.createEl("summary", { cls: "qnalog-provider-head" });
-    const titleWrap = head.createDiv({ cls: "qnalog-provider-title-wrap" });
-    titleWrap.createDiv({ cls: "qnalog-provider-title", text: t(profile.title) });
-    titleWrap.createDiv({ cls: "qnalog-provider-subtitle", text: t(profile.description) });
-    const badges = head.createDiv({ cls: "qnalog-provider-badges" });
-    badges.createDiv({ cls: "qnalog-provider-badge", text: t(profile.badge) });
-    // 徽章用四态：「已填写」会把「填了但没测过」说成完成。
-    const badgeState = deriveSetupState(
-      buildServiceView(p, needsKey),
-      this._probeResults[`transcribe:${activeId}`],
-    );
-    // 这里只复用已有的 is-ready / is-missing 两种配色：四态的差别由文字承担
-    // （「未测试」与「已通过」若只靠颜色区分，在色弱下就看不出来了）。
-    const badgeClass = badgeState === "success" ? "is-ready" : badgeState === "untested" ? "" : "is-missing";
-    badges.createDiv({
-      cls: ("qnalog-provider-status " + badgeClass).trim(),
-      text: t(SETUP_STATE_LABELS[badgeState]),
-    });
-
-    const body = panel.createDiv({ cls: "qnalog-provider-body" });
-    const checklist = body.createEl("ol", { cls: "qnalog-provider-checklist" });
-    for (const step of profile.steps || []) checklist.createEl("li", { text: t(step) });
-    if (missing.length) {
-      body.createDiv({ cls: "qnalog-provider-missing", text: t("Still to be filled in:") + missing.join(t(", ")) });
-    }
-    if (profile.priceHint) {
-      body.createDiv({ cls: "qnalog-provider-price", text: t(profile.priceHint) });
-    }
-    if (profile.note) {
-      body.createDiv({ cls: "qnalog-provider-note", text: t(profile.note) });
-    }
-    if (profile.links && profile.links.length) {
-      const row = body.createDiv({ cls: "qnalog-provider-links" });
-      for (const [label, url] of profile.links) {
-        const btn = row.createEl("button", { text: t(label) });
-        btn.onclick = () => openExternalUrl(url);
-      }
-    }
-  }
-
   // 用一段 1 秒静音音频走完整转写链路，验证当前转写服务连通性。返回识别文本（可能为空字符串），失败抛错。
   /**
    * 「快速配置」按钮：已配好时先确认是否覆盖，再显示面板。
@@ -1261,599 +1208,28 @@ export class QnALogSettingTab extends obsidian.PluginSettingTab {
     return provider.model;
   }
 
-  // 依次测「转写 + 大模型」连通性，返回一行汇总文案。供 API 方案检测 / 首页快速配置检测共用。
-  // 依次测「转写 + 大模型」连通性，返回一行汇总文案。
-  // 只做一次组装、只调一次检测实现；host 省略时用插件自身（保存的配置）。
-  async runComboConnectivityTest(host) {
-    const target = host || this.plugin;
-    const report = await runPresetDetection(target, {
-      ok: true, reason: "", providerId: "", changes: {},
-      asrTarget: "recording", asrProviderId: "", llmPresetId: "",
-    }, this.probePorts());
-    return formatDetectionReport(report);
-  }
-
-  renderApiSchemeSelector(c) {
-    new obsidian.Setting(c)
-      .setName(t("API Configuration"))
-      .setDesc(t("Save and switch the transcription and AI organizing services."))
-      .setHeading();
-    const schemes = Array.isArray(this.plugin.settings.llmProfiles) ? this.plugin.settings.llmProfiles : [];
-    const activeId = this.plugin.settings.activeLlmProfile || "";
-
-    // 自定义布局（不用 obsidian.Setting 的左名右控件，避免下拉+3按钮+长说明挤成一团）：
-    // 说明整行 → 下拉(占主) + 按钮同一行 → 激活态提示整行淡字。
-    const block = c.createDiv({ cls: "qnalog-scheme-block" });
-
-    const controls = block.createDiv({ cls: "qnalog-scheme-controls" });
-    const sel = controls.createEl("select", { cls: "dropdown qnalog-scheme-select" });
-    const addOpt = (value, label) => { const o = sel.createEl("option", { text: label }); o.value = value; };
-    addOpt("", t("Temporary configuration (not saved)"));
-    for (const p of schemes) addOpt(p.id, p.name);
-    sel.value = activeId;
-    sel.addEventListener("change", async () => {
-      const id = sel.value;
-      if (!id) { this.plugin.settings.activeLlmProfile = ""; await this.plugin.saveSettings(); this.renderSettings(); return; }
-      applyLlmProfileToWorkingConfig(this.plugin.settings, id);
-      await this.plugin.saveSettings();
-      const p = findLlmProfile(this.plugin.settings, id);
-      new obsidian.Notice(t("Switched to configuration \"{0}\"{1}").replace("{0}", p ? p.name : id).replace("{1}", p && p.asr ? t(" (transcription and AI briefing)") : t(" (AI briefing only)")), 5000);
-      this.renderSettings();
-    });
-
-    const btns = controls.createDiv({ cls: "qnalog-scheme-btns" });
-    const testBtn = btns.createEl("button", { text: t("Check") });
-    testBtn.onclick = async () => {
-      testBtn.disabled = true; testBtn.setText(t("Checking…"));
-      new obsidian.Notice(t("Checking transcription + LLM connectivity…"), 4000);
-      try { new obsidian.Notice(await this.runComboConnectivityTest(), 9000); }
-      finally { testBtn.disabled = false; testBtn.setText(t("Check")); }
-    };
-
-    const saveBtn = btns.createEl("button", { cls: "mod-cta", text: t("Save configuration") });
-    saveBtn.onclick = async () => {
-      const name = await qnalogPromptText(this.app, t("Configuration name"), t("e.g. MiMo / DeepSeek + SiliconFlow / a local model"));
-      if (name === null) return;
-      const trimmed = typeof name === "string" ? name.trim() : "";
-      if (!trimmed) { new obsidian.Notice(t("Name cannot be empty")); return; }
-      const id = `llm-${genId()}`;
-      const scheme = {
-        id, name: trimmed,
-        endpoint: this.plugin.settings.llmEndpoint || "",
-        apiKey: this.plugin.settings.llmApiKey || "",
-        model: this.plugin.settings.llmModel || "",
-      };
-      const asr = snapshotActiveAsr(this.plugin.settings);
-      if (asr) scheme.asr = asr; // 同时快照当前转写服务，成为完整方案
-      this.plugin.settings.llmProfiles = normalizeLlmProfiles(this.plugin.settings.llmProfiles).concat([scheme]);
-      this.plugin.settings.activeLlmProfile = id;
-      await this.plugin.saveSettings();
-      new obsidian.Notice(`${t("Saved configuration \"")}${trimmed}${t("\" (including transcription and AI organizing)")}`, 5000);
-      this.renderSettings();
-    };
-    if (activeId) {
-      const delBtn = btns.createEl("button", { cls: "qnalog-icon-button", attr: { type: "button", "aria-label": t("Delete current configuration"), title: t("Delete current configuration") } });
-      obsidian.setIcon(delBtn, "trash-2");
-      delBtn.onclick = async () => {
-        const p = findLlmProfile(this.plugin.settings, activeId);
-        this.plugin.settings.llmProfiles = normalizeLlmProfiles(this.plugin.settings.llmProfiles).filter(x => x.id !== activeId);
-        this.plugin.settings.activeLlmProfile = "";
-        await this.plugin.saveSettings();
-        new obsidian.Notice(`${t("Deleted configuration \"")}${p ? p.name : activeId}${t("\". The current service settings are kept.")}`, 6000);
-        this.renderSettings();
-      };
-    }
-
-    if (activeId) {
-      const p = findLlmProfile(this.plugin.settings, activeId);
-      const kind = p && p.asr ? t("Transcription and AI briefing") : t("AI briefing only (legacy)");
-      const status = block.createDiv({ cls: "qnalog-scheme-status" });
-      status.createSpan({ cls: "qnalog-scheme-status-name", text: `${t("Current:")}${p ? p.name : activeId}` });
-      status.createSpan({ cls: "qnalog-scheme-status-sep", text: " · " });
-      status.createSpan({ text: kind });
-      status.createSpan({ cls: "qnalog-scheme-status-sep", text: " · " });
-      status.createSpan({ cls: "qnalog-scheme-status-hint", text: t("Changing the settings below updates the current configuration automatically") });
-    }
-  }
-
   renderApi(c) {
-    // ===== 顶部 · API 方案：把「转写 + AI 整理」存成一套，一键切换/检测 =====
-    this.renderApiSchemeSelector(c);
-
-    new obsidian.Setting(c)
-      .setName(t("Speech Recognition"))
-      .setDesc(t("Configure the transcription service used for meeting recordings. Importing audio uses a separate service, see \"Speaker Recognition\" below."))
-      .setHeading();
-
-    this.renderDataRiskNotice(c, "is-api");
-
-    new obsidian.Setting(c).setName(t("Transcription Service"))
-      .setDesc(t("Choose the service currently used for speech transcription. Only the settings for the selected service are shown below."))
-      .addDropdown(d => {
-        for (const id of Object.keys(this.plugin.settings.transcribeProviders)) {
-          const p = this.plugin.settings.transcribeProviders[id];
-          const optProfile = this.getTranscribeProviderProfile(id, p);
-          d.addOption(id, optProfile.title || id);
-        }
-        d.setValue(this.plugin.settings.activeTranscribeProvider || "siliconflow")
-          .onChange(async v => {
-            this.plugin.settings.activeTranscribeProvider = v;
-            await this.plugin.saveSettings();
-            this.renderSettings();
-          });
-      });
-
-    const activeId = this.plugin.settings.activeTranscribeProvider || "siliconflow";
-    const provider = this.plugin.settings.transcribeProviders[activeId] || {};
-    const profile = this.getTranscribeProviderProfile(activeId, provider);
-    this.renderTranscribeProviderGuide(c, activeId, provider, profile);
-    const writeProvider = async (key, val) => {
-      this.plugin.settings.transcribeProviders[activeId][key] = val;
-      // 改了转写配置 → 同步进当前激活的完整方案（实现"下方任何修改自动更新到这套方案"，含自动存密钥）
-      syncWorkingAsrToActiveScheme(this.plugin.settings);
-      await this.plugin.saveSettings();
-    };
-    const writeSelectedBailianModel = async (model, requireRoute = false) => {
-      const isBailianProvider = /^(?:bailian|dashscope)(?:-|$)/i.test(String(activeId || ""))
-        || /^dashscope(?:-|$)/i.test(String(provider.protocol || ""))
-        || /(?:^|\.)aliyuncs\.com$/i.test((() => { try { return new URL(String(provider.endpoint || "")).hostname; } catch { return ""; } })());
-      const selection = selectBailianAsrModel(activeId, provider, model);
-      if (isBailianProvider && !selection && requireRoute) {
-        if (resolveBailianAsrRoute(model)) throw new Error(t("The Bailian endpoint could not be mapped safely. Keep the current settings unchanged and enter a recognized Bailian API path."));
-        throw new Error(t("This Bailian model has no supported transcription protocol, so it was not selected."));
-      }
-      if (!selection) return writeProvider("model", String(model || "").trim());
-      const currentProvider = this.plugin.settings.transcribeProviders[activeId];
-      if (!currentProvider) throw new Error(t("The transcription service changed. Get the models again."));
-      const previous = { ...currentProvider };
-      Object.assign(currentProvider, selection.provider);
-      syncWorkingAsrToActiveScheme(this.plugin.settings);
-      try {
-        await this.plugin.saveSettings();
-      } catch (error) {
-        if (this.plugin.settings.transcribeProviders[activeId] === currentProvider
-          && currentProvider.model === selection.provider.model
-          && currentProvider.endpoint === selection.provider.endpoint
-          && currentProvider.protocol === selection.provider.protocol) {
-          Object.assign(currentProvider, previous);
-          syncWorkingAsrToActiveScheme(this.plugin.settings);
-        }
-        throw error;
-      }
-      this.renderSettings();
-    };
-    const providerNeedsKey = !!profile.requiresKey && !canOmitServiceApiKey(provider.endpoint);
-    new obsidian.Setting(c).setName(providerNeedsKey ? t("API key") : t("API key (optional)"))
-      .setDesc(t(profile.keyHelp))
-      .addText(txt => { txt.inputEl.type = "password"; txt.setValue(provider.apiKey || "").onChange(v => writeProvider("apiKey", v)); });
-
-    new obsidian.Setting(c).setName(t("Service URL"))
-      .setDesc(t(profile.endpointHelp))
-      .addText(txt => txt.setValue(provider.endpoint || "")
-        .setPlaceholder(profile.endpointPlaceholder || "")
-        .onChange(v => writeProvider("endpoint", v.trim())));
-
-    const recordingModelRow = new obsidian.Setting(c).setName(t("Model Name"))
-      .setDesc(t(profile.modelHelp));
-    recordingModelRow
-      .addText(modelInput => modelInput.setValue(provider.model || "")
-        .setPlaceholder(profile.modelPlaceholder || "")
-        .onChange(v => writeSelectedBailianModel(v.trim())))
-      .addButton(button => button.setButtonText(t("Get models")).onClick(async () => {
-        const endpoint = String(provider.endpoint || "");
-        const apiKey = String(provider.apiKey || "");
-        const protocol = String(provider.protocol || "");
-        const modelSnapshot = String(provider.model || "");
-        const schemeId = String(this.plugin.settings.activeLlmProfile || "");
-        const isCurrentConfiguration = () => {
-          const currentProvider = (this.plugin.settings.transcribeProviders || {})[activeId];
-          return (this.plugin.settings.activeTranscribeProvider || "siliconflow") === activeId
-            && String(this.plugin.settings.activeLlmProfile || "") === schemeId
-            && currentProvider === provider
-            && String(currentProvider.endpoint || "") === endpoint
-            && String(currentProvider.apiKey || "") === apiKey
-            && String(currentProvider.protocol || "") === protocol
-            && String(currentProvider.model || "") === modelSnapshot;
-        };
-        if (!endpoint.trim()) {
-          new obsidian.Notice(t("Please fill in the service endpoint first"), 4000);
-          return;
-        }
-        button.setDisabled(true);
-        button.setButtonText(t("Fetching…"));
-        try {
-          const models = await fetchRecordingTranscribeModels(
-            { id: activeId, endpoint, apiKey, protocol },
-            profile.streamProtocol,
-          );
-          if (!isCurrentConfiguration()) {
-            new obsidian.Notice(t("The transcription service changed. Get the models again."), 4000);
-            return;
-          }
-          if (!models.length) {
-            new obsidian.Notice(t("The service returned no usable models. Enter the model name manually."), 6000);
-            return;
-          }
-          openPickListModal(this.app, `${t("Select a model ( ")}${models.length}${t(")")}`, models, async model => {
-            if (!isCurrentConfiguration()) {
-              new obsidian.Notice(t("The transcription service changed. Get the models again."), 4000);
-              return;
-            }
-            try {
-              await writeSelectedBailianModel(model, true);
-              new obsidian.Notice(`${t("Selected model:")}${model}`, 4000);
-              this.renderSettings();
-            } catch (error) {
-              new obsidian.Notice(`${t("Failed to save the selected model:")}${(error && error.message) || error}`, 8000);
-            }
-          }, model => {
-            const isBailianProvider = /^(?:bailian|dashscope)(?:-|$)/i.test(String(activeId || ""))
-              || /^dashscope(?:-|$)/i.test(protocol)
-              || /(?:^|\.)aliyuncs\.com$/i.test((() => { try { return new URL(endpoint).hostname; } catch { return ""; } })());
-            if (!isBailianProvider) return "";
-            const route = resolveBailianAsrRoute(model);
-            if (!route) return t("No supported execution protocol");
-            const modeLabel = t(route.transcribeMode === "whole-file" ? "Whole-file" : route.transcribeMode === "streaming" ? "Streaming" : "Segmented");
-            const deviceLabel = route.transcribeMode === "streaming" && isMobileRuntime() ? t("Requires desktop WebSocket") : "";
-            const lifecycleLabel = route.lifecycle ? t("Lifecycle notice") : "";
-            return [modeLabel, `${route.sampleRate} Hz`, deviceLabel, lifecycleLabel].filter(Boolean).join(" · ");
-          });
-        } catch (error) {
-          new obsidian.Notice(`${t("Failed to get the model list:")}${(error && error.message) || error}${t(". You can enter the model ID manually.")}`, 8000);
-        } finally {
-          button.setDisabled(false);
-          button.setButtonText(t("Get models"));
-        }
-      }));
-
-    if (!profile.hideLanguage) {
-      new obsidian.Setting(c).setName(t("Recognition Language"))
-        .setDesc(t(profile.languageHelp) || t("Leave blank or auto to detect automatically; usually fill in zh for Chinese and en for English."))
-        .addText(t => t.setValue(provider.language || "")
-          .setPlaceholder(profile.languagePlaceholder || "")
-          .onChange(v => writeProvider("language", v.trim())));
-    }
-
-    if (profile.showTargetLanguage) {
-      const targetLanguages = [
-        ["en", t("English")],
-        ["zh", t("Chinese Chinese")],
-        ["ja", t("Japanese 日本語")],
-        ["ko", t("Korean 한국어")],
-        ["fr", t("French Français")],
-        ["es", t("Spanish Español")],
-        ["de", t("German Deutsch")],
-        ["it", t("Italian Italiano")],
-        ["pt", t("Portuguese Português")],
-        ["ru", t("Russian Русский")],
-        ["ar", t("Arabic العربية")],
-        ["hi", t("Hindi हिन्दी")],
-        ["tr", t("Turkish (Türkçe)")],
-      ];
-      new obsidian.Setting(c).setName(t("Target Language (translation output)"))
-        .setDesc(t("Choose which language QnALog translates speech into. The speaker's language is detected automatically."))
-        .addDropdown(d => {
-          for (const [code, label] of targetLanguages) d.addOption(code, label);
-          d.setValue(provider.targetLanguage || "zh")
-            .onChange(v => writeProvider("targetLanguage", v));
-        });
-    }
-
-    if (profile.transcribeMode === "streaming") {
-      const tip = c.createDiv({ cls: "qnalog-provider-streaming-tip" });
-      tip.setText(t("Live mode: the connection stays open for the whole recording and text appears as you speak; audio is no longer uploaded in segments. “Segment interval” and “Interim segment transcription” on the Recording tab have no effect for this service."));
-    }
-
-    new obsidian.Setting(c).setName(t("Connectivity Test"))
-      .setDesc(t("Verify that the current transcription service works using a 1-second silent audio clip."))
-      .addButton(b => b.setButtonText(t("Test")).onClick(async () => {
-        b.setDisabled(true); b.setButtonText(t("Testing…"));
-        const view = buildServiceView(provider, providerNeedsKey);
-        const result = await this.runAndRecordProbe(`transcribe:${activeId}`, view, async () => {
-          return await this.runAsrConnectivityTest();
-        });
-        new obsidian.Notice(result.ok ? t("Connected successfully ({0})").replace("{0}", result.detail) : `${t("Test failed:")}${result.detail}`, 8000);
-        b.setDisabled(false); b.setButtonText(t("Test"));
-        this.renderSettings();
-      }));
-
-    new obsidian.Setting(c)
-      .setName(t("AI Organizing"))
-      .setDesc(t("Configure the model used for AI organizing: note generation, Ask, distillation, reorganization, and translation."))
-      .setHeading();
-    // 「已保存配置」已升级为顶部「API 方案」（同时含转写 + AI 整理），不再在此处单列 LLM-only 版本。
-
-    const activeLlmPresetId = getActiveLlmServicePresetId(this.plugin.settings);
-    const activeLlmPreset = getLlmServicePreset(activeLlmPresetId);
-    new obsidian.Setting(c).setName(t("Service Preset"))
-      .setDesc(t("Selecting a service preset clears the current access key. SiliconFlow reuses its saved transcription key when available. Enter the model ID shown in the provider or relay console."))
-      .addDropdown(d => {
-        d.addOption("", t("Custom service…"));
-        for (const preset of LLM_SERVICE_PRESETS) d.addOption(preset.id, preset.label);
-        d.setValue(activeLlmPresetId || "");
-        d.onChange(async id => {
-          const preset = getLlmServicePreset(id);
-          Object.assign(this.plugin.settings, applyLlmServicePresetToWorkingConfig(this.plugin.settings, id));
-          if (!preset) {
-            await this.plugin.saveSettings();
-            this.renderSettings();
-            return;
-          }
-          await this.plugin.saveSettings();
-          new obsidian.Notice(`${t("Applied service preset:")}${preset.label}${t(". Confirm the access key and model ID, then test the connection.")}`, 6000);
-          this.renderSettings();
-        });
-      });
-
-    const llmEndpointHelp = activeLlmPreset && activeLlmPreset.endpointHelp
-      ? t(activeLlmPreset.endpointHelp)
-      : t("Enter the LLM service endpoint (the \"OpenAI-compatible / Chat Completions\" URL). You can enter it up to /v1 or the root address and QnALog will complete it automatically; you can also enter the full /v1/chat/completions.");
-    const llmKeyHelp = activeLlmPreset && activeLlmPreset.keyHelp
-      ? t(activeLlmPreset.keyHelp)
-      : t("Enter the API Key provided by the provider or relay service. Can be left empty for local localhost LLM services.");
-    const llmModelHelp = activeLlmPreset && activeLlmPreset.modelHelp
-      ? t(activeLlmPreset.modelHelp)
-      : t("Enter the model name required by the service; for relay services such as Poe and OpenRouter, use the name shown in their console or model list.");
-
-    new obsidian.Setting(c).setName(t("Service URL"))
-      .setDesc(llmEndpointHelp)
-      .addText(txt => txt.setValue(this.plugin.settings.llmEndpoint).onChange(async v => {
-        this.plugin.settings.llmEndpoint = v;
-        this.plugin.settings.llmServicePreset = inferLlmServicePresetId(this.plugin.settings);
-        syncWorkingConfigToLlmProfile(this.plugin.settings, this.plugin.settings.activeLlmProfile);
-        await this.plugin.saveSettings();
-      }));
-
-    const llmKeyRow = new obsidian.Setting(c).setName(t("Access Key"))
-      .setDesc(llmKeyHelp)
-      .addText(txt => { txt.inputEl.type = "password"; txt.setValue(this.plugin.settings.llmApiKey).onChange(async v => { this.plugin.settings.llmApiKey = v; syncWorkingConfigToLlmProfile(this.plugin.settings, this.plugin.settings.activeLlmProfile); await this.plugin.saveSettings(); }); });
-    const sfSpeechKey = ((this.plugin.settings.transcribeProviders || {}).siliconflow || {}).apiKey || "";
-    const mimoSpeechKey = ((this.plugin.settings.transcribeProviders || {}).apimimo || {}).apiKey || "";
-    const llmEndpointNow = this.plugin.settings.llmEndpoint || "";
-    if (sfSpeechKey && !this.plugin.settings.llmApiKey && /siliconflow\.cn/i.test(llmEndpointNow)) {
-      llmKeyRow.addButton(b => b.setButtonText(t("Reuse transcription key")).onClick(async () => {
-        this.plugin.settings.llmApiKey = sfSpeechKey;
-        await this.plugin.saveSettings();
-        new obsidian.Notice(t("Reused the SiliconFlow transcription key for the LLM service."), 5000);
-        this.renderSettings();
-      }));
-    } else if (mimoSpeechKey && !this.plugin.settings.llmApiKey && /xiaomimimo\.com/i.test(llmEndpointNow)) {
-      // MiMo 同平台一把 Key：转写已填、AI 整理还空 → 一键复用（与硅基流动「复用转写密钥」同款，仅填密钥）
-      llmKeyRow.addButton(b => b.setButtonText(t("Reuse MiMo transcription key")).onClick(async () => {
-        this.plugin.settings.llmApiKey = mimoSpeechKey;
-        await this.plugin.saveSettings();
-        new obsidian.Notice(t("Reused the MiMo transcription key for the LLM service."), 5000);
-        this.renderSettings();
-      }));
-    }
-
-    const llmModelRow = new obsidian.Setting(c).setName(t("Model ID"))
-      .setDesc(llmModelHelp);
-    llmModelRow.settingEl.addClass("qnalog-ai-model-setting");
-    llmModelRow
-      .addText(txt => {
-        txt.setPlaceholder(activeLlmPreset && activeLlmPreset.modelPlaceholder ? activeLlmPreset.modelPlaceholder : t("For example: the model ID shown in the provider's console"));
-        txt.setValue(this.plugin.settings.llmModel);
-        txt.onChange(async v => { this.plugin.settings.llmModel = v; syncWorkingConfigToLlmProfile(this.plugin.settings, this.plugin.settings.activeLlmProfile); await this.plugin.saveSettings(); });
-      })
-      // 一键拉取服务端可用模型列表点选，免去手敲（尤其 Poe 的 bot 名区分大小写、易填错）。
-      .addButton(b => b.setButtonText(t("Get available models")).onClick(async () => {
-        if (!this.plugin.settings.llmEndpoint) { new obsidian.Notice(t("Please fill in the service endpoint first"), 4000); return; }
-        b.setDisabled(true); b.setButtonText(t("Fetching…"));
-        try {
-          const models = await fetchLlmModelList(this.plugin.settings.llmEndpoint, this.plugin.settings.llmApiKey);
-          if (!models.length) { new obsidian.Notice(t("The service did not return a model list. Please enter the model ID manually."), 6000); return; }
-          openPickListModal(this.app, `${t("Select a model ( ")}${models.length}${t(")")}`, models, async (id) => {
-            this.plugin.settings.llmModel = id;
-            syncWorkingConfigToLlmProfile(this.plugin.settings, this.plugin.settings.activeLlmProfile);
-            await this.plugin.saveSettings();
-            new obsidian.Notice(`${t("Selected model:")}${id}`, 4000);
-            this.renderSettings();
-          });
-        } catch (e) {
-          new obsidian.Notice(`${t("Failed to get the model list:")}${(e && e.message) || e}${t(". You can enter the model ID manually.")}`, 8000);
-        } finally {
-          b.setDisabled(false); b.setButtonText(t("Get available models"));
-        }
-      }));
-
-    new obsidian.Setting(c).setName(t("LLM Connectivity Test"))
-      .setDesc(t("Sends a very short text request to verify that the service URL, access key, and model name match; it does not upload recordings, transcripts, or prompts."))
-      .addButton(b => b.setButtonText(t("Test connection")).onClick(async () => {
-        b.setDisabled(true);
-        b.setButtonText(t("Testing…"));
-        const view = buildServiceView({
-          endpoint: this.plugin.settings.llmEndpoint,
-          model: this.plugin.settings.llmModel,
-          apiKey: this.plugin.settings.llmApiKey,
-        }, !canOmitServiceApiKey(this.plugin.settings.llmEndpoint));
-        const result = await this.runAndRecordProbe("llm:active", view, async () => {
-          const r = await testLlmConnection(this.plugin);
-          return `${r.model || t("Unnamed model")}${t("(returned:")}${r.preview || t("<empty>")}${t(")")}`;
-        });
-        new obsidian.Notice(result.ok ? t("LLM connected successfully: {0}").replace("{0}", result.detail) : `${t("LLM test failed: ")}${result.detail}`, 8000);
-        b.setButtonText(t("Test connection"));
-        b.setDisabled(false);
-        this.renderSettings();
-      }));
-
-    // 「默认润色模式」原在此处有第二入口，与「AI 整理」页的「当前默认提示词」同写 polishMode
-    // 且两处互不联动刷新——已删除本处副本，统一在 AI 整理页设置。
-
-    // 「说话人」页已并入此处：转写（实时录音 / 导入音频）与 AI 整理的服务配置集中一页。
-    this.renderImportAudio(c);
+    renderApiTab(c, this.buildApiTabHost());
   }
 
-  /**
-   * 「说话人识别」设置。原先自成一个「说话人」选项卡，但该页另一半是 AI 整理服务，
-   * 与 API 页的「API 配置」重复（API 页更完整：含转写快照、检测、删除），
-   * 两处都能改同一批字段。合并到 API 页后，转写与 AI 整理的服务配置集中一处。
-   */
-  renderImportAudio(c) {
-        new obsidian.Setting(c)
-      .setName(t("Speaker labels"))
-      .setDesc(t("Importing a whole audio file uses a separate service for transcription and speaker identification, and does not take part in live recording segmentation."))
-      .setHeading();
-
-    // 风险提示由 API 页顶部统一渲染一次，这里不再重复。
-    const providers = this.plugin.settings.transcribeProviders || {};
-    const supportedIds = Object.keys(providers).filter((id) => {
-      const profile = this.getTranscribeProviderProfile(id, providers[id] || {});
-      return isImportCapableTranscribeProvider(profile, providers[id] || {});
-    });
-    // 用户选的服务当前不可用时（被删掉、被改成不支持整文件转写的协议），
-    // 以前这里会**静默改写** importTranscribeProvider 并落盘——用户没做任何操作，
-    // 配置却变了，且失败点离他看到的界面很远。改为：只在内存里借用第一个可用项
-    // 渲染界面，设置保持用户原值，并在页面上说明原因与后果。
-    const savedImportProvider = this.plugin.settings.importTranscribeProvider;
-    const savedIsUsable = supportedIds.includes(savedImportProvider);
-    const activeId = savedIsUsable ? savedImportProvider : (supportedIds[0] || "dashscope-filetrans");
-    const provider = providers[activeId] || {};
-    const profile = this.getTranscribeProviderProfile(activeId, provider);
-
-    if (!savedIsUsable) {
-      const savedLabel = savedImportProvider
-        ? (t(providers[savedImportProvider]?.name) || savedImportProvider)
-        : t("(Not set)");
-      // 复用既有的风险提示样式，不新增 CSS 类。
-      const box = c.createEl("details", { cls: "qnalog-risk-notice" });
-      box.createEl("summary", { cls: "qnalog-risk-title", text: t("Import service unavailable") });
-      box.createDiv({
-        cls: "qnalog-risk-body",
-        text: `${t("The import service you selected \"")}${savedLabel}${t("\" is currently unavailable (it was deleted, or its protocol does not support whole-file transcription).")}`
-          + t("The alternatives shown below are available, but your setting was not changed — importing audio will still use the one you originally selected and fail.")
-          + t("Please select a service again above. If you really want to keep using the original one, change its protocol back to one that supports whole-file transcription, then try again."),
-      });
-    }
-
-    new obsidian.Setting(c).setName(t("Transcription Service"))
-      .setDesc(t("Used only for imported audio; it does not affect live recording."))
-      .addDropdown((dropdown) => {
-        for (const id of supportedIds) {
-          const item = providers[id] || {};
-          const itemProfile = this.getTranscribeProviderProfile(id, item);
-          dropdown.addOption(id, itemProfile.title || t(item.name) || id);
-        }
-        dropdown.setValue(activeId).onChange(async (value) => {
-          this.plugin.settings.importTranscribeProvider = value;
-          await this.plugin.saveSettings();
-          this.renderSettings();
-        });
-      });
-
-    this.renderTranscribeProviderGuide(c, activeId, provider, profile);
-    const writeProvider = async (key, value) => {
-      if (!this.plugin.settings.transcribeProviders[activeId]) {
-        this.plugin.settings.transcribeProviders[activeId] = {};
-      }
-      this.plugin.settings.transcribeProviders[activeId][key] = value;
-      await this.plugin.saveSettings();
+  /** API 标签所需的宿主能力；界面实现在 ./settings-api-tab（有类型检查）。 */
+  buildApiTabHost() {
+    const plugin = this.plugin;
+    if (!this._apiTabUiState) this._apiTabUiState = { advancedOpen: false, guideOpen: Object.create(null) };
+    return {
+      pickModel: (title, items, onPick, describe) => openPickListModal(this.app, title, items, onPick, describe),
+      get settings() { return plugin.settings; },
+      saveSettings: () => plugin.saveSettings(),
+      probeResults: this._probeResults,
+      runProbe: (key, view, run) => this.runAndRecordProbe(key, view, run),
+      testRecording: () => this.runAsrConnectivityTest(),
+      testLlm: () => testLlmConnection(plugin),
+      testImport: (providerId) => testImportTranscribeProvider(plugin, providerId),
+      fetchImportModels: (providerId) => fetchImportTranscribeModels(plugin, providerId),
+      getProfile: (id, provider) => this.getTranscribeProviderProfile(id, provider),
+      renderRiskNotice: (parent) => this.renderDataRiskNotice(parent, "is-api"),
+      uiState: this._apiTabUiState,
     };
-
-    const providerNeedsKey = !!profile.requiresKey && !canOmitServiceApiKey(provider.endpoint);
-    new obsidian.Setting(c).setName(providerNeedsKey ? t("API key") : t("API key (optional)"))
-      .setDesc(t(profile.keyHelp) || t("Enter the access key for this service."))
-      .addText((text) => {
-        text.inputEl.type = "password";
-        text.setValue(provider.apiKey || "").onChange((value) => writeProvider("apiKey", value));
-      });
-
-    new obsidian.Setting(c).setName(t("Service URL"))
-      .setDesc(t(profile.endpointHelp) || t("Transcription endpoint for imported audio."))
-      .addText((text) => text
-        .setValue(provider.endpoint || "")
-        .setPlaceholder(profile.endpointPlaceholder || "")
-        .onChange((value) => writeProvider("endpoint", value.trim())));
-
-    new obsidian.Setting(c).setName(t("Model Name"))
-      .setDesc(t(profile.modelHelp) || t("Enter a long-audio transcription model supported by the service."))
-      .addText((text) => text
-        .setValue(provider.model || "")
-        .setPlaceholder(profile.modelPlaceholder || "")
-        .onChange((value) => writeProvider("model", value.trim())))
-      .addButton((button) => button
-        .setButtonText(t("Get models"))
-        .onClick(async () => {
-          button.setDisabled(true);
-          button.setButtonText(t("Fetching…"));
-          try {
-            const models = await fetchImportTranscribeModels(this.plugin, activeId);
-            if (!models.length) {
-              new obsidian.Notice(t("The service returned no usable models. Enter the model name manually."), 6000);
-              return;
-            }
-            openPickListModal(this.app, `${t("Select the audio import model ( ")}${models.length}${t(")")}`, models, async (model) => {
-              await writeProvider("model", model);
-              new obsidian.Notice(`${t("Selected model:")}${model}`, 4000);
-              this.renderSettings();
-            });
-          } catch (error) {
-            new obsidian.Notice(`${t("Failed to get models:")}${(error && error.message) || error}`, 8000);
-          } finally {
-            button.setDisabled(false);
-            button.setButtonText(t("Get models"));
-          }
-        }));
-
-    new obsidian.Setting(c)
-      .setName(t("Connection Test"))
-      .setDesc(t("Verifies that the service URL, access key, and model are available; it does not upload recording content."))
-      .addButton((button) => button
-        .setButtonText(t("Test connection"))
-        .onClick(async () => {
-          button.setDisabled(true);
-          button.setButtonText(t("Testing…"));
-          const view = buildServiceView(provider, providerNeedsKey);
-          const result = await this.runAndRecordProbe(`import:${activeId}`, view, async () => {
-            const r = await testImportTranscribeProvider(this.plugin, activeId);
-            return `${r.model} · ${r.detail}`;
-          });
-          new obsidian.Notice(result.ok ? `${t("Connection OK: ")}${result.detail}` : `${t("Connection failed:")}${result.detail}`, 9000);
-          button.setDisabled(false);
-          button.setButtonText(t("Test connection"));
-          this.renderSettings();
-        }));
-
-    if (!profile.hideLanguage) {
-      new obsidian.Setting(c).setName(t("Recognition Language"))
-        .setDesc(t(profile.languageHelp) || t("Leave blank or auto to detect automatically."))
-        .addText((text) => text
-          .setValue(provider.language || "")
-          .setPlaceholder(profile.languagePlaceholder || "")
-          .onChange((value) => writeProvider("language", value.trim())));
-    }
-
-    new obsidian.Setting(c)
-      .setName(t("Distinguish Speakers"))
-      .setDesc(t("After transcription completes, confirm the names for \"Speaker 1, 2, 3\" before moving on to AI organizing."))
-      .addToggle((toggle) => toggle
-        .setValue(this.plugin.settings.importSpeakerDiarization !== false)
-        .onChange(async (value) => {
-          this.plugin.settings.importSpeakerDiarization = value;
-          await this.plugin.saveSettings();
-          this.renderSettings();
-        }));
-
-    if (this.plugin.settings.importSpeakerDiarization !== false) {
-      new obsidian.Setting(c)
-        .setName(t("Number of Speakers"))
-        .setDesc(t("Leave empty to detect automatically; if you know the number of speakers, filling it in improves speaker separation consistency."))
-        .addText((text) => {
-          text.inputEl.type = "number";
-          text.inputEl.min = "2";
-          text.inputEl.max = "100";
-          text.inputEl.step = "1";
-          text.setPlaceholder(t("Auto"));
-          text.setValue(this.plugin.settings.importSpeakerCount > 0
-            ? String(this.plugin.settings.importSpeakerCount)
-            : "");
-          text.onChange(async (value) => {
-            const number = Math.floor(Number(value) || 0);
-            this.plugin.settings.importSpeakerCount = number >= 2 ? Math.min(100, number) : 0;
-            await this.plugin.saveSettings();
-          });
-        });
-    }
   }
 
 

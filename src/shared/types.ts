@@ -26,6 +26,13 @@ export interface LlmAsrSnapshot {
   protocol?: string;
 }
 
+/** 某个 AI 整理服务上次使用的工作配置；切换服务时恢复。 */
+export interface LlmServiceMemoryEntry {
+  endpoint: string;
+  apiKey: string;
+  model: string;
+}
+
 export interface LlmProfile {
   id: string;
   name: string;
@@ -133,6 +140,7 @@ export interface PluginSettings {
   llmServicePreset: string;
   llmProfiles: LlmProfile[];
   activeLlmProfile: string;
+  llmServiceMemory: Record<string, LlmServiceMemoryEntry>;
   polishMode: string;
   polishPromptInterview: string;
   polishPromptMeeting: string;

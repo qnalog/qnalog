@@ -9937,55 +9937,6 @@ body .qnalog-menu .menu-item.selected .menu-item-icon {
   padding: 8px;
 }
 
-/* API 方案块：说明整行 → 下拉+按钮一行 → 激活态提示整行（替代 obsidian.Setting 左名右控件的拥挤布局） */
-.qnalog-scheme-block {
-  padding: var(--size-4-2) 0 var(--size-4-1);
-}
-.qnalog-scheme-controls {
-  display: grid;
-  grid-template-columns: minmax(220px, 1fr) auto;
-  gap: var(--size-2-2);
-  align-items: center;
-}
-.qnalog-scheme-select {
-  width: 100%;
-  min-width: 0;
-  max-width: none;
-}
-.qnalog-scheme-btns {
-  display: flex;
-  gap: var(--size-2-2);
-  flex-wrap: nowrap;
-  align-items: center;
-}
-.qnalog-scheme-status {
-  margin-top: 10px;
-  color: var(--text-muted);
-  font-size: var(--font-ui-smaller);
-  line-height: 1.5;
-}
-.qnalog-scheme-status-name {
-  font-weight: var(--font-semibold);
-  color: var(--text-normal);
-}
-.qnalog-scheme-status-sep {
-  color: var(--text-faint);
-}
-.qnalog-scheme-status-hint {
-  color: var(--text-faint);
-}
-
-@media (max-width: 760px) {
-  .qnalog-scheme-controls,
-  .qnalog-settings-content.is-mobile .qnalog-scheme-controls {
-    grid-template-columns: 1fr;
-  }
-
-  .qnalog-scheme-btns {
-    flex-wrap: wrap;
-  }
-}
-
 /* 招聘设置·文件夹路径不存在时的警示行 + 创建按钮 */
 .qnalog-folder-warn {
   display: flex;
@@ -10150,31 +10101,38 @@ body .qnalog-menu .menu-item.selected .menu-item-icon {
   padding: 0 0 var(--size-4-4) var(--size-4-4);
 }
 
-.qnalog-settings-section-body > .setting-item:first-child {
+.qnalog-settings-section-body > .setting-item:first-child,
+.qnalog-api-fields > .setting-item:first-child {
   border-top: 0;
 }
 
-.qnalog-settings-section-body > .setting-item:last-child {
+.qnalog-settings-section-body > .setting-item:last-child,
+.qnalog-api-fields > .setting-item:last-child {
   border-bottom: 0;
 }
 
-.qnalog-settings-section-body > .setting-item:not(.setting-item-heading) {
+.qnalog-settings-section-body > .setting-item:not(.setting-item-heading),
+.qnalog-api-fields > .setting-item:not(.setting-item-heading) {
   display: grid;
   grid-template-columns: minmax(280px, 1fr) minmax(180px, 280px);
   align-items: start;
   gap: var(--size-4-4);
 }
 
-.qnalog-settings-section-body > .setting-item.is-info-only > .setting-item-info {
+.qnalog-settings-section-body > .setting-item.is-info-only > .setting-item-info,
+.qnalog-api-fields > .setting-item.is-info-only > .setting-item-info {
   grid-column: 1 / -1;
 }
 
 .qnalog-settings-section-body > .setting-item > .setting-item-info,
-.qnalog-settings-section-body > .setting-item > .setting-item-control {
+.qnalog-api-fields > .setting-item > .setting-item-info,
+.qnalog-settings-section-body > .setting-item > .setting-item-control,
+.qnalog-api-fields > .setting-item > .setting-item-control {
   min-width: 0;
 }
 
-.qnalog-settings-section-body > .setting-item > .setting-item-control {
+.qnalog-settings-section-body > .setting-item > .setting-item-control,
+.qnalog-api-fields > .setting-item > .setting-item-control {
   display: flex;
   width: 100%;
   max-width: 280px;
@@ -10185,8 +10143,11 @@ body .qnalog-menu .menu-item.selected .menu-item-icon {
 }
 
 .qnalog-settings-section-body > .setting-item > .setting-item-control > input[type="text"],
+.qnalog-api-fields > .setting-item > .setting-item-control > input[type="text"],
 .qnalog-settings-section-body > .setting-item > .setting-item-control > input[type="password"],
-.qnalog-settings-section-body > .setting-item > .setting-item-control > select.dropdown {
+.qnalog-api-fields > .setting-item > .setting-item-control > input[type="password"],
+.qnalog-settings-section-body > .setting-item > .setting-item-control > select.dropdown,
+.qnalog-api-fields > .setting-item > .setting-item-control > select.dropdown {
   flex: 1 1 180px;
   width: 100%;
   max-width: none;
@@ -10239,17 +10200,21 @@ body .qnalog-menu .menu-item.selected .menu-item-icon {
 }
 
 @media (max-width: 760px) {
-  .qnalog-settings-section-body > .setting-item:not(.setting-item-heading) {
+  .qnalog-settings-section-body > .setting-item:not(.setting-item-heading),
+  .qnalog-api-fields > .setting-item:not(.setting-item-heading) {
     grid-template-columns: 1fr;
     gap: var(--size-2-2);
   }
 
   .qnalog-settings-section-body > .setting-item > .setting-item-info,
-  .qnalog-settings-section-body > .setting-item > .setting-item-control {
+  .qnalog-api-fields > .setting-item > .setting-item-info,
+  .qnalog-settings-section-body > .setting-item > .setting-item-control,
+  .qnalog-api-fields > .setting-item > .setting-item-control {
     grid-column: 1;
   }
 
-  .qnalog-settings-section-body > .setting-item > .setting-item-control {
+  .qnalog-settings-section-body > .setting-item > .setting-item-control,
+  .qnalog-api-fields > .setting-item > .setting-item-control {
     width: 100%;
     max-width: none;
     justify-self: stretch;
@@ -10258,17 +10223,21 @@ body .qnalog-menu .menu-item.selected .menu-item-icon {
 }
 
 @container (max-width: 500px) {
-  .qnalog-settings-section-body > .setting-item:not(.setting-item-heading) {
+  .qnalog-settings-section-body > .setting-item:not(.setting-item-heading),
+  .qnalog-api-fields > .setting-item:not(.setting-item-heading) {
     grid-template-columns: 1fr;
     gap: var(--size-2-2);
   }
 
   .qnalog-settings-section-body > .setting-item > .setting-item-info,
-  .qnalog-settings-section-body > .setting-item > .setting-item-control {
+  .qnalog-api-fields > .setting-item > .setting-item-info,
+  .qnalog-settings-section-body > .setting-item > .setting-item-control,
+  .qnalog-api-fields > .setting-item > .setting-item-control {
     grid-column: 1;
   }
 
-  .qnalog-settings-section-body > .setting-item > .setting-item-control {
+  .qnalog-settings-section-body > .setting-item > .setting-item-control,
+  .qnalog-api-fields > .setting-item > .setting-item-control {
     width: 100%;
     max-width: none;
     justify-self: stretch;
@@ -10276,21 +10245,63 @@ body .qnalog-menu .menu-item.selected .menu-item-icon {
   }
 }
 
-.qnalog-settings-content.is-mobile .qnalog-settings-section-body > .setting-item:not(.setting-item-heading) {
+.qnalog-settings-content.is-mobile .qnalog-settings-section-body > .setting-item:not(.setting-item-heading),
+.qnalog-settings-content.is-mobile .qnalog-api-fields > .setting-item:not(.setting-item-heading) {
   grid-template-columns: 1fr;
   gap: var(--size-2-2);
 }
 
 .qnalog-settings-content.is-mobile .qnalog-settings-section-body > .setting-item > .setting-item-info,
-.qnalog-settings-content.is-mobile .qnalog-settings-section-body > .setting-item > .setting-item-control {
+.qnalog-settings-content.is-mobile .qnalog-api-fields > .setting-item > .setting-item-info,
+.qnalog-settings-content.is-mobile .qnalog-settings-section-body > .setting-item > .setting-item-control,
+.qnalog-settings-content.is-mobile .qnalog-api-fields > .setting-item > .setting-item-control {
   grid-column: 1;
 }
 
-.qnalog-settings-content.is-mobile .qnalog-settings-section-body > .setting-item > .setting-item-control {
+.qnalog-settings-content.is-mobile .qnalog-settings-section-body > .setting-item > .setting-item-control,
+.qnalog-settings-content.is-mobile .qnalog-api-fields > .setting-item > .setting-item-control {
   width: 100%;
   max-width: none;
   justify-self: stretch;
   justify-content: flex-start;
+}
+
+/* API 标签：语音转写 / AI 整理两张卡片、进阶区块。
+   卡片内的设置行沿用 .qnalog-settings-section-body 的布局（上面各规则已并入 .qnalog-api-fields）。 */
+.qnalog-api-card {
+  margin: 0 0 var(--size-4-4);
+  padding: var(--size-4-3) var(--size-4-4);
+  border: 1px solid var(--background-modifier-border);
+  border-radius: var(--radius-m);
+  background: var(--background-primary);
+}
+
+.qnalog-api-card-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--size-4-3);
+  padding-bottom: var(--size-2-2);
+}
+
+.qnalog-api-guide {
+  margin: var(--size-2-2) 0;
+}
+
+.qnalog-api-guide-summary {
+  cursor: pointer;
+  color: var(--text-muted);
+  font-size: var(--font-ui-smaller);
+}
+
+.qnalog-api-block + .qnalog-api-block:not(:empty) {
+  margin-top: var(--size-4-3);
+}
+
+@media (max-width: 760px) {
+  .qnalog-api-card {
+    padding: var(--size-4-2) var(--size-4-3);
+  }
 }
 
 /* 进度弹窗最终覆盖层：位于旧版兼容规则之后，确保紧凑队列布局生效。 */
