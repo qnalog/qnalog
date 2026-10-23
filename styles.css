@@ -11244,9 +11244,16 @@ button.qnalog-outline-segment-value {
   gap: 0;
 }
 
-/* 问一问：标题行与输入框之间留出间距（上一条把所有空闲视图分区的 gap 清零了）。 */
-.qnalog-outline > .qnalog-outline-section.qnalog-note-ask {
-  gap: 10px;
+/* 相邻分区（追加录音、播放器、大纲）各自带 14px 上 + 18px 下内边距，叠起来是 32px 空白；
+   后一个分区去掉上内边距，分区之间统一为 18px。 */
+.qnalog-outline.is-idle-view > .qnalog-outline-section + .qnalog-outline-section {
+  padding-top: 0;
+}
+
+/* 问一问、沉淀两个面板自身定义了 12px 的纵向间距，上一条把所有空闲视图分区的 gap 清零后，
+   问一问的标题贴着输入框、沉淀的完成卡片贴着下方说明。这里恢复两者原定的间距。 */
+.qnalog-outline > .qnalog-outline-section:is(.qnalog-note-ask, .qnalog-sediment) {
+  gap: 12px;
 }
 
 /* Recent-list styling is shared by idle, recording, and paused views. */
@@ -12317,12 +12324,15 @@ body.is-mobile .qnalog-recent-filter-popover-templates {
   border-radius: 8px;
   background: color-mix(in srgb, var(--background-primary) 94%, var(--background-secondary) 6%);
   color: var(--text-normal);
+  box-shadow: none;
   cursor: pointer;
   font-size: var(--font-ui-small);
 }
 
 .qnalog-append-actions .qnalog-outline-action-button:hover {
-  background: color-mix(in srgb, var(--background-primary) 80%, var(--text-accent) 20%);
+  border-color: color-mix(in srgb, var(--background-modifier-border) 60%, var(--text-accent) 40%);
+  background: var(--background-modifier-hover);
+  box-shadow: none;
 }
 
 .qnalog-append-actions .qnalog-outline-action-button:disabled {
