@@ -10,6 +10,10 @@ const PX_ALLOWLIST: Array<{ selector: string; reason: string }> = [
     selector: ".qnalog-meeting-composer.is-mobile .qnalog-meeting-composer-input",
     reason: "iOS zooms the page when an input font is under 16px",
   },
+  {
+    selector: ".qnalog-outline.is-mobile .qnalog-recording-search-input",
+    reason: "iOS zooms the page when an input font is under 16px",
+  },
   { selector: ".qnalog-sediment-pipeline-circle", reason: "digit inside a fixed 24px circle" },
   { selector: "qnalog-outline-leading-time", reason: "time label in a fixed 42px column" },
   { selector: ".qnalog-outline-recent-filter-badge", reason: "digit inside a fixed 16px badge" },

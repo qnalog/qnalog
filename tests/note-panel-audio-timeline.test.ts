@@ -8,6 +8,7 @@ vi.mock("obsidian", () => ({
 
 import { extractNotePanelData } from "../src/notes/detail-blocks";
 import { mapAudioTimeToNote, mapNoteTimeToAudio } from "../src/notes/note-audio-timeline";
+import { searchRecording } from "../src/notes/recording-search";
 import { attachTextTranscript } from "../src/transcript/session-transcript";
 import { serializeTranscriptBlock } from "../src/transcript/transcript-markdown";
 import type { Segment } from "../src/shared/types";
@@ -96,5 +97,13 @@ describe("completed note panel audio timeline", () => {
     const data = extractNotePanelData(null, null, note([legacy]));
     expect(data?.audioTimelineComplete).toBe(false);
     expect(data?.audioTimeline).toEqual([]);
+  });
+
+  it("builds find-in-recording entries from the note's transcript ledger", () => {
+    const data = extractNotePanelData(null, null, note([segment(0, "first", 0, 0), segment(1, "latest", 10000, 4000)]));
+    const outcome = searchRecording(data?.recordingSearch, "transcript 1");
+    expect(outcome.results.map((result) => [result.precision, result.target])).toEqual([
+      ["segment", { linkPath: "QnALog/录音/latest.webm", label: "00:04", localMs: 4000 }],
+    ]);
   });
 });

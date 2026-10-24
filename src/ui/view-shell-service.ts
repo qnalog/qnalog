@@ -46,6 +46,19 @@ export class ViewShellService {
     this.syncBubbleVisibility();
   }
 
+  /** Opens the sidebar note panel and focuses its "Find in recording" field. */
+  async openRecordingSearch() {
+    await this.openOutlineView();
+    for (const leaf of this.host.app.workspace.getLeavesOfType(VIEW_TYPE_OUTLINE)) {
+      try { await leaf.loadIfDeferred(); } catch { /* intentionally empty */ }
+      const view = leaf.view as obsidian.View & { focusRecordingSearch?: () => void };
+      if (view && typeof view.focusRecordingSearch === "function") {
+        view.focusRecordingSearch();
+        return;
+      }
+    }
+  }
+
   refreshOutlineView() {
     try { this.host.tasks.updateBusyStatus(); } catch { /* intentionally empty */ }
     const leaves = this.host.app.workspace.getLeavesOfType(VIEW_TYPE_OUTLINE);

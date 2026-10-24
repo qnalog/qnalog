@@ -83,6 +83,8 @@ Transcribed notes preserve the original speech-to-text text and revision history
 
 When a recorded note is organized with utterance-level transcript data and the model returns complete evidence, the end of the organized body gets a **Where decisions and actions were said** section. Each decision and action item lists the speaker, a link to the moment in the recording, and a quote of up to 40 characters from the transcript. Times come from the transcript record, not from the model. Times that the transcription service returned per sentence show as exact seconds; estimated times are marked "approx.", times known only to the segment are marked "approximately in this segment", and unknown times have no link. The model chooses which passages to cite, so click a time and listen to check. Re-organizing replaces the section; older notes are not changed.
 
+To find a passage in a long recording, type words into **Find in recording** under the player in the sidebar note panel, or run the command **Find in the current note's recording**. Each matching sentence shows its time, speaker, and text; click it to play from that moment. Case, spaces, and punctuation are ignored, several words must all appear in the same sentence, Chinese numerals match digits (十一 finds 11), and a speaker name finds that speaker's sentences. Times are marked the same way as above. Notes without sentence-level transcript data are searched by segment. The search runs on the note's transcript on your device and sends nothing to a service.
+
 <details>
 <summary>Original, derived, and clean-copy versions</summary>
 

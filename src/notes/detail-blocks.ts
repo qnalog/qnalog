@@ -22,6 +22,8 @@ import { iterateNoteDetailsBlocks } from "./note-document";
 
 import { extractSpeakerIdsFromMarkdown, normalizeSpeakerMappings, readSpeakerMappings } from "../audio/channel-speakers";
 import { NS_SEGMENTS_START_RE, NS_SESSION_RE } from "../shared/namespace";
+import { buildRecordingSearchIndex } from "./recording-search";
+import { readSelectedSessionKnowledge } from "../briefing/session-knowledge";
 import { labelPattern, labelText } from "../shared/note-labels";
 
 
@@ -64,6 +66,13 @@ export function extractNotePanelData(plugin, file, markdown) {
   const mode = plugin && file ? detectRecentNoteMode(plugin, file, frontmatter) : "";
   const speakerIds = extractSpeakerIdsFromMarkdown(text);
   const speakerMappings = normalizeSpeakerMappings(readSpeakerMappings(frontmatter), speakerIds);
+  // 「在录音中查找」的检索条目；构建失败只让查找框不显示，不影响面板其余部分。
+  let recordingSearch = null;
+  try {
+    recordingSearch = buildRecordingSearchIndex(audioSegments, readSelectedSessionKnowledge(text));
+  } catch (e) {
+    console.warn("[QnALog] build recording search index failed", e);
+  }
   return {
     file,
     title: h1 ? h1[1].trim() : (file && file.basename ? file.basename : t("QnALog notes")),
@@ -78,6 +87,7 @@ export function extractNotePanelData(plugin, file, markdown) {
     hasPreExtractedSediment: !!sedimentPreExtraction.objects,
     speakerIds,
     speakerMappings,
+    recordingSearch,
   };
 }
 

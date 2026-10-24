@@ -688,6 +688,16 @@ class QnALogPlugin extends obsidian.Plugin {
     this.addCommand({ id: "import-audio", name: t("Import Existing Audio File: Transcribe + Polish"), callback: () => new ImportAudioModal(this.app, this).open() });
     this.addCommand({ id: "check-updates", name: t("Check for Updates"), callback: () => this.checkForUpdates({ silent: false }) });
     this.addCommand({ id: "open-outline", name: t("Open Voice Notes Panel"), callback: () => this.shell.openOutlineView() });
+    this.addCommand({
+      id: "find-in-recording",
+      name: t("Find in the current note's recording"),
+      checkCallback: (checking) => {
+        const file = this.app.workspace.getActiveFile();
+        if (!(file instanceof obsidian.TFile) || file.extension !== "md" || !this.noteWriter.detectModeFromMarkdown(file)) return false;
+        if (!checking) void this.shell.openRecordingSearch();
+        return true;
+      },
+    });
     this.addCommand({ id: "record-mic-only", name: t("Start Recording · Microphone only"), callback: () => { this.recording._oneShotCaptureMode = "mic"; void this.recording.startRecording(); } });
     this.addCommand({ id: "record-mic-virtual", name: t("Start Recording · Microphone + Computer Audio"), callback: () => { this.recording._oneShotCaptureMode = "mix-virtual"; void this.recording.startRecording(); } });
     this.addCommand({ id: "record-virtual-only", name: t("Start Recording · Computer Audio only"), callback: () => { this.recording._oneShotCaptureMode = "virtualCable"; void this.recording.startRecording(); } });
