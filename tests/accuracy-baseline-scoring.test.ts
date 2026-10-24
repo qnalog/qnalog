@@ -2,6 +2,8 @@ import { readFileSync } from "node:fs";
 import { describe, expect, it } from "vitest";
 import {
   editDistance,
+  normalizeNumbers,
+  scoreText,
   scoreTranscript,
   tokenize,
   type GroundTruth,
@@ -156,5 +158,25 @@ describe("accuracy baseline scoring", () => {
     expect(r.offset.matchedUtterances).toBe(7);
     expect(r.speaker.wrongShare).toBeGreaterThan(0);
     expect(r.speaker.mapping).toEqual({ spk_2: "Alice", spk_0: "Bob", spk_1: "Carol" });
+  });
+});
+
+describe("number normalization and hypothesis text", () => {
+  it("writes Chinese numerals as Arabic digits", () => {
+    expect(normalizeNumbers("还剩十一个，四十二万，百分之十五，二〇二六年，两点")).toBe("还剩11个，420000，15，2026年，2点");
+  });
+
+  it("scores units' text, not result.text with time and speaker labels", () => {
+    const truth = { title: "t", language: "zh" as const, utterances: [{ speaker: "A", text: "还剩十一个", startMs: 0, endMs: 1000 }] };
+    const result = {
+      text: "[00:00] [Speaker 1] 还剩11个",
+      rawText: null,
+      providerId: "p",
+      units: [{ rawText: "还剩11个", normalizedText: "还剩11个", speakerId: "0", speakerName: null, startMs: 0, endMs: 1000, timing: "provider" as const }],
+    };
+    const score = scoreText(truth, result);
+    // Reference 还 剩 十 一 个 (5) vs hypothesis 还 剩 11 个 (4): 十→11 substitution plus 一 deletion = 2 edits.
+    expect(score.editDistance).toBe(2);
+    expect(score.numberNormalizedErrorRate).toBe(0);
   });
 });
