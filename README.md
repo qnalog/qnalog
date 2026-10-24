@@ -41,6 +41,8 @@ Recording transcription needs a configured speech-to-text (ASR) service. Importi
 
 Alibaba Cloud Bailian quick config uses Qwen-Audio-3.1-ASR-Flash over its native HTTP API for recording transcription and Qwen-Audio-3.1-ASR-Flash-Filetrans for whole-file imports with speaker diarization. Under **Speech transcription**, **Get models** lists the service catalogue; selecting a recognized Bailian ASR model updates its endpoint and protocol together. Bailian models use their registered native HTTP, Chat Completions, file-transcription, task WebSocket, or Qwen3 event WebSocket path. WebSocket recording requires desktop Obsidian; Gummy one-sentence tasks rotate before the service's one-minute audio limit. The quick-config defaults remain unchanged. See [`MAINTAINING.md`](MAINTAINING.md) for protocol details and region-specific pricing.
 
+When several speakers are detected and have no names yet, organizing does not wait: the note is organized with session numbers (Speaker 1, Speaker 2). After the note is written, a notice offers **Name speakers**; the command **Name speakers in the current note** and the **Edit speakers** list in the side panel do the same at any time. A name replaces the number in the note properties, the original transcript display, and the organized text. It does not change speaker IDs, the transcribed source text, or the audio. Names already saved in the note properties or taken from hardware channels are applied before organizing.
+
 ## Basic usage
 
 1. Open the **QnALog voice notes panel** from the left ribbon. The Obsidian toolbar shows a monochrome Q icon that follows the theme.

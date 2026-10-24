@@ -272,6 +272,9 @@ export function normalizeSpeakerMappings(
   return filtered;
 }
 
+const ANCHOR_OPEN = "(?:<|&lt;)!--";
+const ANCHOR_CLOSE = "--(?:>|&gt;)";
+
 export function replaceSpeakerDisplayName(
   markdown: string,
   speakerId: SpeakerId,
@@ -284,12 +287,13 @@ export function replaceSpeakerDisplayName(
   if (!safeName) return { markdown: String(markdown || ""), replacements: 0 };
   const original = String(markdown || "");
   const previousNames = new Set<string>([`说话人${channel}`, `说话人 ${channel}`]);
-  const anchoredNames = new RegExp(`<!--\\s*${nsRe("speaker")}:${speakerId}\\s*-->\\s*\\n?\\s*(?:\\[[^\\]]+\\]\\s*)?\\*\\*([^*\\n]{1,80})[：:]\\*\\*`, "gi");
+  // Inside transcript blocks the anchor comment is stored HTML-escaped (`&lt;!-- ... --&gt;`); accept both forms.
+  const anchoredNames = new RegExp(`${ANCHOR_OPEN}\\s*${nsRe("speaker")}:${speakerId}\\s*${ANCHOR_CLOSE}\\s*\\n?\\s*(?:\\[[^\\]]+\\]\\s*)?\\*\\*([^*\\n]{1,80})[：:]\\*\\*`, "gi");
   for (const match of original.matchAll(anchoredNames)) previousNames.add(match[1]);
   const inlineNames = new RegExp(`<!--\\s*${nsRe("speaker-ref")}:${speakerId}\\s*-->([^<\\n]*?)<!--\\s*${nsRe("speaker-ref-end")}:${speakerId}\\s*-->`, "gi");
   for (const match of original.matchAll(inlineNames)) previousNames.add(match[1]);
   const anchored = new RegExp(
-    `(<!--\\s*${nsRe("speaker")}:${speakerId}\\s*-->\\s*\\n?\\s*)(\\[[0-9]{1,2}:[0-9]{2}(?::[0-9]{2})?\\]\\s*)?\\*\\*[^*\\n]{1,80}[：:]\\*\\*`,
+    `(${ANCHOR_OPEN}\\s*${nsRe("speaker")}:${speakerId}\\s*${ANCHOR_CLOSE}\\s*\\n?\\s*)(\\[[0-9]{1,2}:[0-9]{2}(?::[0-9]{2})?\\]\\s*)?\\*\\*[^*\\n]{1,80}[：:]\\*\\*`,
     "gi",
   );
   let replacements = 0;

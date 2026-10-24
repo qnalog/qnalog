@@ -47,7 +47,7 @@ function setup(markdown = "", targetIsFile = true) {
     continuations: { runOnTarget: vi.fn(async (_file: unknown, operation: () => Promise<unknown>) => operation()) },
     noteWriter: { insertBeforeSegmentsEnd, detectModeFromMarkdown: vi.fn(() => "meeting") },
     repolish: { repolishMarkdownFile: vi.fn(async () => undefined), reorganizeNoteInPlace: vi.fn(async () => undefined) },
-    queue: { tasks: [] }, confirmSpeakerNames: vi.fn(async () => undefined),
+    queue: { tasks: [] }, confirmSpeakerNames: vi.fn(async () => undefined), offerSpeakerNaming: vi.fn(async () => false),
     profiles: { getActiveTranscribeProfile: vi.fn(() => null) },
   };
   asr.transcribe.mockResolvedValue({ text: "recognized words", rawText: "recognized words", providerId: "mock", units: [] });
@@ -260,6 +260,25 @@ describe("automatic re-organization after backfilling the last failed segment", 
     expect(fixture.host.repolish.reorganizeNoteInPlace).toHaveBeenCalledWith(fixture.file, { firstOrganizing: true });
     expect(fixture.host.repolish.repolishMarkdownFile).not.toHaveBeenCalled();
     expect(fixture.contents.get(fixture.file.path)).toContain("recognized words");
+  });
+
+  it("offers speaker naming after the in-place re-organization and never waits for names", async () => {
+    const fixture = setup(`${failedNoteBody}### ${placeholderFor("retry-1")}\n`);
+    fixture.host.confirmSpeakerNames.mockImplementation(() => new Promise(() => undefined) as never);
+    fixture.task.wholeFileImport = false;
+    fixture.host.repolish.reorganizeNoteInPlace.mockResolvedValueOnce(true as never);
+    Object.assign(fixture.host.queue, { removeMergeTasksForNote: vi.fn(async () => 0) });
+    await expect(fixture.service.retryTranscribeTask(fixture.task as never)).resolves.toBeUndefined();
+    await vi.waitFor(() => expect(fixture.host.offerSpeakerNaming).toHaveBeenCalledWith(fixture.file.path));
+    expect(fixture.host.repolish.reorganizeNoteInPlace).toHaveBeenCalledTimes(1);
+  });
+
+  it("does not offer speaker naming when the in-place re-organization fails", async () => {
+    const fixture = setup(`${failedNoteBody}### ${placeholderFor("retry-1")}\n`);
+    fixture.host.repolish.reorganizeNoteInPlace.mockRejectedValueOnce(new Error("organize failed"));
+    await fixture.service.retryTranscribeTask(fixture.task as never);
+    await vi.waitFor(() => expect(fixture.diagnostics.logDiagnostic).toHaveBeenCalledWith("error", "queue.auto_repolish_failed", expect.any(String), expect.anything()));
+    expect(fixture.host.offerSpeakerNaming).not.toHaveBeenCalled();
   });
 
   it("re-organizes the original note in place when the generated empty-output fallback is present", async () => {

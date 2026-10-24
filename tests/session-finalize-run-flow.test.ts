@@ -57,7 +57,7 @@ function setup(options: { configIssue?: string; segments?: Segment[]; source?: s
     cleanupSuccessfulSegmentAudio: vi.fn(async () => { events.push("cleanup"); }), removeEmptySessionBlock: vi.fn(async () => { events.push("remove-empty"); }),
     appendPolishBlock: vi.fn(async () => { events.push("append"); }), rewriteConsolidated: vi.fn(async () => { events.push("rewrite"); }),
     renameWithGeneratedTitle: vi.fn(async () => { events.push("rename"); return null; }), refreshNoteIndex: vi.fn(async () => { events.push("index"); }), autoExtractSediment: vi.fn(),
-    syncTranscriptAudioSource: vi.fn(async () => undefined), confirmSpeakerNames: vi.fn(async (_session, segments) => ({ segments, frontmatter: null })),
+    syncTranscriptAudioSource: vi.fn(async () => undefined), confirmSpeakerNames: vi.fn(async (_session, segments) => ({ segments, frontmatter: null })), offerSpeakerNaming: vi.fn(async () => false),
     processMeetingWorkbench: vi.fn(async () => undefined), ensureRealtimeOutline: vi.fn(async () => undefined),
     mergeAndPolish: vi.fn(async () => { events.push("merge"); return "Polished note"; }), clearCommittedBriefingCheckpoint: vi.fn(async () => undefined),
     // Upsert by session, like TaskQueue.add: the in-flight task and a later failure task are one row.
@@ -173,6 +173,36 @@ describe("session finalization flow consumer contract", () => {
     expect(fixture.events.indexOf("stage:done")).toBeLessThan(fixture.events.indexOf("end"));
     expect(fixture.events[fixture.events.indexOf("stage:done") + 1]).toBe("end");
     expect(notices.at(-1)?.[0]).toBe(t("QnALog processing completed"));
+  });
+
+  it("offers speaker naming after the note is written and the session has ended, without blocking organizing", async () => {
+    const fixture = setup();
+    await runSessionFinalization(fixture.port, fixture.session);
+    expect(fixture.port.confirmSpeakerNames).toHaveBeenCalledOnce();
+    expect(fixture.port.offerSpeakerNaming).toHaveBeenCalledWith(fixture.file.path);
+    expect(fixture.events.indexOf("merge")).toBeLessThan(fixture.events.indexOf("rewrite"));
+    expect(fixture.events.indexOf("end")).toBeGreaterThan(fixture.events.indexOf("stage:done"));
+  });
+
+  it("does not offer speaker naming when organizing failed", async () => {
+    const fixture = setup();
+    vi.mocked(fixture.port.mergeAndPolish).mockRejectedValueOnce(new Error("model failed"));
+    await runSessionFinalization(fixture.port, fixture.session);
+    expect(fixture.port.offerSpeakerNaming).not.toHaveBeenCalled();
+  });
+
+  it("does not offer speaker naming for a continuation recording that is merged later", async () => {
+    const fixture = setup();
+    fixture.session.continuation = { targetPath: "Notes/target.md" } as never;
+    await runSessionFinalization(fixture.port, fixture.session);
+    expect(fixture.port.offerSpeakerNaming).not.toHaveBeenCalled();
+  });
+
+  it("logs and continues when the speaker naming prompt cannot be shown", async () => {
+    const fixture = setup();
+    vi.mocked(fixture.port.offerSpeakerNaming).mockRejectedValueOnce(new Error("read failed"));
+    await expect(runSessionFinalization(fixture.port, fixture.session)).resolves.toBeUndefined();
+    expect(fixture.events).toContain("diag:speaker.naming_offer_failed");
   });
 
   it("keeps task activity running with the title label while title generation is pending", async () => {

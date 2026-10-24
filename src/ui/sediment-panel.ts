@@ -24,11 +24,9 @@ import { primitiveText } from "../shared/util-common";
 
 import { getTaskErrorMessage } from "../shared/task-activity";
 
-import { clampSpeakerChannelCount, extractSpeakerIdsFromMarkdown, normalizeSpeakerMappings, readSpeakerMappings, replaceSpeakerDisplayName, speakerLabelForChannel } from "../audio/channel-speakers";
+import { clampSpeakerChannelCount, replaceSpeakerDisplayName } from "../audio/channel-speakers";
 
 import { isKnowledgeSourceAlreadyScanned } from "../notes/recording-issues";
-
-import { NS_FM_SPEAKERS } from "../shared/namespace";
 
 import {
   appendSedimentDecisionItems as appendSedimentDecisionItemsFlow,
@@ -583,25 +581,13 @@ export class SedimentPanel {
       return names.some((name) => normalizePersonLookupText(name) === personKey);
     });
 
-    await this.app.fileManager.processFrontMatter(file, (frontmatter) => {
-      const ids = extractSpeakerIdsFromMarkdown(original);
-      const mappings = normalizeSpeakerMappings(readSpeakerMappings(frontmatter), ids);
-      const current = mappings[speakerId] || {
-        id: speakerId,
-        channel: Math.max(1, Number(String(speakerId).replace(/^spk-/, "")) || 1),
-        label: speakerLabelForChannel(Number(String(speakerId).replace(/^spk-/, "")) || 1),
-      };
-      mappings[speakerId] = {
-        ...current,
-        personName,
-        personPath: matched && matched.path ? String(matched.path) : undefined,
-      };
-      frontmatter[NS_FM_SPEAKERS] = mappings;
+    const result = await this.port.applySpeakerNames(file, {
+      [speakerId]: { personName, personPath: matched && matched.path ? String(matched.path) : undefined },
     });
-
-    const latest = await this.app.vault.cachedRead(file);
-    const updated = replaceSpeakerDisplayName(latest, speakerId, personName);
-    if (updated.replacements) await this.app.vault.modify(file, updated.markdown);
+    if (result.bodyError) {
+      this.view.render();
+      return false;
+    }
     this.view.notePanelCacheKey = "";
     this.view.notePanelCacheData = undefined;
     this.view.notePanelLoading = false;
