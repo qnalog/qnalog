@@ -168,7 +168,7 @@ describe("hardware channel speaker mapping", () => {
     expect(confirmed.markdown).toContain("**第六位发言人：**");
   });
 
-  it("replaces generic speaker references inside briefing prose with stable inline anchors", () => {
+  it("marks speaker references inside briefing prose with visible mention markers instead of inline comments", () => {
     const source = [
       "---",
       "qnalog_speakers:",
@@ -181,15 +181,16 @@ describe("hardware channel speaker mapping", () => {
       "qnalog-people: 说话人1, 说话人2",
     ].join("\n");
     const confirmed = replaceSpeakerDisplayName(source, "spk-2", "李经理");
-    expect(confirmed.replacements).toBe(1);
-    expect(confirmed.markdown).toContain("<!-- qnalog-speaker-ref:spk-2 -->李经理<!-- qnalog-speaker-ref-end:spk-2 -->回顾了项目经历");
+    expect(confirmed.replacements).toBeGreaterThan(0);
+    expect(confirmed.markdown).toContain("『李经理』回顾了项目经历，随后『说话人1』补充了部署风险。");
+    expect(confirmed.markdown).not.toContain("<!--");
     expect(confirmed.markdown).toContain("label: 说话人2");
     expect(confirmed.markdown).toContain("qnalog-people: 说话人1, 说话人2");
 
-    const corrected = replaceSpeakerDisplayName(confirmed.markdown, "spk-2", "王总");
+    const corrected = replaceSpeakerDisplayName(confirmed.markdown, "spk-2", "王总", ["李经理"]);
     expect(corrected.replacements).toBe(1);
-    expect(corrected.markdown).toContain("<!-- qnalog-speaker-ref:spk-2 -->王总<!-- qnalog-speaker-ref-end:spk-2 -->回顾了项目经历");
-    expect(corrected.markdown).not.toContain(">李经理<");
+    expect(corrected.markdown).toContain("『王总』回顾了项目经历");
+    expect(corrected.markdown).not.toContain("李经理");
   });
 });
 

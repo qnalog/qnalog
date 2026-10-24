@@ -2380,7 +2380,8 @@ async function main() {
           const expectedPolicy = sample.id === "english" ? "personal experiences, reminders" : "无需用户预选类型";
           const checks = {
             finalized: !!session.finalized,
-            bodyPreserved: visible.includes(sample.body),
+            // 说话人提及在写入时加标记（audio/speaker-mentions.ts）；带说话人的样本给出加标记后的期望正文。
+            bodyPreserved: visible.includes(sample.expectedBody ?? sample.body),
             optionalOverview: sample.id === "overview" || !visible.includes("[!abstract]"),
             sourcePreserved: content.includes(sample.source),
             noIndexCard: !content.includes("<!-- qnalog-note-index -->"),

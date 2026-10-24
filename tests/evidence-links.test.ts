@@ -161,7 +161,8 @@ describe("decision and action evidence links", () => {
       expect(block).toContain("## 决定与待办的原话出处");
       expect(block).toContain(`- **决定**：周五上线 — 说话人2 [[${AUDIO}|00:03]]（约） 「那就周五上线。」`);
       const renamed = replaceSpeakerDisplayName(`# Note\n\n${block}\n`, "spk-2", "王五");
-      expect(renamed.markdown).toContain("<!-- qnalog-speaker-ref:spk-2 -->王五<!-- qnalog-speaker-ref-end:spk-2 -->");
+      expect(renamed.markdown).toContain(`— 『王五』 [[${AUDIO}|00:03]]（约）`);
+      expect(renamed.markdown).not.toContain("<!--");
       expect(renamed.markdown).not.toContain("说话人2");
     } finally {
       setActiveUiLanguage(resolveUiLanguage("en", "en"));

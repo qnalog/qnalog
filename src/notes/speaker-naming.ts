@@ -1,6 +1,7 @@
 import * as obsidian from "obsidian";
 import { extractSpeakerIdsFromMarkdown, normalizeSpeakerMappings, readSpeakerMappings, replaceSpeakerDisplayName } from "../audio/channel-speakers";
 import type { SpeakerId, SpeakerMapping } from "../audio/channel-speakers";
+import { noteBodyMentionBrackets, wrapSpeakerMentions } from "../audio/speaker-mentions";
 import { buildConfirmedSpeakerMappings, collectSpeakerCandidates } from "../asr/speaker-mapping";
 import type { SpeakerCandidate } from "../asr/speaker-mapping";
 import { normalizeTranscriptLayout } from "../transcript/transcript-markdown";
@@ -73,6 +74,8 @@ export async function applySpeakerNames(port: SpeakerNamingPort, file: obsidian.
   const frontmatter = await port.readFrontmatter(file);
   const ids = [...new Set<SpeakerId>([...extractSpeakerIdsFromMarkdown(original), ...entries.map(([id]) => id)])];
   const mappings = normalizeSpeakerMappings(readSpeakerMappings(frontmatter), ids);
+  // Names before this change: the body marks speakers only by visible name, so the old names come from the mapping.
+  const previousNames = new Map(entries.map(([id]) => [id, String(mappings[id]?.personName || "").trim()]));
   for (const [id, input] of entries) {
     const current = mappings[id];
     mappings[id] = {
@@ -90,10 +93,15 @@ export async function applySpeakerNames(port: SpeakerNamingPort, file: obsidian.
   try {
     let markdown = await port.getVault().read(file);
     for (const [id, input] of entries) {
-      const updated = replaceSpeakerDisplayName(markdown, id, input.personName);
+      const previous = previousNames.get(id);
+      const updated = replaceSpeakerDisplayName(markdown, id, input.personName, previous ? [previous] : []);
       markdown = updated.markdown;
       replacements += updated.replacements;
     }
+    // Other named speakers written without a marker (bodies organized before markers existed).
+    const allNames = Object.values(mappings).map((mapping) => String(mapping.personName || "")).filter(Boolean);
+    const marked = wrapSpeakerMentions(markdown, allNames, noteBodyMentionBrackets(markdown));
+    if (marked !== markdown) { markdown = marked; replacements += 1; }
     if (replacements > 0) {
       await port.getVault().modify(file, normalizeTranscriptLayout(markdown));
       port.resetNotePanelCache();

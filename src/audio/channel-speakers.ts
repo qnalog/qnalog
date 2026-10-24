@@ -1,5 +1,6 @@
-import { NS_TAG, NS_FM_SPEAKERS, NS_TRANSCRIPT_DATA, nsMarker, nsRe } from "../shared/namespace";
+import { NS_FM_SPEAKERS, nsMarker, nsRe } from "../shared/namespace";
 import { updateTranscriptSpeakerName } from "../transcript/transcript-markdown";
+import { convertInlineSpeakerRefs, noteBodyMentionBrackets, renameSpeakerMentions, wrapSpeakerMentions } from "./speaker-mentions";
 export const MAX_SPEAKER_CHANNELS = 4;
 export const DEFAULT_SPEAKER_CHANNELS = 2;
 
@@ -235,6 +236,10 @@ export function extractSpeakerIdsFromMarkdown(markdown: string): SpeakerId[] {
   for (const match of text.matchAll(/(?:\[|\*\*)说话人\s*(\d+)(?:\]|\s*[：:]\*\*)/g)) {
     found.add(speakerIdForChannel(Number(match[1])));
   }
+  // Mention markers in the organized body (audio/speaker-mentions.ts).
+  for (const match of text.matchAll(/『说话人\s*(\d+)』|\[[Ss]peaker[ \t]+(\d+)\]/g)) {
+    found.add(speakerIdForChannel(Number(match[1] || match[2])));
+  }
   return Array.from(found).sort((a, b) => Number(a.slice(4)) - Number(b.slice(4)));
 }
 
@@ -275,10 +280,22 @@ export function normalizeSpeakerMappings(
 const ANCHOR_OPEN = "(?:<|&lt;)!--";
 const ANCHOR_CLOSE = "--(?:>|&gt;)";
 
+/** 「原始材料」标题：之后是原始转写等材料，之前是整理正文。 */
+const ORIGINAL_MATERIAL_HEADING_RE = /^##[ \t]+(?:📁[ \t]*)?(?:原始材料|Original material)[ \t]*$/m;
+
+/**
+ * 改写某个说话人的显示名。
+ * - 原始转写（锚点后的 `**姓名：**`、旧版 `[说话人N]` 行）改为新名字，并补稳定锚点；
+ * - 可见正文里的提及写成提及标记（`『姓名』` / `[Name]`，见 audio/speaker-mentions.ts）：
+ *   标记形式的旧名字、编号标签（带或不带空格、带或不带标记）改为新名字；旧版行内
+ *   speaker-ref 注释标记与其他未加标记的编号标签一并换成标记形式，正文不再写入行内注释。
+ * `knownPreviousNames` 是调用方已知的旧名字（如说话人映射里的旧姓名），正文提及只凭标记与映射识别。
+ */
 export function replaceSpeakerDisplayName(
   markdown: string,
   speakerId: SpeakerId,
   personName: string,
+  knownPreviousNames: readonly string[] = [],
 ): { markdown: string; replacements: number } {
   // Hardware capture currently exposes at most four channels, but ASR
   // diarization can return more speakers. Do not clamp those stable IDs here.
@@ -287,71 +304,59 @@ export function replaceSpeakerDisplayName(
   if (!safeName) return { markdown: String(markdown || ""), replacements: 0 };
   const original = String(markdown || "");
   const previousNames = new Set<string>([`说话人${channel}`, `说话人 ${channel}`]);
+  for (const name of knownPreviousNames) if (String(name || "").trim()) previousNames.add(String(name).trim());
   // Inside transcript blocks the anchor comment is stored HTML-escaped (`&lt;!-- ... --&gt;`); accept both forms.
   const anchoredNames = new RegExp(`${ANCHOR_OPEN}\\s*${nsRe("speaker")}:${speakerId}\\s*${ANCHOR_CLOSE}\\s*\\n?\\s*(?:\\[[^\\]]+\\]\\s*)?\\*\\*([^*\\n]{1,80})[：:]\\*\\*`, "gi");
   for (const match of original.matchAll(anchoredNames)) previousNames.add(match[1]);
   const inlineNames = new RegExp(`<!--\\s*${nsRe("speaker-ref")}:${speakerId}\\s*-->([^<\\n]*?)<!--\\s*${nsRe("speaker-ref-end")}:${speakerId}\\s*-->`, "gi");
-  for (const match of original.matchAll(inlineNames)) previousNames.add(match[1]);
+  for (const match of original.matchAll(inlineNames)) previousNames.add(match[1].replace(/^[『[]|[』\]]$/g, ""));
   const anchored = new RegExp(
     `(${ANCHOR_OPEN}\\s*${nsRe("speaker")}:${speakerId}\\s*${ANCHOR_CLOSE}\\s*\\n?\\s*)(\\[[0-9]{1,2}:[0-9]{2}(?::[0-9]{2})?\\]\\s*)?\\*\\*[^*\\n]{1,80}[：:]\\*\\*`,
     "gi",
   );
   let replacements = 0;
-  let next = String(markdown || "").replace(anchored, (_match, prefix: string, timePrefix = "") => {
+  let next = original.replace(anchored, (_match, prefix: string, timePrefix = "") => {
     replacements += 1;
     return `${prefix}${timePrefix}**${safeName}：**`;
   });
   // Older diarization notes may contain generic labels without a stable anchor.
   // Add the anchor during the first rename so later corrections can still find
   // the same speaker after the visible label has changed to a real name.
+  // With an original-material heading these line forms belong to the raw material
+  // after it; the organized body before it uses mention markers instead.
+  const heading = ORIGINAL_MATERIAL_HEADING_RE.exec(next);
+  const lineFormsFrom = heading ? heading.index : 0;
   const bold = new RegExp(`(^|\\n)([ \\t]*)\\*\\*说话人\\s*${channel}[：:]\\*\\*`, "g");
-  next = next.replace(bold, (_match, lineStart: string, indent: string) => {
+  const bracket = new RegExp(`(^|\\n)([ \\t]*)(\\[[0-9]{1,2}:[0-9]{2}(?::[0-9]{2})?\\]\\s*)?\\[说话人\\s*${channel}\\]\\s*`, "g");
+  let lineForms = next.slice(lineFormsFrom).replace(bold, (_match, lineStart: string, indent: string) => {
     replacements += 1;
     return `${lineStart}${indent}${nsMarker("speaker", speakerId)}\n${indent}**${safeName}：**`;
   });
-  const bracket = new RegExp(`(^|\\n)([ \\t]*)(\\[[0-9]{1,2}:[0-9]{2}(?::[0-9]{2})?\\]\\s*)?\\[说话人\\s*${channel}\\]\\s*`, "g");
-  next = next.replace(bracket, (_match, lineStart: string, indent: string, timePrefix = "") => {
+  lineForms = lineForms.replace(bracket, (_match, lineStart: string, indent: string, timePrefix = "") => {
     replacements += 1;
     return `${lineStart}${indent}${nsMarker("speaker", speakerId)}\n${indent}${timePrefix}**${safeName}：** `;
   });
-  const inlineMarker = `${nsMarker("speaker-ref", speakerId)}${safeName}${nsMarker("speaker-ref-end", speakerId)}`;
-  const anchoredInline = new RegExp(
-    `<!--\\s*${nsRe("speaker-ref")}:${speakerId}\\s*-->[^\\n]*?<!--\\s*${nsRe("speaker-ref-end")}:${speakerId}\\s*-->`,
-    "gi",
-  );
-  next = next.replace(anchoredInline, () => {
-    replacements += 1;
-    return inlineMarker;
-  });
+  next = next.slice(0, lineFormsFrom) + lineForms;
 
-  // Final briefings generated before speaker confirmation can mention generic
-  // speakers inside prose (for example, "说话人2回顾了..."). Convert those
-  // references to invisible, stable markers instead of a blind name replace.
-  // Frontmatter, fenced code and machine metadata remain untouched.
-  const genericInline = new RegExp(`说话人\\s*${channel}(?!\\d)`, "g");
-  const lines = next.split("\n");
-  let inFrontmatter = lines.length > 0 && lines[0].replace(/^\uFEFF/, "").trim() === "---";
-  let inFence = false;
-  for (let index = 0; index < lines.length; index += 1) {
-    const line = lines[index];
-    if (inFrontmatter) {
-      if (index > 0 && line.trim() === "---") inFrontmatter = false;
-      continue;
-    }
-    if (/^\s*```/.test(line)) {
-      inFence = !inFence;
-      continue;
-    }
-    if (inFence || new RegExp(`^\\s*<!--\\s*${NS_TRANSCRIPT_DATA}\\b`, "i").test(line)
-      || new RegExp(`^\\s*(?:<!--\\s*)?${NS_TAG}-(?:people|tags|part-summary)\\s*:`, "i").test(line)) continue;
-    lines[index] = line.replace(genericInline, () => {
-      replacements += 1;
-      return inlineMarker;
-    });
-  }
+  // Visible prose: legacy inline comment markers become mention markers, then every
+  // mention of this speaker takes the new name, and other numbered labels get a marker.
+  // With a heading only the organized body before it is prose; without one (older notes
+  // that mix transcript lines and prose) the line labels above are left to the line rules.
+  const proseEnd = heading ? heading.index : next.length;
+  const scope = { protectLineLabels: !heading };
+  const brackets = noteBodyMentionBrackets(next);
+  const prose = next.slice(0, proseEnd);
+  const converted = convertInlineSpeakerRefs(prose, brackets, { speakerId, name: safeName }, scope);
+  replacements += converted.replacements;
+  const prewrapped = wrapSpeakerMentions(converted.markdown, [...previousNames], brackets, scope);
+  const renamed = renameSpeakerMentions(prewrapped, channel, [...previousNames], safeName, brackets, scope);
+  replacements += renamed.replacements;
+  if (prewrapped !== converted.markdown && !renamed.replacements) replacements += 1;
+  next = renamed.markdown + next.slice(proseEnd);
+
   next = replacements
-    ? updateTranscriptSpeakerName(lines.join("\n"), speakerId, safeName, [...previousNames])
-    : lines.join("\n");
+    ? updateTranscriptSpeakerName(next, speakerId, safeName, [...previousNames])
+    : next;
   const result = { markdown: next, replacements };
   return result;
 }

@@ -56,6 +56,7 @@ import {
   type SessionKnowledge,
 } from "./session-knowledge";
 import { buildEvidenceLinksBlock, placeEvidenceLinkBlock } from "./evidence-links";
+import { markSpeakerMentionsInOrganizedBody } from "../audio/speaker-mentions";
 
 interface TranscriptKnowledgePromptSegment {
   index: number;
@@ -1028,7 +1029,10 @@ async function mergeAndPolishInternal(plugin, segments, mode, sessionMeta, origi
 export async function mergeAndPolish(plugin, segments, mode, sessionMeta, originalFrontmatter, repolishOptions = null) {
   const result = await mergeAndPolishInternal(plugin, segments, mode, sessionMeta, originalFrontmatter, repolishOptions);
   const rules = sessionMeta && Array.isArray(sessionMeta._errataReplacements) ? sessionMeta._errataReplacements : [];
-  return rules.length ? applyReplacements(result, rules) : result;
+  const corrected = rules.length ? applyReplacements(result, rules) : result;
+  // 说话人提及一律写成提及标记（『说话人3』/[Speaker 3]）；不依赖模型照做。mode off 是原始转写，不改。
+  if (mode === "off" || !corrected) return corrected;
+  return markSpeakerMentionsInOrganizedBody(corrected, segments || [], originalFrontmatter, sessionMeta && sessionMeta._utteranceProjections || []);
 }
 
 /* eslint-enable @typescript-eslint/no-unsafe-assignment, @typescript-eslint/no-unsafe-member-access, @typescript-eslint/no-unsafe-call, @typescript-eslint/no-unsafe-argument, @typescript-eslint/no-unsafe-return -- end of QnALog dynamic-typing region */

@@ -3,12 +3,12 @@ import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
 // 桩模型跑一遍「分部整理 → 汇总会话知识 → 写出正文」，确认原话出处区块
 // 落在整理正文末尾、折叠的机器数据之前，并在原地重新整理时整块替换、不重复。
 
-const state = vi.hoisted(() => ({ decision: "Ship the pilot on Friday", calls: 0 }));
+const state = vi.hoisted(() => ({ decision: "Ship the pilot on Friday", calls: 0, second: "Speaker 2" }));
 vi.mock("../src/llm/core", () => ({
   callBriefingMergeLlm: vi.fn(async (_plugin: unknown, _system: string, prompt: string) => {
     state.calls += 1;
     const ids = [...prompt.matchAll(/===UTTERANCE ("[^"]+")/g)].map((match) => JSON.parse(match[1]) as string);
-    const body = "## Release plan\n\nThe team agreed to ship the pilot on Friday, and Speaker 2 will prepare the checklist.";
+    const body = `## Release plan\n\nThe team agreed to ship the pilot on Friday, and ${state.second} will prepare the checklist(today).`;
     if (!prompt.includes("qnalog-session-knowledge") || !ids.length) return { text: body, finishReason: "stop", truncated: false, usage: {} };
     const wire = {
       schemaVersion: 2,
@@ -37,7 +37,8 @@ vi.mock("obsidian", () => ({
   TFolder: class TFolder {},
 }));
 
-import { mergeAndPolishLongSession } from "../src/briefing/merge-pipeline";
+import { mergeAndPolish } from "../src/briefing/merge-pipeline";
+import { replaceSpeakerDisplayName } from "../src/audio/channel-speakers";
 import { readEvidenceLinkBlockIdentities } from "../src/briefing/evidence-links";
 import { readSelectedSessionKnowledge } from "../src/briefing/session-knowledge";
 import { foldNoteMachineData } from "../src/indexing/note-index";
@@ -89,8 +90,8 @@ function makePlugin() {
   };
 }
 
-async function organize(): Promise<string> {
-  const result = await mergeAndPolishLongSession(makePlugin(), [segment], "meeting", { duration: "01:00", _freshBriefing: true }, null, null, 4000, false);
+async function organize(frontmatter: Record<string, unknown> | null = null): Promise<string> {
+  const result = await mergeAndPolish(makePlugin(), [segment], "meeting", { duration: "01:00", _freshBriefing: true }, frontmatter, null);
   if (typeof result !== "string") throw new Error("pipeline produced no body");
   return result;
 }
@@ -108,7 +109,9 @@ describe("evidence links in the organizing pipeline", () => {
     expect(firstKnowledge?.status).toBe("complete");
     expect(blockCount(first)).toBe(1);
     expect(readEvidenceLinkBlockIdentities(first)[0].knowledgeId).toBe(firstKnowledge?.id);
-    expect(first).toContain(`[[${AUDIO}|00:04]] “We ship the pilot on Friday.”`);
+    expect(first).toContain(`— [Speaker 1] [[${AUDIO}|00:04]] “We ship the pilot on Friday.”`);
+    expect(first).toContain(`— [Speaker 2] [[${AUDIO}|00:42]]`);
+    expect(first).toContain("and [Speaker 2] will prepare the checklist(today).");
     expect(first).toContain(`[[${AUDIO}|00:42]] (approx.) “I will prepare the checklist.”`);
     expect(first.indexOf("The team agreed")).toBeLessThan(first.indexOf("## Where decisions and actions were said"));
     expect(first.indexOf("evidence-links-end")).toBeLessThan(first.indexOf("qnalog-session-knowledge"));
@@ -149,5 +152,32 @@ describe("evidence links in the organizing pipeline", () => {
     const switchedBack = replaceActiveVersionBlock(switched, { label: "Current" }, sanitizeActiveVersionBody(reorganized));
     expect(blockCount(switchedBack)).toBe(1);
     expect(readEvidenceLinkBlockIdentities(switchedBack)[0].knowledgeId).toBe(secondKnowledge?.id);
+  });
+
+  it("re-organizing after naming writes marked names and does not repeat old prose", async () => {
+    state.decision = "Ship the pilot on Friday";
+    state.second = "Speaker 2";
+    const first = await organize();
+    const note = foldNoteMachineData([
+      "---", "qnalog_mode: meeting", "---", "", "# Pilot", "", splitLeadingFrontmatter(first).body.trim(), "", "---", "", "## Original material", "",
+      "<details>", "<summary>Segmented raw transcript (1 segments)</summary>",
+      serializeTranscriptBlock(segment, "### Segment 1", text),
+      "</details>", "",
+    ].join("\n"));
+    const named = replaceSpeakerDisplayName(note, "spk-2", "Alice").markdown;
+    const prose = named.slice(0, named.indexOf("## Original material"));
+    expect(prose).toContain("and [Alice] will prepare the checklist(today).");
+    expect(prose).toContain(`— [Alice] [[${AUDIO}|00:42]]`);
+    expect(prose).not.toContain("<!--");
+
+    state.second = "Alice";
+    const second = await organize({ qnalog_speakers: { "spk-2": { label: "说话人2", personName: "Alice" } } });
+    const reorganized = foldNoteMachineData(buildReorganizedNote(named, second, (value) => value));
+    const body = reorganized.slice(0, reorganized.indexOf("## Original material"));
+    expect(body.match(/The team agreed/g)).toHaveLength(1);
+    expect(body).toContain("and [Alice] will prepare the checklist(today).");
+    expect(body).toContain("— [Speaker 1] [[");
+    expect(body).not.toContain("<!--");
+    expect(blockCount(reorganized)).toBe(1);
   });
 });
