@@ -778,7 +778,7 @@ class QnALogPlugin extends obsidian.Plugin {
       },
     });
 
-    // 录音完整性核对：只在笔记的转写账本有完整性记录时显示；核对只读，不改文件。
+    // 录音完整性核对：只在命令面板提供，不进右键菜单；当前笔记的转写账本有完整性记录时可用。核对只读，不改文件。
     const integrityAvailability = new IntegrityRecordAvailability((path) => this.app.vault.adapter.read(path));
     const checkRecordingIntegrity = (file: obsidian.TFile) => {
       void runRecordingIntegrityCheck({
@@ -903,13 +903,6 @@ class QnALogPlugin extends obsidian.Plugin {
             .setIcon("pencil")
             .onClick(() => { void openErrataForFile(this.app, this.errata, file); });
         });
-        if (integrityAvailability.availableNow(file.path, file.stat.mtime)) {
-          menu.addItem((item) => {
-            item.setTitle(t("QnALog: Check recording integrity"))
-              .setIcon("shield-check")
-              .onClick(() => checkRecordingIntegrity(file));
-          });
-        }
         const topicsPort = this.createTopicsUiPort();
         for (const topic of topicsPort.getTopicsSnapshot().filter((entry) => entry.members.includes(file.path))) {
           menu.addItem((item) => {

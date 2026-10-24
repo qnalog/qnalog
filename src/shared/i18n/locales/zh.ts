@@ -3049,7 +3049,6 @@ export const ZH: MessageTable = {
   "Advanced settings": "进阶设置",
   "Speaker recognition for imported audio and saved configurations.": "导入音频的说话人识别，以及已保存的方案。",
   "Could not record the audio checksum. The audio file was not changed.": "未能记录录音校验值；录音文件未作改动。",
-  "QnALog: Check recording integrity": "QnALog：核对录音完整性",
   "Check recording integrity of the current note": "核对当前笔记的录音完整性",
   "Checking recording integrity…": "正在核对录音完整性…",
   "Could not read this note; recording integrity was not checked.": "无法读取这篇笔记，未核对录音完整性。",
