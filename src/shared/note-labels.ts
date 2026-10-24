@@ -125,6 +125,17 @@ export const NOTE_LABELS: Record<string, NoteLabelSpec> = {
   mergeFailedQueued: { key: "Merge failed (queued for retry): {0}", params: 1, re: /合并润色失败|Merge failed/ },
   organized: { key: "Organized", re: /已整理|Organized/ },
 
+  // —— 决定与待办的原话出处（briefing/evidence-links.ts） ——
+  evidenceLinksHeading: { key: "Where decisions and actions were said", re: /决定与待办的原话出处|Where decisions and actions were said/ },
+  evidenceLinksNote: { key: "The AI model chose these sources from the transcript. Click a time to listen and check.", re: /以下出处由 AI 模型从转写中选出，请点击时间回听核对。|The AI model chose these sources from the transcript\. Click a time to listen and check\./ },
+  evidenceDecision: { key: "Decision", re: /决定|Decision/ },
+  evidenceAction: { key: "Action item", re: /待办|Action item/ },
+  evidenceApprox: { key: " (approx.)", re: /（约）| \(approx\.\)/ },
+  evidenceInSegment: { key: " (approximately in this segment)", re: /（约在此段）| \(approximately in this segment\)/ },
+  evidenceTimeUnknown: { key: " (time unknown)", re: /（时间未知）| \(time unknown\)/ },
+  evidenceMore: { key: "+{0} more", params: 1, re: /另有 \d+ 处|\+\d+ more/ },
+  evidenceQuote: { key: "“{0}”", params: 1, re: /「[^」]*」|“[^”]*”/ },
+
   // —— 标题后缀与导入头 ——
   importing: { key: "(importing…)", re: /（导入处理中…）|\(importing…\)/ },
   importFailedRetryable: { key: "(import failed; audio kept for retry)", re: /（导入失败，音频已保留，可重试）|\(import failed; audio kept for retry\)/ },
@@ -163,7 +174,7 @@ export function labelPattern(name: string): RegExp {
  * 录音中实时大纲|会中补充材料|问一问|附录|参考资料|版本信息)$`。
  */
 export const UTILITY_HEADING_RE =
-  /^(?:原始材料|原始转写|逐字稿|录音原文|分段原始转写|回听时间轴|录音中实时大纲|会中补充材料|问一问|附录|参考资料|版本信息|Original material|Raw transcript|Verbatim transcript|Recording transcript|Segmented raw transcript|Playback timeline|Live outline while recording|Material added during the meeting|Q&A|Appendix|Reference materials|Version info)$/;
+  /^(?:原始材料|原始转写|逐字稿|录音原文|分段原始转写|回听时间轴|录音中实时大纲|会中补充材料|问一问|附录|参考资料|版本信息|Original material|Raw transcript|Verbatim transcript|Recording transcript|Segmented raw transcript|Playback timeline|Live outline while recording|Material added during the meeting|Q&A|Appendix|Reference materials|Version info|决定与待办的原话出处|Where decisions and actions were said)$/;
 
 /** Summary 名称白名单与索引、语义图原先的工具 details 读取范围一致。 */
 export const UTILITY_DETAILS_SUMMARY_RE =

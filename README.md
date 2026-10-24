@@ -79,6 +79,8 @@ Choose **Append recording to this note** from the open note's sidebar, the file 
 
 Transcribed notes preserve the original speech-to-text text and revision history. Decisions, actions, questions, and topics can link to transcript passages; changed passages are marked stale. Evidence is included with existing organization requests rather than sent in a separate extraction request.
 
+When a recorded note is organized with utterance-level transcript data and the model returns complete evidence, the end of the organized body gets a **Where decisions and actions were said** section. Each decision and action item lists the speaker, a link to the moment in the recording, and a quote of up to 40 characters from the transcript. Times come from the transcript record, not from the model. Times that the transcription service returned per sentence show as exact seconds; estimated times are marked "approx.", times known only to the segment are marked "approximately in this segment", and unknown times have no link. The model chooses which passages to cite, so click a time and listen to check. Re-organizing replaces the section; older notes are not changed.
+
 <details>
 <summary>Original, derived, and clean-copy versions</summary>
 

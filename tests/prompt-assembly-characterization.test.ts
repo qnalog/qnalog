@@ -32,6 +32,7 @@ vi.mock("../src/people", () => ({
 
 import { DEFAULT_SETTINGS } from "../src/shared/defaults";
 import { mergeAndPolish } from "../src/briefing/merge-pipeline";
+import { attachTranscriptResult } from "../src/transcript/session-transcript";
 
 const segments = [
   { index: 1, text: "我们讨论了下季度的发布计划，决定先做移动端录音恢复。", startOffsetMs: 0, endOffsetMs: 60_000 },
@@ -145,5 +146,34 @@ describe("organize prompt assembly (characterization)", () => {
     const marker = "旧版设置里的会议提示词。";
     const prompt = await firstPrompt("meeting", { polishPromptMeeting: `${marker}\n{{TRANSCRIPT}}` });
     expect(prompt).toContain(marker);
+  });
+
+  it("utterance-mode input carries no audio links, and the prompt forbids adding them instead of asking the model to copy anchors", async () => {
+    const text = "我们决定周五上线。";
+    const ledgerSegment = attachTranscriptResult({
+      index: 0, startOffsetMs: 0, endOffsetMs: 60_000, text, audioPath: "QnALog/Audio/a.webm", audioName: "a.webm",
+    }, "anchor-check", {
+      text, rawText: null, providerId: "stub", units: [
+        { rawText: text, normalizedText: text, speakerId: "spk-1", speakerName: "说话人1", startMs: 1000, endMs: 3000, timing: "provider" },
+      ],
+    }, "asr");
+    for (const mode of ["meeting", "general"]) {
+      calls.length = 0;
+      const settings = { ...structuredClone(DEFAULT_SETTINGS), llmApiKey: "test-key", llmModel: "stub-model" };
+      const plugin = {
+        settings, manifest: { id: "qnalog" }, app: { vault: { adapter: {}, configDir: ".obsidian" } },
+        _briefingCheckpointStore: { load: async () => null, save: async () => undefined, remove: async () => undefined },
+        logDiagnostic: async () => undefined, getCurrentSession: () => null,
+      };
+      try { await mergeAndPolish(plugin, [ledgerSegment], mode, { duration: "01:00", _freshBriefing: true }, {}, null); }
+      catch (error) { if (!calls.length) throw error; }
+      const prompt = calls[0].user;
+      expect(prompt).toContain("===UTTERANCE");
+      const window = prompt.slice(prompt.indexOf("===UTTERANCE"));
+      expect(window).not.toMatch(/\[\[[^\]]+\|\d{1,2}:\d{2}\]\]/);
+      expect(prompt).not.toContain("可以把对应链接复制到主要小节标题");
+      expect(prompt).not.toContain("输入有音频链接时，仅在内容明确对应的位置复制作为回听入口");
+      expect(prompt).toMatch(/输入不带音频链接，此时正文不要添加任何音频链接或时间链接|输入没有音频链接时不添加/);
+    }
   });
 });

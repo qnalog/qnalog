@@ -12,6 +12,7 @@ import type { OriginalSnapshotBodyUpdate } from "../versions/original-snapshot-s
 import { buildVersionPayload } from "../versions/version-content";
 import { NS_FM, readNamespaceFrontmatter } from "../shared/namespace";
 import { normalizeSessionKnowledgeMarkers } from "../briefing/session-knowledge";
+import { stripEvidenceLinkBlocks } from "../briefing/evidence-links";
 import type { ErrataRules } from "../errata/errata-apply";
 import { buildAbsentSessionFrontmatter, readSessionFieldsFromNote, type SessionModeOption } from "./first-organizing-session";
 import { labelPattern } from "../shared/note-labels";
@@ -121,7 +122,8 @@ function extractOrganizedBody(snapshot: string): string {
 function extractRawTailBeforeBoundary(preBoundary: string): string {
   const active = findActiveVersionBlock(preBoundary);
   const from = active ? active.end : (preBoundary.match(/^\s*#\s+[^\r\n]+(?:\r?\n|$)/)?.[0].length ?? 0);
-  const tail = preBoundary.slice(from);
+  // 旧的「原话出处」区块属于旧整理正文，不是原始材料；新正文自带新区块。
+  const tail = stripEvidenceLinkBlocks(preBoundary.slice(from));
   const anchor = tail.search(/<details\b|<!--\s*qnalog-|<span\s+hidden\b/i);
   if (anchor < 0) return "";
   return tail.slice(anchor).replace(/(?:\r?\n)+\s*---\s*$/, "").trim();

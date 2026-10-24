@@ -55,6 +55,7 @@ import {
   type KnowledgeSourceRevision,
   type SessionKnowledge,
 } from "./session-knowledge";
+import { buildEvidenceLinksBlock, placeEvidenceLinkBlock } from "./evidence-links";
 
 interface TranscriptKnowledgePromptSegment {
   index: number;
@@ -849,8 +850,10 @@ export async function mergeAndPolishLongSession(plugin, segments, mode, computed
   });
   const sourceText = list.map((segment) => String(segment.text || "")).join("\n");
   const polished = postProcessBriefingOutput(sanitizeBriefingModelOutput(checkpoint.assembledBody), mode, computedMeta, originalFrontmatter, frontmatterBaseModeKey(plugin.settings, mode), "", sourceText);
+  // 决定与待办的原话出处：可见小节放在正文末尾、机器数据之前；时间取自转写账本，不取模型输出。
+  const withEvidence = placeEvidenceLinkBlock(polished, buildEvidenceLinksBlock(checkpoint.assembledKnowledge, sourceSegments));
   const sedimentObjects = mergeBriefingSedimentObjects(checkpoint.parts);
-  const bodyWithSediment = sedimentObjects ? appendSedimentPreExtractionBlock(polished, sedimentObjects) : polished;
+  const bodyWithSediment = sedimentObjects ? appendSedimentPreExtractionBlock(withEvidence, sedimentObjects) : withEvidence;
   return appendKnowledgeSnapshot(bodyWithSediment, checkpoint.assembledKnowledge);
 }
 
