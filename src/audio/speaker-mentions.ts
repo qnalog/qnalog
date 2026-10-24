@@ -285,6 +285,16 @@ function transcriptNames(segments: readonly Segment[], projections: readonly { s
   return names;
 }
 
+/** 本篇笔记已知的说话人显示名：说话人映射、转写账本里的显示名与本次整理的投影，去重。 */
+export function collectSpeakerMentionNames(
+  segments: readonly Segment[],
+  frontmatter: unknown,
+  projections: readonly { speakerName: string | null }[] = [],
+): string[] {
+  const all = [...mappingNames(frontmatter), ...transcriptNames(segments, projections)];
+  return [...new Set(all.map((name) => String(name).trim()).filter(Boolean))];
+}
+
 /**
  * 整理与重新整理之后：给模型输出里的说话人提及加标记（正文、待办行与原话出处区块）。
  * 已知名字来自说话人映射、转写账本里的显示名与本次整理的投影；括号按转写里的编号标签、
@@ -298,7 +308,7 @@ export function markSpeakerMentionsInOrganizedBody(
 ): string {
   const fromTranscript = transcriptNames(segments, projections);
   const fromMapping = mappingNames(frontmatter);
-  const names = [...new Set([...fromMapping, ...fromTranscript].map((name) => String(name).trim()).filter(Boolean))];
+  const names = collectSpeakerMentionNames(segments, frontmatter, projections);
   const brackets = noteMentionBrackets(fromTranscript.join("\n"), String(markdown || "").replace(LEADING_FRONTMATTER_RE, ""), fromMapping.join("\n"));
   return wrapSpeakerMentions(markdown, names, brackets);
 }

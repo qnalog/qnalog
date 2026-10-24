@@ -40,7 +40,7 @@ import { applyReplacements } from "../errata/errata-apply";
 
 import { renderLongSessionRawFallbackGroup } from "../notes/detail-blocks";
 
-import { appendEntityEvidenceWarning, maybePreSummarizeTextImportForMerge, parseBriefingPartResponse } from "../notes/note-markdown";
+import { appendEntityEvidenceWarning, dropKnownSpeakersFromEntityWarning, maybePreSummarizeTextImportForMerge, parseBriefingPartResponse } from "../notes/note-markdown";
 import { frontmatterBaseModeKey, postProcessBriefingOutput } from "../notes/note-briefing-output";
 import { NS_SESSION_KNOWLEDGE, NS_TAG, isNamespaceTag } from "../shared/namespace";
 
@@ -56,7 +56,7 @@ import {
   type SessionKnowledge,
 } from "./session-knowledge";
 import { buildEvidenceLinksBlock, placeEvidenceLinkBlock } from "./evidence-links";
-import { markSpeakerMentionsInOrganizedBody } from "../audio/speaker-mentions";
+import { collectSpeakerMentionNames, markSpeakerMentionsInOrganizedBody } from "../audio/speaker-mentions";
 
 interface TranscriptKnowledgePromptSegment {
   index: number;
@@ -1032,7 +1032,10 @@ export async function mergeAndPolish(plugin, segments, mode, sessionMeta, origin
   const corrected = rules.length ? applyReplacements(result, rules) : result;
   // 说话人提及一律写成提及标记（『说话人3』/[Speaker 3]）；不依赖模型照做。mode off 是原始转写，不改。
   if (mode === "off" || !corrected) return corrected;
-  return markSpeakerMentionsInOrganizedBody(corrected, segments || [], originalFrontmatter, sessionMeta && sessionMeta._utteranceProjections || []);
+  const projections = sessionMeta && sessionMeta._utteranceProjections || [];
+  // 已知说话人来自说话人分离或用户命名，不进入「人物指认核对」。
+  const audited = dropKnownSpeakersFromEntityWarning(corrected, collectSpeakerMentionNames(segments || [], originalFrontmatter, projections));
+  return markSpeakerMentionsInOrganizedBody(audited, segments || [], originalFrontmatter, projections);
 }
 
 /* eslint-enable @typescript-eslint/no-unsafe-assignment, @typescript-eslint/no-unsafe-member-access, @typescript-eslint/no-unsafe-call, @typescript-eslint/no-unsafe-argument, @typescript-eslint/no-unsafe-return -- end of QnALog dynamic-typing region */

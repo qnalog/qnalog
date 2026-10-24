@@ -362,6 +362,40 @@ export async function maybePreSummarizeTextImportForMerge(plugin, segments, mode
 // 核心人物（实测案例：把全场只提到三五次的"某称呼"指认为一号位）。这里按 qnalog-people 名单
 // 比对"产出引用次数 vs 原始转写出现次数"，明显倒挂的在文末附核对 callout。
     // 字面计数会因转写错字低估真实人名（"李扣"被转写成"你扣"），所以只提示、绝不自动改写。
+const ENTITY_WARNING_LINE_RE = /^> - 「(.+?)」：/;
+const MENTION_WRAPPED_RE = /^\\?[『[](.+)[』\]]$/;
+const NUMBERED_SPEAKER_RE = /^(?:说话人|Speaker)\s*\d+$/i;
+
+/**
+ * 从「人物指认核对」中去掉本篇已知的说话人（编号标签与已命名的说话人）：它们来自说话人分离或用户命名，
+ * 原始转写里本来只写编号，按字面计数必然为 0，不是模型推断。其余条目去掉提及标记，只保留「」。
+ * 去掉后没有条目时整块删除。
+ */
+export function dropKnownSpeakersFromEntityWarning(markdown: string, speakerNames: readonly string[]): string {
+  const md = String(markdown || "");
+  const start = md.indexOf("> [!warning] 人物指认核对");
+  if (start < 0) return md;
+  const known = new Set(speakerNames.map((name) => String(name).trim()).filter(Boolean));
+  const lines = md.slice(start).split("\n");
+  let end = 1;
+  while (end < lines.length && lines[end].startsWith(">")) end += 1;
+  const block = lines.slice(0, end);
+  const kept: string[] = [];
+  let findings = 0;
+  for (const line of block.slice(1)) {
+    const match = line.match(ENTITY_WARNING_LINE_RE);
+    if (!match) { kept.push(line); continue; }
+    const name = match[1].replace(MENTION_WRAPPED_RE, "$1").trim();
+    if (known.has(name) || NUMBERED_SPEAKER_RE.test(name)) continue;
+    kept.push(line.replace(match[0], `> - 「${name}」：`));
+    findings += 1;
+  }
+  const rest = lines.slice(end).join("\n");
+  const before = md.slice(0, start);
+  if (!findings) return `${before.replace(/\s+$/, "")}${rest ? `\n${rest}` : ""}`;
+  return `${before}${[block[0], ...kept].join("\n")}${rest ? `\n${rest}` : ""}`;
+}
+
 export function appendEntityEvidenceWarning(outputMd, transcript) {
   try {
     const md = String(outputMd || "");
