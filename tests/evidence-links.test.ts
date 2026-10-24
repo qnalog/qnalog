@@ -61,6 +61,11 @@ function knowledgeFor(segments: Segment[], decisions: WireItem[], actions: WireI
     allowed: utterances, part, sources, sourceRevision: getTranscriptSourceRevision(segments),
   }).knowledge;
 }
+/** The same knowledge as an old note stores it (schemaVersion 2: no statuses, owners or acceptance). */
+function v2(knowledge: SessionKnowledge): SessionKnowledge {
+  const strip = ({ status: _status, supersededBy: _by, owner: _owner, due: _due, acceptance: _acceptance, ...item }: SessionKnowledge["decisions"][number]) => item;
+  return { ...knowledge, schemaVersion: 2, decisions: knowledge.decisions.map(strip), actions: knowledge.actions.map(strip), questions: knowledge.questions.map(strip) };
+}
 function ids(segment: Segment): string[] {
   return getCurrentTranscript(segment.transcript!).utterances.map((item) => item.id);
 }
@@ -72,7 +77,7 @@ describe("decision and action evidence links", () => {
   it("links provider-timed evidence to the audio-local second without a precision suffix", () => {
     const segment = recorded([unit("We will ship the pilot on Friday.", 12_400, "provider"), unit("Fine.", 30_000, "provider", "Speaker 2")]);
     const [first] = ids(segment);
-    const block = buildEvidenceLinksBlock(knowledgeFor([segment], [{ text: "Ship the pilot on Friday", evidence: [first] }]), [segment]);
+    const block = buildEvidenceLinksBlock(v2(knowledgeFor([segment], [{ text: "Ship the pilot on Friday", evidence: [first] }])), [segment]);
     expect(block).toContain("## Where decisions and actions were said");
     expect(block).toContain("The AI model chose these sources from the transcript. Click a time to listen and check.");
     const line = block.split("\n").find((entry) => entry.startsWith("- **Decision**"));
@@ -93,7 +98,7 @@ describe("decision and action evidence links", () => {
     expect(segmentBlock).toContain(`[[${AUDIO}|02:00]] (approximately in this segment) “Somewhere in this part.”`);
 
     expect(getCurrentTranscript(textOnly.transcript!).utterances[0].audioRef).toBeNull();
-    const unknownBlock = buildEvidenceLinksBlock(knowledgeFor([textOnly], [], [{ text: "Write it down", evidence: ids(textOnly) }]), [textOnly]);
+    const unknownBlock = buildEvidenceLinksBlock(v2(knowledgeFor([textOnly], [], [{ text: "Write it down", evidence: ids(textOnly) }])), [textOnly]);
     expect(unknownBlock).toContain("- **Action item**: Write it down — (time unknown) “Typed note.”");
     expect(unknownBlock).not.toContain("[[");
   });
@@ -129,8 +134,8 @@ describe("decision and action evidence links", () => {
     const first = recorded([unit("Ship it.", 5000, "provider")], 0, "part-1");
     const second = recorded([unit("Yes, ship it.", 7000, "provider", "Speaker 2")], 1, "part-2");
     const segments = [first, second];
-    const partOne = knowledgeFor(segments, [{ text: "Ship it", evidence: ids(first) }], [], 1);
-    const partTwo = knowledgeFor(segments, [{ text: " Ship  it ", evidence: ids(second) }], [], 2);
+    const partOne = v2(knowledgeFor(segments, [{ text: "Ship it", evidence: ids(first) }], [], 1));
+    const partTwo = v2(knowledgeFor(segments, [{ text: " Ship  it ", evidence: ids(second) }], [], 2));
     const merged = mergeSessionKnowledge([partOne, partTwo], segments);
     expect(merged.status).toBe("complete");
     expect(merged.decisions).toHaveLength(2);
@@ -157,7 +162,7 @@ describe("decision and action evidence links", () => {
     setActiveUiLanguage(resolveUiLanguage("zh", "zh"));
     try {
       const segment = recorded([unit("那就周五上线。", 3000, "audio-span", "说话人2")]);
-      const block = buildEvidenceLinksBlock(knowledgeFor([segment], [{ text: "周五上线", evidence: ids(segment) }]), [segment]);
+      const block = buildEvidenceLinksBlock(v2(knowledgeFor([segment], [{ text: "周五上线", evidence: ids(segment) }])), [segment]);
       expect(block).toContain("## 决定与待办的原话出处");
       expect(block).toContain(`- **决定**：周五上线 — 说话人2 [[${AUDIO}|00:03]]（约） 「那就周五上线。」`);
       const renamed = replaceSpeakerDisplayName(`# Note\n\n${block}\n`, "spk-2", "王五");
