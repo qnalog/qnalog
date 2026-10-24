@@ -203,16 +203,17 @@ export class RecordingSearchController {
 
   private renderRows(host: HTMLElement, rows: readonly RecordingSearchResult[], onSeek: (target: RecordingSearchTarget) => void): void {
     rows.forEach((result, position) => {
-      const row = host.createEl("button", {
+      // 用 div 加按钮语义，不用 <button>：Obsidian 的按钮样式（居中、固定高度）会让多行结果错位重叠。
+      const row = host.createDiv({
         cls: `qnalog-recording-search-row${result.target ? "" : " is-unplayable"}`,
-        attr: { type: "button", role: "listitem" },
+        attr: { role: "button", tabindex: result.target ? "0" : "-1" },
       });
       const timeLabel = result.timeLabel || t("time unknown");
       const note = precisionNote(result.precision);
       row.setAttribute("aria-label", result.target
         ? t("Play from {0}").replace("{0}", note ? `${timeLabel} ${note}` : timeLabel)
         : timeLabel);
-      if (!result.target) row.disabled = true;
+      if (!result.target) row.setAttribute("aria-disabled", "true");
       const meta = row.createDiv({ cls: "qnalog-recording-search-meta" });
       meta.createSpan({ cls: "qnalog-recording-search-time", text: timeLabel });
       if (note && result.target) meta.createSpan({ cls: "qnalog-recording-search-precision", text: note });
@@ -230,6 +231,11 @@ export class RecordingSearchController {
       const target = result.target;
       if (target) row.addEventListener("click", () => onSeek(target));
       row.addEventListener("keydown", (evt: KeyboardEvent) => {
+        if (evt.key === "Enter" || evt.key === " ") {
+          evt.preventDefault();
+          if (target) onSeek(target);
+          return;
+        }
         if (evt.key !== "ArrowDown" && evt.key !== "ArrowUp") return;
         const all = Array.from(host.querySelectorAll<HTMLElement>(".qnalog-recording-search-row"));
         const next = evt.key === "ArrowDown" ? all[position + 1] : position === 0 ? this.input : all[position - 1];

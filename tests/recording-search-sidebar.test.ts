@@ -204,6 +204,21 @@ describe("find in recording in the sidebar note panel", () => {
     expect(panel.seekInlineAudio).toHaveBeenCalledWith(panel.payload);
   });
 
+  it("renders rows as focusable non-button elements and seeks on Enter", async () => {
+    // Obsidian styles <button> as a centered, fixed-height control, which made wrapped rows overlap.
+    const panel = setup();
+    panel.type("试点");
+    panel.timer.flush();
+    const row = panel.rows()[0];
+    expect(row.tag).toBe("div");
+    expect(row.getAttribute("role")).toBe("button");
+    expect(row.getAttribute("tabindex")).toBe("0");
+    row.dispatch("keydown", { key: "Enter", preventDefault: () => undefined });
+    await Promise.resolve();
+    expect(panel.openAudioTimeLink).toHaveBeenCalledTimes(1);
+    expect(panel.seekInlineAudio).toHaveBeenCalledWith(panel.payload);
+  });
+
   it("keeps the query and the focus when the sidebar re-renders", () => {
     const panel = setup();
     panel.input().focus();
