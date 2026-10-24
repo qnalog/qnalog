@@ -2740,6 +2740,7 @@ export const ZH: MessageTable = {
   "The reorganized note would duplicate the original material; the note was not changed.": "重新整理会复制原始材料，笔记未更改。",
   "A version without original material cannot contain original material; the version was not saved.": "只含正文的版本不能带原始材料，版本未保存。",
   "The AI model chose these sources from the transcript. Click a time to listen and check.": "以下出处由 AI 模型从转写中选出，请点击时间回听核对。",
+  "Some items cited sentences that are not in the transcript and are left out.": "部分条目引用了转写中不存在的原句，已省略。",
   "Decision": "决定",
   "Action item": "待办",
   "Decision (confirmed)": "决定（已确认）",

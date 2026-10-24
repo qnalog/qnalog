@@ -128,6 +128,7 @@ export const NOTE_LABELS: Record<string, NoteLabelSpec> = {
   // —— 决定与待办的原话出处（briefing/evidence-links.ts） ——
   evidenceLinksHeading: { key: "Where decisions and actions were said", re: /决定与待办的原话出处|Where decisions and actions were said/ },
   evidenceLinksNote: { key: "The AI model chose these sources from the transcript. Click a time to listen and check.", re: /以下出处由 AI 模型从转写中选出，请点击时间回听核对。|The AI model chose these sources from the transcript\. Click a time to listen and check\./ },
+  evidenceLinksOmitted: { key: "Some items cited sentences that are not in the transcript and are left out.", re: /部分条目引用了转写中不存在的原句，已省略。|Some items cited sentences that are not in the transcript and are left out\./ },
   evidenceDecision: { key: "Decision", re: /决定|Decision/ },
   evidenceAction: { key: "Action item", re: /待办|Action item/ },
   evidenceDecisionConfirmed: { key: "Decision (confirmed)", re: /决定（已确认）|Decision \(confirmed\)/ },

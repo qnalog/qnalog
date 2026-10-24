@@ -22,6 +22,7 @@ import type { Segment } from "../shared/types";
 import type { TranscriptAudioRef, Utterance } from "../transcript/session-transcript";
 import {
   buildKnowledgeEvidenceIndex,
+  isNormalizationIssue,
   resolveIndexedUtterance,
   type DecisionStatus,
   type KnowledgeEvidenceIndex,
@@ -79,12 +80,24 @@ export function placeEvidenceLinkBlock(body: string, block: string): string {
   return `${visible}${visible ? "\n\n" : ""}${block}`;
 }
 
+/** 只因个别条目格式不对或引用了不存在的原句而成为 partial：其余条目的证据已校验，可以列出。 */
+const ITEM_LEVEL_ISSUES = new Set<string>(["invalid-item", "unknown-evidence"]);
+function itemsOmitted(knowledge: SessionKnowledge): boolean {
+  return knowledge.issues.some((issue) => ITEM_LEVEL_ISSUES.has(issue.reason));
+}
+function renderable(knowledge: SessionKnowledge): boolean {
+  if (knowledge.status === "complete") return true;
+  if (knowledge.status !== "partial") return false;
+  return itemsOmitted(knowledge)
+    && knowledge.issues.every((issue) => isNormalizationIssue(issue.reason) || ITEM_LEVEL_ISSUES.has(issue.reason));
+}
+
 /**
- * 生成区块 Markdown。以下情况返回空字符串：会话知识缺失或不是 complete、
- * 转写账本已与知识记录的来源不一致、没有可解析到账本句子的决定或待办。
+ * 生成区块 Markdown。以下情况返回空字符串：会话知识缺失、不可用或已过期，partial 的原因不只是个别条目无效、
+ * 转写账本已与知识记录的来源不一致、没有可解析到账本句子的决定或待办。个别条目被省略时加一行说明。
  */
 export function buildEvidenceLinksBlock(knowledge: SessionKnowledge | null | undefined, segments: readonly Segment[]): string {
-  if (!knowledge || knowledge.status !== "complete") return "";
+  if (!knowledge || !renderable(knowledge)) return "";
   const index = buildKnowledgeEvidenceIndex(knowledge, segments);
   if (!index.fresh || !index.byId.size) return "";
   const lines = [
@@ -97,6 +110,7 @@ export function buildEvidenceLinksBlock(knowledge: SessionKnowledge | null | und
     `## ${labelText("evidenceLinksHeading")}`,
     "",
     `_${labelText("evidenceLinksNote")}_`,
+    ...(itemsOmitted(knowledge) ? [`_${labelText("evidenceLinksOmitted")}_`] : []),
     "",
     ...lines,
     "",

@@ -116,6 +116,17 @@ describe("decision and action evidence links", () => {
     expect(buildEvidenceLinksBlock({ ...knowledge, decisions: [], actions: [] }, [segment])).toBe("");
   });
 
+  it("lists the verified items with a note when only some items were invalid, and nothing for other partial causes", () => {
+    const segment = recorded([unit("Decide now.", 1000, "provider")]);
+    const knowledge = knowledgeFor([segment], [{ text: "Decide", evidence: ids(segment) }]);
+    const omitted = buildEvidenceLinksBlock({ ...knowledge, status: "partial", issues: [{ part: 1, reason: "unknown-evidence" }] }, [segment]);
+    expect(omitted).toContain("Decide");
+    expect(omitted).toContain("Some items cited sentences that are not in the transcript and are left out.");
+    expect(buildEvidenceLinksBlock({ ...knowledge, status: "partial", issues: [{ part: 1, reason: "missing-block" }, { part: 2, reason: "invalid-item" }] }, [segment])).toBe("");
+    expect(buildEvidenceLinksBlock({ ...knowledge, status: "partial", issues: [{ part: 1, reason: "invalid-json" }] }, [segment])).toBe("");
+    expect(buildEvidenceLinksBlock(knowledge, [segment])).not.toContain("left out");
+  });
+
   it("renders nothing for an old note whose segments have no utterance ledger", () => {
     const segment = recorded([unit("Decide now.", 1000, "provider")]);
     const knowledge = knowledgeFor([segment], [{ text: "Decide", evidence: ids(segment) }]);
