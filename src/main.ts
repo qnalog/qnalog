@@ -7,6 +7,7 @@ import { QnALogSettingTab } from "./ui/settings-tab";
 
 
 import {QueueModal, ImportTextModal, ImportAudioModal, BubbleWidget, PeopleDirectorySuggestionModal } from "./ui/modals";
+import { getErrorMessage } from "./shared/util-common";
 import { generatePeopleDirectorySuggestions, loadPeopleDirectory } from "./people";
 import { generateSedimentObjects, upsertSedimentPreExtractionBlockInFile, writeSedimentObjectCards } from "./sediment";
 import { loadVocabularyGroups } from "./vocabulary";
@@ -666,6 +667,20 @@ class QnALogPlugin extends obsidian.Plugin {
       this.shell.syncBubbleVisibility();
       new obsidian.Notice(this.settings.showFloatingBall ? t("Floating ball enabled (always visible, draggable)") : t("Floating ball disabled"));
     }});
+    this.addCommand({
+      id: "name-speakers",
+      name: t("Name speakers in the current note"),
+      checkCallback: (checking) => {
+        const file = this.app.workspace.getActiveFile();
+        if (!(file instanceof obsidian.TFile) || file.extension !== "md") return false;
+        if (!checking) {
+          void this.sessionFinalize.nameSpeakersInNote(file).catch((error: unknown) => {
+            new obsidian.Notice(t("Naming speakers failed: {0}").replace("{0}", getErrorMessage(error)), 10000);
+          });
+        }
+        return true;
+      },
+    });
     this.addCommand({ id: "open-queue", name: t("Open Pending Queue"), callback: () => new QueueModal(this.app, this).open() });
     this.addCommand({ id: "retry-queue-all", name: t("Retry All Failed Tasks"), callback: () => this.queueRetry.retryQueue() });
     this.addCommand({ id: "copy-diagnostic-report", name: t("Copy Diagnostic Report"), callback: () => this.diagnostics.copyDiagnosticReport() });
@@ -1069,6 +1084,7 @@ class QnALogPlugin extends obsidian.Plugin {
       upsertSedimentPreExtractionBlock: (file, objects) => upsertSedimentPreExtractionBlockInFile(this, file, objects),
       writeSedimentObjectCards: (file, objects) => writeSedimentObjectCards(this, file, objects),
       loadVocabularyGroups: () => loadVocabularyGroups(this),
+      applySpeakerNames: (file, names) => this.sessionFinalize.applySpeakerNamesToNote(file, names),
     };
   }
 
@@ -1306,7 +1322,11 @@ class QnALogPlugin extends obsidian.Plugin {
   }
   /** 装配层转发：补转写成功后的说话人姓名确认；返回值在调用点不使用。 */
   confirmSpeakerNames(session: { id: string; mdPath: string; source: string; importTranscribeProviderId?: string }, segments: { text: string }[]): Promise<unknown> {
-    return this.sessionFinalize.confirmSpeakerNamesBeforeFinal(session, segments);
+    return this.sessionFinalize.applyKnownSpeakerNamesBeforeFinal(session, segments);
+  }
+
+  offerSpeakerNaming(path: string): Promise<unknown> {
+    return this.sessionFinalize.offerSpeakerNaming(path);
   }
   /** 装配层转发：诊断报告生成时一次性采集运行时快照。报告只拿纯数据，不持有服务对象。 */
   getDiagnosticsSnapshot(session: RecordingSession | null): DiagnosticsSnapshot {

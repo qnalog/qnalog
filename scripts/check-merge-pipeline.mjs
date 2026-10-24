@@ -2505,7 +2505,7 @@ async function main() {
           id, mode: "monologue", mdPath: speakerProbePath, segments: texts.map((text, index) => ({ index, text })),
           ...extra,
         };
-        const result = await plugin.sessionFinalize.confirmSpeakerNamesBeforeFinal(session, session.segments);
+        const result = await plugin.sessionFinalize.applyKnownSpeakerNamesBeforeFinal(session, session.segments);
         speakerProbeResults.push({
           result: JSON.stringify(result),
           content: speakerProbeFile._content,
@@ -2525,7 +2525,7 @@ async function main() {
           return originalSpeakerDiagnostic.apply(plugin.diagnostics, args);
         };
         await runSpeakerProbe("speaker-single", ["[说话人1] 单人发言。"]);
-        await runSpeakerProbe("speaker-skipped", ["[说话人1] 讨论产品。", "[说话人2] 确认预算。"], { _speakerNameConfirmationSkipped: true });
+        await runSpeakerProbe("speaker-unnamed", ["[说话人1] 讨论产品。", "[说话人2] 确认预算。"]);
         const confirmedFrontmatter = { qnalog_speakers: speakerMappings };
         plugin.app.metadataCache.getFileCache = () => ({ frontmatter: confirmedFrontmatter });
         plugin.app.fileManager.processFrontMatter = async (_file, callback) => callback(confirmedFrontmatter);

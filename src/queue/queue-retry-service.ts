@@ -74,8 +74,10 @@ export interface QueueRetryHost {
   outline: Pick<RealtimeOutlineService, "completeRealtimeOutlineForMergedSegments" | "mergeContinuationOutlineText">;
   /** ASR 与录音 stage 清理。 */
   asrPipeline: Pick<LiveAsrPipelineService, "getAsrServiceCircuitState" | "isAsrServiceCircuitOpen" | "getAsrServiceRetryDelayMs" | "resetAsrServiceCircuitForManualRetry" | "maybeDeleteSegmentCacheFile" | "cleanupSuccessfulSegmentAudio" | "discardShortRecordingNote" | "discardShortRecordingAudio">;
-  /** 装配层转发：补转写成功后请求说话人姓名确认（调用 SessionFinalizeService.confirmSpeakerNamesBeforeFinal），返回值在调用点不使用。 */
+  /** 装配层转发：补转写成功后套用已知说话人姓名（调用 SessionFinalizeService.applyKnownSpeakerNamesBeforeFinal），不等待用户输入；返回值在调用点不使用。 */
   confirmSpeakerNames(session: { id: string; mdPath: string; source: string; importTranscribeProviderId?: string }, segments: { text: string }[]): Promise<unknown>;
+  /** 装配层转发：笔记写好后，仍有 2 位以上说话人未命名时给出非阻塞提示。 */
+  offerSpeakerNaming(path: string): Promise<unknown>;
   /** 词汇表与行业提示词服务。 */
   vocabulary: VocabularyService;
   /** 重新整理服务：补齐转写后把整理正文原地写回笔记。 */
@@ -168,6 +170,7 @@ export class QueueRetryService {
         : this.host.asrPipeline.maybeDeleteSegmentCacheFile(audioPath, taskId, ephemeral),
       insertBeforeSegmentsEnd: (mdPath, block, sessionId) => this.host.noteWriter.insertBeforeSegmentsEnd(mdPath, block, sessionId),
       confirmSpeakerNames: (session, segments) => this.host.confirmSpeakerNames(session, segments),
+      offerSpeakerNaming: (path) => this.host.offerSpeakerNaming(path),
       getQueueTasks: () => {
         const queue = this.host.queue;
         return queue && typeof queue.snapshot === "function" ? queue.snapshot() : ((queue && queue.tasks) || []);

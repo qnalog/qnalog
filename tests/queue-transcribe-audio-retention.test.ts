@@ -91,7 +91,7 @@ function makeRetentionScenario(route: "adapter" | "indexed", markdown: string, o
     noteIndex: { refreshNoteIndexSafely: vi.fn(async () => undefined) },
     noteWriter: { insertBeforeSegmentsEnd: vi.fn(async () => undefined), detectModeFromMarkdown: vi.fn(() => "meeting") },
     repolish: { repolishMarkdownFile: vi.fn(async () => undefined), reorganizeNoteInPlace: vi.fn(async () => undefined) },
-    queue: null, profiles: { getActiveTranscribeProfile: vi.fn(() => null) }, confirmSpeakerNames: vi.fn(async () => undefined),
+    queue: null, profiles: { getActiveTranscribeProfile: vi.fn(() => null) }, confirmSpeakerNames: vi.fn(async () => undefined), offerSpeakerNaming: vi.fn(async () => false),
   } as never);
   const queueHost: TaskQueueHost = {
     getMaxRetries: () => 1, persistQueue: vi.fn(async () => undefined), updateBusyStatus: vi.fn(),

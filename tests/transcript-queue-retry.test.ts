@@ -218,6 +218,7 @@ describe("transcript queue retry persistence", () => {
       diagnostics: { logDiagnostic: vi.fn().mockResolvedValue(undefined) },
       queue: { snapshot: () => [task, { id: "other-task", type: "transcribe", mdPath: task.mdPath }] },
       confirmSpeakerNames: vi.fn().mockResolvedValue(undefined),
+      offerSpeakerNaming: vi.fn().mockResolvedValue(false),
       settingsTab: null,
       requestOutlineRefresh: vi.fn(),
     };

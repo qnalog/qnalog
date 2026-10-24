@@ -40,6 +40,8 @@ export interface QueueTranscribeRetryPort {
   deleteSegmentCache(audioPath: string, taskId?: string, ephemeral?: boolean): Promise<unknown>;
   insertBeforeSegmentsEnd(mdPath: string, block: string, sessionId: string): Promise<unknown>;
   confirmSpeakerNames(session: { id: string; mdPath: string; source: string; importTranscribeProviderId?: string }, segments: { text: string }[]): Promise<unknown>;
+  /** Shows a non-blocking prompt for naming speakers when two or more are still unnamed in the note. */
+  offerSpeakerNaming(path: string): Promise<unknown>;
   getQueueTasks(): readonly { id?: string; type?: string; mdPath?: string; continuation?: unknown; sessionId?: string }[];
   /** 读取笔记当前内容，用于判断整理正文是否已有实际内容。 */
   readNote(file: obsidian.TFile): Promise<string>;
@@ -282,6 +284,11 @@ function maybeAutoRepolish(port: QueueTranscribeRetryPort, task: TranscribeRetry
       if (organized) {
         // 改名会迁移队列中的路径，因此同时匹配原路径与笔记当前路径。
         await port.removeMergeTasksForNote([mdNorm, obsidian.normalizePath(mdFile.path)], task.sessionId);
+        try { await port.offerSpeakerNaming(mdFile.path); }
+        catch (error) {
+          try { await port.logDiagnostic("warn", "speaker.naming_offer_failed", t("Could not check whether speakers still need names; the note is unaffected"), { mdPath: mdNorm, error: diagnosticError(error) }); }
+          catch { /* intentionally empty */ }
+        }
       }
     }
     catch (error) {
