@@ -12,7 +12,7 @@ export type KnowledgeStatus = "complete" | "partial" | "unavailable" | "stale";
  * value or an owner/due string); the item itself is kept, so these do not make the knowledge partial.
  */
 export type KnowledgeIssueReason = "missing-block" | "invalid-json" | "invalid-item" | "unknown-evidence" | "source-presummarized" | "source-changed" | "mode-off"
-  | "decision-status-defaulted" | "decision-supersede-unresolved" | "decision-confirm-downgraded" | "action-acceptance-defaulted" | "action-field-dropped";
+  | "decision-status-defaulted" | "decision-supersede-unresolved" | "decision-confirm-downgraded" | "action-acceptance-defaulted" | "action-field-dropped" | "item-topics-defaulted";
 /** Decision status (schemaVersion 3). Missing or invalid values from the model become "proposed". */
 export type DecisionStatus = "confirmed" | "proposed" | "disputed" | "open" | "superseded";
 /** Whether the owner of an action took it on (schemaVersion 3). Missing or invalid values become "assigned". */
@@ -66,7 +66,7 @@ const MARKER_PAYLOAD = new RegExp(`<!--\\s*${NS_SESSION_KNOWLEDGE}\\s+([\\s\\S]*
 export const SESSION_KNOWLEDGE_SCHEMA_VERSION = 3;
 /** Owner and due strings longer than this (in code points) are dropped instead of being cut. */
 export const OWNER_DUE_MAX_CHARS = 40;
-const NORMALIZATION_REASONS = new Set<KnowledgeIssueReason>(["decision-status-defaulted", "decision-supersede-unresolved", "decision-confirm-downgraded", "action-acceptance-defaulted", "action-field-dropped"]);
+const NORMALIZATION_REASONS = new Set<KnowledgeIssueReason>(["decision-status-defaulted", "decision-supersede-unresolved", "decision-confirm-downgraded", "action-acceptance-defaulted", "action-field-dropped", "item-topics-defaulted"]);
 const REASONS = new Set<KnowledgeIssueReason>(["missing-block", "invalid-json", "invalid-item", "unknown-evidence", "source-presummarized", "source-changed", "mode-off", ...NORMALIZATION_REASONS]);
 const DECISION_STATUSES = new Set<DecisionStatus>(["confirmed", "proposed", "disputed", "open", "superseded"]);
 const ACCEPTANCES = new Set<ActionAcceptance>(["accepted", "assigned", "volunteered"]);
@@ -241,10 +241,13 @@ export function parseSessionKnowledgeResponse(raw: string, context: ParseSession
     const rawItems = value[kind];
     if (!Array.isArray(rawItems)) { invalidItem = true; continue; }
     for (const rawItem of rawItems) {
-      if (!isRecord(rawItem) || typeof rawItem.text !== "string" || !rawItem.text.trim() || !Array.isArray(rawItem.topics) || !rawItem.topics.every((key) => typeof key === "string") || !exactStrings(rawItem.evidence)) { invalidItem = true; continue; }
+      if (!isRecord(rawItem) || typeof rawItem.text !== "string" || !rawItem.text.trim() || !exactStrings(rawItem.evidence)) { invalidItem = true; continue; }
       if (rawItem.evidence.some((id) => !allowed.has(id))) { unknownEvidence = true; continue; }
-      if (rawItem.topics.some((key) => !topicByKey.has(key))) { invalidItem = true; continue; }
-      const topicIds = rawItem.topics.flatMap((key) => {
+      // 主题归属只是索引线索：缺失、格式不对或引用不存在的主题时按无主题处理，不丢弃有证据的条目。
+      const rawTopics = Array.isArray(rawItem.topics) ? rawItem.topics.filter((key): key is string => typeof key === "string") : [];
+      const topicKeys = rawTopics.filter((key) => topicByKey.has(key));
+      if (!Array.isArray(rawItem.topics) || topicKeys.length !== rawItem.topics.length) normalized.add("item-topics-defaulted");
+      const topicIds = topicKeys.flatMap((key) => {
         const topic = topicByKey.get(key);
         return topic ? [topic.id] : [];
       });

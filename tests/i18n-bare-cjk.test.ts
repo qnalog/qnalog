@@ -145,7 +145,7 @@ const BARE_EXCEPTIONS: Record<string, Array<[string, string]>> = {
     ["正文结束后追加且仅追加一条 HTML 注释：<!-- ", "prompt"],
     [" {JSON} -->。", "prompt"],
     ["JSON 必须包含 schemaVersion:3、topics、decisions、actions、questions 四个数组。", "prompt"],
-    ["topics 项为 {key,title,summary,evidence:[utteranceId]}；questions 项为 {text,topics:[topicKey],evidence:[utteranceId]}；decisions 项另加 key、status，被替代时加 supersededBy（替代它的决定的 key）；actions 项另加 owner、due、acceptance。", "prompt"],
+    ["topics 项为 {key,title,summary,evidence:[utteranceId]}；questions 项为 {text,topics:[topicKey],evidence:[utteranceId]}；decisions 项为 {key,text,status,supersededBy?,topics:[topicKey],evidence:[utteranceId]}（supersededBy 只在 status 为 superseded 时填写，值为替代它的决定的 key）；actions 项为 {text,owner?,due?,acceptance,topics:[topicKey],evidence:[utteranceId]}。", "prompt"],
     ["status：confirmed=负责人或与会者明确同意（如「那就定了」「同意」），evidence 须含提出与同意的原句；proposed=有人提出，未见同意；disputed=有明确反对且会内未解决；open=明确留待以后（如「再想想」「明天再定」）；superseded=本场后来明确改了，supersededBy 指向改后的决定。", "prompt"],
     ["acceptance：accepted=负责人明确接下；assigned=被指派，未见接下；volunteered=主动认领。owner、due 照抄原话里的称呼与期限，不换算日期，没有就省略。", "prompt"],
     ["拿不准时选较弱的一项：proposed 不写 confirmed，assigned 不写 accepted。", "prompt"],

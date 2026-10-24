@@ -161,6 +161,29 @@ describe("status-tagged decisions: parsing and normalization", () => {
     expect(knowledge.status).toBe("partial");
   });
 
+  it("keeps items whose topics are missing or unknown, without topics, and stays complete", () => {
+    // Real model output (qwen3.8-max, 2026-10-25) omitted topics on decisions and actions; every item was dropped.
+    const evidence = getCurrentTranscript(segment.transcript!).utterances[0].id;
+    const wire = {
+      schemaVersion: 3,
+      topics: [{ key: "t1", title: "Release", summary: "Release plan", evidence: [evidence] }],
+      decisions: [
+        { key: "d1", text: "Ship on Monday", status: "confirmed", evidence: [U[5], U[6]] },
+        { key: "d2", text: "Add dark mode", status: "open", topics: ["missing"], evidence: [U[2]] },
+      ],
+      actions: [{ text: "Write notes", acceptance: "accepted", evidence: [U[7]] }],
+      questions: [],
+    };
+    const knowledge = parseSessionKnowledgeResponse(`Body\n<!-- qnalog-session-knowledge ${JSON.stringify(wire)} -->`, context()).knowledge;
+    expect(knowledge.decisions.map((item) => [item.text, item.status, item.topicIds])).toEqual([
+      ["Ship on Monday", "confirmed", []],
+      ["Add dark mode", "open", []],
+    ]);
+    expect(knowledge.actions.map((item) => item.text)).toEqual(["Write notes"]);
+    expect(reasons(knowledge)).toEqual(["item-topics-defaulted"]);
+    expect(knowledge.status).toBe("complete");
+  });
+
   it("reads stored v2 knowledge unchanged and rejects invalid stored status values", () => {
     const v3 = parse([{ text: "Ship", status: "proposed", evidence: [U[0]] }], [{ text: "Notes", acceptance: "accepted", evidence: [U[7]] }]);
     const stored: SessionKnowledge = {
