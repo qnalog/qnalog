@@ -326,19 +326,27 @@ export function readSessionKnowledge(markdown: string): SessionKnowledge | null 
   catch { return null; }
 }
 
-export function resolveKnowledgeEvidence(knowledge: SessionKnowledge, itemId: string, segments: readonly Segment[]): { status: "resolved" | "stale" | "missing" | "conflict"; utterances: Utterance[] } {
-  const item = [...knowledge.topics, ...knowledge.decisions, ...knowledge.actions, ...knowledge.questions].find((candidate) => candidate.id === itemId);
-  if (knowledge.status === "stale") return { status: "stale", utterances: [] };
-  if (!item) return { status: "missing", utterances: [] };
+/** Current-ledger lookup for one knowledge snapshot; built once and reused for every item of a note. */
+export interface KnowledgeEvidenceIndex {
+  /** False when the snapshot's source revision or source list no longer matches the ledger. */
+  fresh: boolean;
+  byId: Map<string, Utterance>;
+  conflicts: Set<string>;
+  projections: Map<string, UtteranceProjection>;
+}
+
+export function buildKnowledgeEvidenceIndex(knowledge: SessionKnowledge, segments: readonly Segment[]): KnowledgeEvidenceIndex {
   const sourceRevision = getTranscriptSourceRevision(segments);
   const sources = segments.flatMap((segment) => {
     if (!segment.transcript) return [];
     const current = getCurrentTranscript(segment.transcript);
     return [{ segmentId: segment.transcript.id, revision: current.revision, normalizationRevision: current.normalizationRevision }];
   });
-  if (knowledge.sourceRevision !== sourceRevision || !sameSources(knowledge.sources, sources)) return { status: "stale", utterances: [] };
+  const fresh = knowledge.sourceRevision === sourceRevision && sameSources(knowledge.sources, sources);
   const byId = new Map<string, Utterance>();
   const conflicts = new Set<string>();
+  const projections = new Map<string, UtteranceProjection>();
+  if (!fresh) return { fresh, byId, conflicts, projections };
   for (const segment of segments) {
     if (!segment.transcript) continue;
     for (const utterance of getCurrentTranscript(segment.transcript).utterances) {
@@ -347,13 +355,33 @@ export function resolveKnowledgeEvidence(knowledge: SessionKnowledge, itemId: st
       else byId.set(utterance.id, utterance);
     }
   }
-  if (item.evidence.some((id) => conflicts.has(id))) return { status: "conflict", utterances: [] };
+  for (const projection of knowledge.projections) {
+    if (!projections.has(projection.utteranceId)) projections.set(projection.utteranceId, projection);
+  }
+  return { fresh, byId, conflicts, projections };
+}
+
+/** One evidence utterance with the snapshot's projection applied; null when missing, conflicting or stale. */
+export function resolveIndexedUtterance(index: KnowledgeEvidenceIndex, utteranceId: string): Utterance | null {
+  if (!index.fresh || index.conflicts.has(utteranceId)) return null;
+  const utterance = index.byId.get(utteranceId);
+  if (!utterance) return null;
+  const projection = index.projections.get(utteranceId);
+  return projection ? { ...utterance, normalizedText: projection.normalizedText, speakerName: projection.speakerName } : utterance;
+}
+
+export function resolveKnowledgeEvidence(knowledge: SessionKnowledge, itemId: string, segments: readonly Segment[]): { status: "resolved" | "stale" | "missing" | "conflict"; utterances: Utterance[] } {
+  const item = [...knowledge.topics, ...knowledge.decisions, ...knowledge.actions, ...knowledge.questions].find((candidate) => candidate.id === itemId);
+  if (knowledge.status === "stale") return { status: "stale", utterances: [] };
+  if (!item) return { status: "missing", utterances: [] };
+  const index = buildKnowledgeEvidenceIndex(knowledge, segments);
+  if (!index.fresh) return { status: "stale", utterances: [] };
+  if (item.evidence.some((id) => index.conflicts.has(id))) return { status: "conflict", utterances: [] };
   const utterances: Utterance[] = [];
   for (const id of item.evidence) {
-    const utterance = byId.get(id);
+    const utterance = resolveIndexedUtterance(index, id);
     if (!utterance) return { status: "missing", utterances: [] };
-    const projection = knowledge.projections.find((candidate) => candidate.utteranceId === id);
-    utterances.push(projection ? { ...utterance, normalizedText: projection.normalizedText, speakerName: projection.speakerName } : utterance);
+    utterances.push(utterance);
   }
   return { status: "resolved", utterances };
 }

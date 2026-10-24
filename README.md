@@ -41,6 +41,8 @@ Recording transcription needs a configured speech-to-text (ASR) service. Importi
 
 Alibaba Cloud Bailian quick config uses Qwen-Audio-3.1-ASR-Flash over its native HTTP API for recording transcription and Qwen-Audio-3.1-ASR-Flash-Filetrans for whole-file imports with speaker diarization. Under **Speech transcription**, **Get models** lists the service catalogue; selecting a recognized Bailian ASR model updates its endpoint and protocol together. Bailian models use their registered native HTTP, Chat Completions, file-transcription, task WebSocket, or Qwen3 event WebSocket path. WebSocket recording requires desktop Obsidian; Gummy one-sentence tasks rotate before the service's one-minute audio limit. The quick-config defaults remain unchanged. See [`MAINTAINING.md`](MAINTAINING.md) for protocol details and region-specific pricing.
 
+When several speakers are detected and have no names yet, organizing does not wait: the note is organized with session numbers (Speaker 1, Speaker 2). After the note is written, a notice offers **Name speakers**; the command **Name speakers in the current note** and the **Edit speakers** list in the side panel do the same at any time. A name replaces the number in the note properties, the original transcript display, and the organized text. It does not change speaker IDs, the transcribed source text, or the audio. Names already saved in the note properties or taken from hardware channels are applied before organizing.
+
 ## Basic usage
 
 1. Open the **QnALog voice notes panel** from the left ribbon. The Obsidian toolbar shows a monochrome Q icon that follows the theme.
@@ -78,6 +80,8 @@ During recording, markers support `#term` (explain a term), `?question` (ask abo
 Choose **Append recording to this note** from the open note's sidebar, the file menu, or the floating control. QnALog verifies the target note, records into a separate pending note, and waits for active processing and transcription tasks before merging. If a merge fails, the staged note and audio remain available for retry. If the target disappears or its transcript identity changes, the separate recording is kept rather than written to a different note. Continued recordings accumulate audio sources and retain their source references and continuous numbering.
 
 Transcribed notes preserve the original speech-to-text text and revision history. Decisions, actions, questions, and topics can link to transcript passages; changed passages are marked stale. Evidence is included with existing organization requests rather than sent in a separate extraction request.
+
+When a recorded note is organized with utterance-level transcript data and the model returns complete evidence, the end of the organized body gets a **Where decisions and actions were said** section. Each decision and action item lists the speaker, a link to the moment in the recording, and a quote of up to 40 characters from the transcript. Times come from the transcript record, not from the model. Times that the transcription service returned per sentence show as exact seconds; estimated times are marked "approx.", times known only to the segment are marked "approximately in this segment", and unknown times have no link. The model chooses which passages to cite, so click a time and listen to check. Re-organizing replaces the section; older notes are not changed.
 
 <details>
 <summary>Original, derived, and clean-copy versions</summary>

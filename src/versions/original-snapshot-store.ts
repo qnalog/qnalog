@@ -1,5 +1,5 @@
 import * as obsidian from "obsidian";
-import { extractAllRawBlocksFromText, findActiveVersionBlock, splitLeadingFrontmatter } from "../notes/note-document";
+import { extractAllRawBlocksFromText, findActiveVersionBlock, hasRawMaterial, splitLeadingFrontmatter } from "../notes/note-document";
 import { NS_TYPE_VERSION_CACHE, readNamespaceFrontmatter } from "../shared/namespace";
 import { labelPattern } from "../shared/note-labels";
 import { t } from "../shared/i18n";
@@ -123,6 +123,10 @@ export class OriginalSnapshotStore {
         throw new Error(t("Could not read version metadata"));
       }
       return null;
+    }
+    // 原稿快照是只含正文的版本（containsRaw:false）：带原始材料的正文不写入。
+    if (hasRawMaterial(splitVersionPayload(payload).body)) {
+      throw new Error(t("A version without original material cannot contain original material; the version was not saved."));
     }
     const previousContent = await this.io.readCache(snapshot.path);
     const previousParts = splitLeadingFrontmatter(previousContent);

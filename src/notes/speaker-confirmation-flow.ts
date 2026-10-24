@@ -1,11 +1,10 @@
 import * as obsidian from "obsidian";
-import type { PluginSettings, RecordingSession, Segment } from "../shared/types";
-import type { SessionSpeakerPreparation, FinalizeProgress } from "./session-finalize-run-flow";
+import type { RecordingSession, Segment } from "../shared/types";
+import type { SessionSpeakerPreparation } from "./session-finalize-run-flow";
 import { NS_FM_SPEAKERS } from "../shared/namespace";
 import { normalizeSpeakerMappings, readSpeakerMappings, replaceSpeakerDisplayName } from "../audio/channel-speakers";
 import type { SpeakerId } from "../audio/channel-speakers";
-import { applySpeakerNamesForLlm, buildConfirmedSpeakerMappings, collectSpeakerCandidates } from "../asr/speaker-mapping";
-import { isSpeakerDiarizationProvider } from "../asr/diarization";
+import { applySpeakerNamesForLlm, collectSpeakerCandidates } from "../asr/speaker-mapping";
 import { getCurrentTranscript } from "../transcript/session-transcript";
 import { normalizeTranscriptLayout } from "../transcript/transcript-markdown";
 import { diagnosticError } from "../shared/util-key-diag";
@@ -14,17 +13,16 @@ import { t } from "../shared/i18n";
 export interface SpeakerConfirmationPort {
   getVault(): Pick<obsidian.Vault, "getAbstractFileByPath" | "read" | "modify">;
   readFrontmatter(file: obsidian.TFile): Promise<Record<string, unknown> | null | undefined>;
-  setProgress(session: RecordingSession, patch: Partial<FinalizeProgress>): void;
-  requestOutlineRefresh(): void;
-  getSettings(): Pick<PluginSettings, "activeTranscribeProvider" | "transcribeProviders">;
-  getProviderProfile(id: string, provider: unknown): { speakerLabelScope?: string; requiresWholeSession?: boolean } | null | undefined;
-  promptSpeakerNames(candidates: ReturnType<typeof collectSpeakerCandidates>, initialMappings: ReturnType<typeof normalizeSpeakerMappings>, options: { unstableAcrossSegments: boolean }): Promise<Record<string, string> | null>;
   writeSpeakerFrontmatter(file: obsidian.TFile, mappings: ReturnType<typeof normalizeSpeakerMappings>): Promise<unknown>;
   resetNotePanelCache(): void;
   logDiagnostic(level: string, code: string, message: string, data: unknown): Promise<unknown>;
 }
 
-export async function confirmSpeakerNames(port: SpeakerConfirmationPort, session: RecordingSession, segments: Segment[]): Promise<SessionSpeakerPreparation> {
+/**
+ * Applies speaker names that are already known before organizing: note properties and hardware channel mappings.
+ * It never waits for user input; unnamed speakers stay numbered.
+ */
+export async function applyKnownSpeakerNames(port: SpeakerConfirmationPort, session: RecordingSession, segments: Segment[]): Promise<SessionSpeakerPreparation> {
   const joined = (segments || []).map((segment) => String(segment && segment.text || "")).join("\n");
   const candidates = collectSpeakerCandidates(joined);
   if (candidates.length < 2) return { segments, frontmatter: null };
@@ -37,30 +35,9 @@ export async function confirmSpeakerNames(port: SpeakerConfirmationPort, session
     Object.assign({}, session.speakerChannels || {}, readSpeakerMappings(frontmatter) || {}),
     ids,
   );
-  const alreadyConfirmed = candidates.every((candidate) => String(initialMappings[candidate.id] && initialMappings[candidate.id].personName || "").trim());
-  let mappings = initialMappings;
-
-  if (!alreadyConfirmed && !session._speakerNameConfirmationSkipped) {
-    port.setProgress(session, {
-      stage: "speaker-confirm",
-      label: t("Confirm speakers"),
-      percent: 52,
-      detail: t("Detected {0} speakers; waiting for name confirmation before continuing").replace("{0}", String(candidates.length)),
-    });
-    port.requestOutlineRefresh();
-    const providerId = session.importTranscribeProviderId
-      || port.getSettings().activeTranscribeProvider
-      || "siliconflow";
-    const activeProvider = (port.getSettings().transcribeProviders || {})[providerId] || {};
-    const profile = port.getProviderProfile(providerId, activeProvider);
-    const hardwareSeparated = Object.keys(session.speakerChannels || {}).length >= 2;
-    const stableAcrossSession = hardwareSeparated
-      || !!(profile && profile.speakerLabelScope === "session" && profile.requiresWholeSession)
-      || isSpeakerDiarizationProvider(activeProvider);
-    const names = await port.promptSpeakerNames(candidates, initialMappings, { unstableAcrossSegments: !stableAcrossSession });
-    if (names) mappings = buildConfirmedSpeakerMappings(candidates, names, initialMappings);
-    else session._speakerNameConfirmationSkipped = true;
-  }
+  // Names already confirmed (note properties, hardware channels) are applied below.
+  // Unnamed speakers keep their session numbers; naming them later is a separate step (speaker-naming.ts).
+  const mappings = initialMappings;
 
   const hasConfirmedName = Object.values(mappings).some((mapping) => String(mapping && mapping.personName || "").trim());
   if (hasConfirmedName) {

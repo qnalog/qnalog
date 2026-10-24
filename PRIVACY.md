@@ -16,6 +16,8 @@ This file may contain service addresses, model names, prompt templates, queue it
 
 Notes store their transcript data inside the note. For recordings saved or imported with this version or later, that data also includes the audio file's SHA-256 checksum, size, and the time it was recorded. The checksum is computed locally and is not sent to any service.
 
+Organized notes may contain a **Where decisions and actions were said** section with short quotes (up to 40 characters each) copied from the note's own transcript, together with speaker names and links to the local recording. The section is built locally from the transcript already in the note; no extra request is sent to build it. The quotes are stored in the visible note text, so they are included wherever the note is synced, shared, or exported.
+
 ## Network access
 
 QnALog does not include analytics, advertising, or telemetry. It may make network requests when you use features that require them:

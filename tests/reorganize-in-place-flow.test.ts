@@ -445,3 +445,20 @@ describe("buildReorganizedNote draft title suffix", () => {
     expect(next.split("\n").find((line) => line.startsWith("# "))).toBe(title);
   });
 });
+
+describe("reorganize in place after a speaker was named", () => {
+  const identity = (text: string) => text;
+  it("does not keep the old organized prose when it contains an inline speaker name marker", () => {
+    // Naming a speaker afterwards writes inline speaker-ref markers into the organized prose (channel-speakers.ts).
+    const renamed = original.replace(
+      "Old organized body",
+      "Old organized body: <!-- qnalog-speaker-ref:speaker_1 -->王敏<!-- qnalog-speaker-ref-end:speaker_1 --> 负责发布。",
+    );
+    const next = buildReorganizedNote(renamed, generated, identity);
+    expect(next).toContain("New organized body");
+    expect(next).not.toContain("Old organized body");
+    expect(next).not.toContain("负责发布");
+    expect(next).toContain("录音原文：今天确认项目下周启动。");
+    expect(buildReorganizedNote(next, generated, identity)).toBe(next);
+  });
+});

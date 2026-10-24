@@ -42,8 +42,10 @@ import { runSessionFinalization } from "./session-finalize-run-flow";
 import type { SessionFinalizeRunPort, SessionShortRecordingPort } from "./session-finalize-run-flow";
 import { processLiveSegment } from "./live-segment-flow";
 import type { LiveSegmentPort } from "./live-segment-flow";
-import { confirmSpeakerNames } from "./speaker-confirmation-flow";
+import { applyKnownSpeakerNames } from "./speaker-confirmation-flow";
 import type { SpeakerConfirmationPort } from "./speaker-confirmation-flow";
+import { applySpeakerNames, offerSpeakerNaming, promptAndApplySpeakerNames } from "./speaker-naming";
+import type { SpeakerNameInput, SpeakerNamingPort, SpeakerNamingResult } from "./speaker-naming";
 export interface SessionFinalizeHost {
   /** 知识库与工作区访问。 */
   app: obsidian.App;
@@ -255,33 +257,63 @@ export class SessionFinalizeService {
     })();
   }
 
-  confirmSpeakerNamesBeforeFinal(session, segments) {
-    return confirmSpeakerNames(this.speakerConfirmationPort(), session, segments);
+  applyKnownSpeakerNamesBeforeFinal(session, segments) {
+    return applyKnownSpeakerNames(this.speakerConfirmationPort(), session, segments);
   }
 
   private speakerConfirmationPort(): SpeakerConfirmationPort {
     return {
       getVault: () => this.host.app.vault,
       readFrontmatter: (file) => readFileFrontmatter(this.host, file),
-      setProgress: (session, patch) => this.host.asrPipeline.setSessionWorkProgress(session, patch),
-      requestOutlineRefresh: () => this.host.requestOutlineRefresh(),
-      getSettings: () => this.host.settings,
-      getProviderProfile: (id, provider) => this.host.profiles.getTranscribeProviderProfile(id, provider),
+      writeSpeakerFrontmatter: (file, mappings) => this.host.app.fileManager.processFrontMatter(file, (nextFrontmatter) => {
+        nextFrontmatter[NS_FM_SPEAKERS] = mappings;
+      }),
+      resetNotePanelCache: () => this.resetNotePanelCache(),
+      logDiagnostic: (level, code, message, data) => this.host.diagnostics.logDiagnostic(level, code, message, data),
+    };
+  }
+
+  private resetNotePanelCache(): void {
+    this.notePanelCacheKey = "";
+    this.notePanelCacheData = undefined;
+    this.notePanelLoading = false;
+  }
+
+  /** After the note is written: shows a prompt (not a modal) when two or more speakers are still unnamed. */
+  async offerSpeakerNaming(path: string): Promise<boolean> {
+    return offerSpeakerNaming(this.speakerNamingPort(), path);
+  }
+
+  /** Command entry: opens the naming modal for a note and applies the names. Returns null when cancelled. */
+  nameSpeakersInNote(file: obsidian.TFile): Promise<SpeakerNamingResult | null> {
+    return promptAndApplySpeakerNames(this.speakerNamingPort(), file);
+  }
+
+  /** Outline entry: applies names typed in the outline's speaker list. */
+  applySpeakerNamesToNote(file: obsidian.TFile, names: Record<string, SpeakerNameInput>): Promise<SpeakerNamingResult> {
+    return applySpeakerNames(this.speakerNamingPort(), file, names);
+  }
+
+  private speakerNamingPort(): SpeakerNamingPort {
+    return {
+      ...this.speakerConfirmationPort(),
       promptSpeakerNames: (candidates, initialMappings, options) => {
         const { promise, resolve } = Promise.withResolvers<Record<string, string> | null>();
         const modal = new SpeakerNameConfirmModal(this.host.app, this.host, candidates, initialMappings, options, resolve);
         modal.open();
         return promise;
       },
-      writeSpeakerFrontmatter: (file, mappings) => this.host.app.fileManager.processFrontMatter(file, (nextFrontmatter) => {
-        nextFrontmatter[NS_FM_SPEAKERS] = mappings;
-      }),
-      resetNotePanelCache: () => {
-        this.notePanelCacheKey = "";
-        this.notePanelCacheData = undefined;
-        this.notePanelLoading = false;
+      showPrompt: (message, actionLabel, onAction) => {
+        const notice = new obsidian.Notice("", 20000);
+        notice.messageEl.createDiv({ text: message });
+        const button = notice.messageEl.createEl("button", { text: actionLabel, cls: "mod-cta" });
+        button.onclick = () => {
+          notice.hide();
+          onAction();
+        };
       },
-      logDiagnostic: (level, code, message, data) => this.host.diagnostics.logDiagnostic(level, code, message, data),
+      notify: (message, timeoutMs) => { new obsidian.Notice(message, timeoutMs); },
+      requestOutlineRefresh: () => this.host.requestOutlineRefresh(),
     };
   }
 
@@ -334,7 +366,8 @@ export class SessionFinalizeService {
       refreshNoteIndex: (path, options) => this.host.noteIndex.refreshNoteIndexSafely(path, options),
       autoExtractSediment: (path) => this.host.noteIndex.autoExtractSedimentAfterFinalize(path),
       syncTranscriptAudioSource: (target) => syncTranscriptAudioSource(this.transcriptSourcePort(), target),
-      confirmSpeakerNames: (target, segments) => this.confirmSpeakerNamesBeforeFinal(target, segments),
+      confirmSpeakerNames: (target, segments) => this.applyKnownSpeakerNamesBeforeFinal(target, segments),
+      offerSpeakerNaming: (path) => this.offerSpeakerNaming(path),
       processMeetingWorkbench: (target, options) => this.host.meetingWorkbench.processPendingMeetingWorkbenchInteractions(target, options),
       ensureRealtimeOutline: (target) => this.host.outline.ensureRealtimeOutlineForFinalNote(target),
       mergeAndPolish: (segments, mode, meta, frontmatter) => mergeAndPolish(this.host, segments, mode, meta, frontmatter),

@@ -5,6 +5,7 @@ import { NS_FM, NS_TYPE_VERSION_CACHE } from "../shared/namespace";
 import { sanitizeFilename } from "../shared/util-common";
 import { t } from "../shared/i18n";
 import { buildVersionPayload, splitVersionPayload } from "./version-content";
+import { hasRawMaterial } from "../notes/note-document";
 import type { VersionManifest, VersionManifestRecord, VersionManifestStore } from "./version-manifest-store";
 
 export interface VersionSaveInput {
@@ -59,6 +60,9 @@ export interface VersionSaveHost {
   buildEmptyBody(): string;
 }
 
+/** 只含正文的版本类型（manifest 里 containsRaw:false 的显示版本）。 */
+const BODY_ONLY_KINDS = new Set(["minutes", "clean", "source-original"]);
+
 export class VersionSaveStore {
   constructor(
     private readonly io: VersionSaveHost,
@@ -105,6 +109,10 @@ export class VersionSaveStore {
       }
       const versionParts = splitVersionPayload(versionInput.body);
       const body = versionParts.body.trim() || this.io.buildEmptyBody();
+      // 显示用版本（纪要、清稿、初稿）只存正文；整篇笔记快照（pre-*）按设计保留全文。
+      if (BODY_ONLY_KINDS.has(versionInput.kind || "") && hasRawMaterial(body)) {
+        throw new Error(t("A version without original material cannot contain original material; the version was not saved."));
+      }
       const frontmatter = versionParts.frontmatter;
       const meta: SavedVersionMeta = {
         id,

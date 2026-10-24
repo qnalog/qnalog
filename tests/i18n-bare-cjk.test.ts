@@ -50,6 +50,7 @@ const CONTENT_FILES: Record<string, string> = {
   "src/diagnostics/diagnostics-service.ts": "诊断报告正文——生成的文档，收件人是开发者",
   "src/views/base-definitions.ts": "墙笔记 frontmatter/yaml 正文",
   "src/audio/channel-speakers.ts": "说话人身份数据（写笔记与 frontmatter，显示点单独包 t()）",
+  "src/audio/speaker-mentions.ts": "说话人提及标记与编号标签匹配（写入笔记正文的内容，括号随笔记语言而非界面语言）",
   "src/recent/recent-notes.ts": "最近主题词条数据（过滤 token）",
   "src/shared/util-text.ts": "笔记文本解析辅助的匹配串",
   "src/shared/util-note.ts": "笔记工具的匹配与标记",

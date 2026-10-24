@@ -477,10 +477,10 @@ export class SpeakerNameConfirmModal extends obsidian.Modal {
     const { contentEl, modalEl } = this;
     contentEl.empty();
     modalEl.addClass("qnalog-speaker-confirm-modal");
-    contentEl.createEl("h2", { text: i18nT("Confirm speaker") });
+    contentEl.createEl("h2", { text: i18nT("Name speakers") });
     contentEl.createDiv({
       cls: "qnalog-speaker-confirm-desc",
-      text: i18nT("Transcription is complete. Once you enter names, the AI will organize the speech, conclusions, and to-dos by name. Leave it blank to keep using speaker numbers."),
+      text: i18nT("A name replaces the speaker number in the note properties, the original transcript, and the organized text. Leave it blank to keep the number."),
     });
     if (this.options.unstableAcrossSegments) {
       contentEl.createDiv({
@@ -526,9 +526,9 @@ export class SpeakerNameConfirmModal extends obsidian.Modal {
     }
 
     const actions = contentEl.createDiv({ cls: "modal-button-container qnalog-speaker-confirm-actions" });
-    const skip = actions.createEl("button", { text: i18nT("Leave blank for now") });
+    const skip = actions.createEl("button", { text: i18nT("Cancel") });
     skip.onclick = () => this.close();
-    const confirm = actions.createEl("button", { text: i18nT("Confirm and continue") });
+    const confirm = actions.createEl("button", { text: i18nT("Save names") });
     confirm.addClass("mod-cta");
     confirm.onclick = () => {
       this.result = Object.fromEntries(this.rows.map(({ candidate, input }) => [candidate.id, input.value.trim()]));

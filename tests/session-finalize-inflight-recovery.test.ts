@@ -69,7 +69,7 @@ function setup(queue: TaskQueue) {
     setProgress: vi.fn(), cleanupSuccessfulSegmentAudio: vi.fn(async () => undefined), removeEmptySessionBlock: vi.fn(async () => undefined),
     appendPolishBlock: vi.fn(async () => undefined), rewriteConsolidated: vi.fn(async () => undefined),
     renameWithGeneratedTitle: vi.fn(async () => null), refreshNoteIndex: vi.fn(async () => undefined), autoExtractSediment: vi.fn(),
-    syncTranscriptAudioSource: vi.fn(async () => undefined), confirmSpeakerNames: vi.fn(async (_s, segments) => ({ segments, frontmatter: null })),
+    syncTranscriptAudioSource: vi.fn(async () => undefined), confirmSpeakerNames: vi.fn(async (_s, segments) => ({ segments, frontmatter: null })), offerSpeakerNaming: vi.fn(async () => false),
     processMeetingWorkbench: vi.fn(async () => undefined), ensureRealtimeOutline: vi.fn(async () => undefined),
     mergeAndPolish: vi.fn(async () => "Polished"), clearCommittedBriefingCheckpoint: vi.fn(async () => undefined),
     addQueueTask: (task) => queue.add(task), requestDeferredAsrRetry: vi.fn(), requestTaskQueueRetry: vi.fn(),

@@ -117,7 +117,10 @@ export interface SessionFinalizeRunPort extends SessionShortRecordingPort {
   refreshNoteIndex(path: string, options: { meetingDate: string; reason: string }): Promise<unknown>;
   autoExtractSediment(path: string): unknown;
   syncTranscriptAudioSource(session: RecordingSession): Promise<void>;
+  /** Applies speaker names that are already known (properties, hardware channels). Never waits for user input. */
   confirmSpeakerNames(session: RecordingSession, segments: Segment[]): Promise<SessionSpeakerPreparation>;
+  /** Shows a non-blocking prompt for naming speakers when two or more are still unnamed in the written note. */
+  offerSpeakerNaming(path: string): Promise<unknown>;
   processMeetingWorkbench(session: RecordingSession, options: { force: boolean }): Promise<unknown>;
   ensureRealtimeOutline(session: RecordingSession): Promise<unknown>;
   mergeAndPolish(segments: Segment[], mode: string, sessionMeta: SessionMetaForMerge, speakerFrontmatter: Record<string, unknown> | null): Promise<string>;
@@ -235,9 +238,9 @@ export async function runSessionFinalization(port: SessionFinalizeRunPort, sessi
   try {
     speakerPreparation = await port.confirmSpeakerNames(session, segmentsForFinal);
   } catch (error) {
-    console.warn("[QnALog] speaker confirmation failed; continuing with generic labels", error);
+    console.warn("[QnALog] applying known speaker names failed; continuing with generic labels", error);
     try {
-      await port.logDiagnostic("warn", "speaker.confirmation_failed", t("Speaker name confirmation did not finish; numbers were kept and organizing continued"), { mdPath: session.mdPath, error: diagnosticError(error) });
+      await port.logDiagnostic("warn", "speaker.confirmation_failed", t("Applying known speaker names did not finish; numbers were kept and organizing continued"), { mdPath: session.mdPath, error: diagnosticError(error) });
     } catch { /* intentionally empty */ }
   }
   const segmentsForLlm = speakerPreparation.segments || segmentsForFinal;
@@ -500,4 +503,11 @@ export async function runSessionFinalization(port: SessionFinalizeRunPort, sessi
   if (!mergeError) port.setProgress(session, { stage: "done", label: t("Processing complete"), percent: 100, detail: t("Notes written; finishing up") });
   port.endSession(session);
   port.requestOutlineRefresh();
+  if (!mergeError && !session.continuation) {
+    try { await port.offerSpeakerNaming(session.mdPath); }
+    catch (error) {
+      try { await port.logDiagnostic("warn", "speaker.naming_offer_failed", t("Could not check whether speakers still need names; the note is unaffected"), { mdPath: session.mdPath, error: diagnosticError(error) }); }
+      catch { /* diagnostics must not change finalization behavior */ }
+    }
+  }
 }

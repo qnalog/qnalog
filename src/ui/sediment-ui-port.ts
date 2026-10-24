@@ -8,6 +8,7 @@ import type { generatePeopleDirectorySuggestions, loadPeopleDirectory } from "..
 import type { generateSedimentObjects, upsertSedimentPreExtractionBlockInFile, writeSedimentObjectCards } from "../sediment";
 import type { loadVocabularyGroups } from "../vocabulary";
 import type { extractNotePanelData } from "../notes/detail-blocks";
+import type { SpeakerNameInput, SpeakerNamingResult } from "../notes/speaker-naming";
 
 /**
  * 「沉淀」页签需要的窄能力。由 src/main.ts 装配，不暴露插件对象或完整设置。
@@ -33,6 +34,8 @@ export interface SedimentUiPort {
   upsertSedimentPreExtractionBlock(file: obsidian.TFile, objects: unknown): ReturnType<typeof upsertSedimentPreExtractionBlockInFile>;
   writeSedimentObjectCards(file: obsidian.TFile, objects: unknown): ReturnType<typeof writeSedimentObjectCards>;
   loadVocabularyGroups(): ReturnType<typeof loadVocabularyGroups>;
+  /** 写入说话人姓名：笔记属性、原始转写显示名与整理正文（notes/speaker-naming.ts）。 */
+  applySpeakerNames(file: obsidian.TFile, names: Record<string, SpeakerNameInput>): Promise<SpeakerNamingResult>;
 }
 
 /** 面板读写的视图状态：已完成纪要面板的缓存、当前页签与重绘。 */

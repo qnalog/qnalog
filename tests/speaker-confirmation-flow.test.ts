@@ -57,6 +57,11 @@ function makeFixture(options: { frontmatter?: Record<string, unknown> | null; fi
   return { host, session, segments, service, progress, diagnostics, file, getContent: () => content, getFrontmatter: () => frontmatter };
 }
 
+const NAMED = {
+  "spk-1": { id: "spk-1", channel: 1, label: "说话人1", personName: "张三" },
+  "spk-2": { id: "spk-2", channel: 2, label: "说话人2", personName: "李四" },
+} as never;
+
 beforeEach(() => {
   vi.clearAllMocks();
   modalArgs.length = 0;
@@ -64,11 +69,11 @@ beforeEach(() => {
   modalResult.mockImplementation((done) => done({ "spk-1": "张三", "spk-2": "李四" }));
 });
 
-describe("speaker confirmation consumer contract", () => {
+describe("known speaker names are applied without prompting", () => {
   it("returns the original segments when fewer than two candidates exist", async () => {
     const f = makeFixture();
     const segments = [{ text: "普通对话，没有说话人标记" }] as never[];
-    const result = await f.service.confirmSpeakerNamesBeforeFinal(f.session, segments);
+    const result = await f.service.applyKnownSpeakerNamesBeforeFinal(f.session, segments);
     expect(result).toEqual({ segments, frontmatter: null });
     expect(f.host.app.vault.getAbstractFileByPath).not.toHaveBeenCalled();
     expect(modalOpen).not.toHaveBeenCalled();
@@ -76,30 +81,62 @@ describe("speaker confirmation consumer contract", () => {
 
   it("returns without opening a modal when the note is absent or not a TFile", async () => {
     const f = makeFixture({ file: false });
-    const result = await f.service.confirmSpeakerNamesBeforeFinal(f.session, f.segments);
+    const result = await f.service.applyKnownSpeakerNamesBeforeFinal(f.session, f.segments);
     expect(result).toEqual({ segments: f.segments, frontmatter: null });
     expect(modalOpen).not.toHaveBeenCalled();
   });
 
-  it("asks for names with provider and stability context, then persists replacements", async () => {
+  it("never opens the naming modal for unnamed speakers and leaves the note and ledger untouched", async () => {
     const f = makeFixture();
-    expect(f.segments.map((s) => s.text).join("\n").match(/说话人/g)).toHaveLength(2);
-    const result = await f.service.confirmSpeakerNamesBeforeFinal(f.session, f.segments);
-    expect(modalOpen).toHaveBeenCalledOnce();
-    expect(modalArgs[0]?.slice(0, 5)).toEqual([f.host.app, f.host, expect.any(Array), expect.any(Object), { unstableAcrossSegments: true }]);
-    expect(f.progress).toEqual([expect.objectContaining({ stage: "speaker-confirm", percent: 52, label: t("Confirm speakers"), detail: t("Detected {0} speakers; waiting for name confirmation before continuing").replace("{0}", "2") })]);
-    expect(f.host.requestOutlineRefresh).toHaveBeenCalledOnce();
+    const result = await f.service.applyKnownSpeakerNamesBeforeFinal(f.session, f.segments);
+    expect(modalOpen).not.toHaveBeenCalled();
+    expect(f.progress).toEqual([]);
+    expect(f.host.requestOutlineRefresh).not.toHaveBeenCalled();
+    expect(f.host.app.fileManager.processFrontMatter).not.toHaveBeenCalled();
+    expect(f.host.app.vault.modify).not.toHaveBeenCalled();
+    expect(f.getContent()).toBe("[说话人1] 负责产品方案。\n[说话人2] 确认预算。");
+    expect(result.segments).toEqual(f.segments);
+    expect(result.frontmatter).toBeNull();
+  });
+
+  it("completes with three unnamed speakers without calling promptSpeakerNames", async () => {
+    const texts = ["[说话人1] 讨论产品。", "[说话人2] 确认预算。", "[说话人3] 安排排期。"];
+    const f = makeFixture({ content: texts.join("\n") });
+    const segments = texts.map((text, index) => ({ index, text })) as never[];
+    const result = await f.service.applyKnownSpeakerNamesBeforeFinal(f.session, segments);
+    expect(modalOpen).not.toHaveBeenCalled();
+    expect(modalArgs).toHaveLength(0);
+    expect(result.segments.map((segment) => segment.text)).toEqual(texts);
+    expect(f.progress).toEqual([]);
+    expect(f.getContent()).toBe(texts.join("\n"));
+  });
+
+  it("applies names already confirmed in properties or channels before organizing", async () => {
+    const f = makeFixture();
+    f.session.speakerChannels = NAMED;
+    const result = await f.service.applyKnownSpeakerNamesBeforeFinal(f.session, f.segments);
+    expect(modalOpen).not.toHaveBeenCalled();
     expect(f.host.app.fileManager.processFrontMatter).toHaveBeenCalledOnce();
     const mappings = f.getFrontmatter()[NS_FM_SPEAKERS] as Record<string, { personName?: string }>;
     expect(mappings["spk-1"]?.personName).toBe("张三");
     expect(mappings["spk-2"]?.personName).toBe("李四");
-    expect(f.session.speakerChannels).toEqual(mappings);
     expect(f.host.app.vault.modify).toHaveBeenCalledOnce();
     expect(f.getContent()).toContain("**张三：**");
     expect(f.getContent()).toContain("**李四：**");
     expect(result.segments[0].text).toContain("[张三]");
     expect(result.frontmatter).toEqual({ [NS_FM_SPEAKERS]: mappings });
     expect(f.diagnostics.some((call) => call[1] === "speaker.names_persisted" && (call[3] as { replacements: number }).replacements === 2)).toBe(true);
+  });
+
+  it("applies the named speakers and keeps the others numbered when only some are named", async () => {
+    const f = makeFixture();
+    f.session.speakerChannels = { "spk-1": NAMED["spk-1"] } as never;
+    const result = await f.service.applyKnownSpeakerNamesBeforeFinal(f.session, f.segments);
+    expect(modalOpen).not.toHaveBeenCalled();
+    expect(result.segments[0].text).toContain("[张三]");
+    expect(result.segments[1].text).toContain("[说话人2]");
+    expect(f.getContent()).toContain("**张三：**");
+    expect(f.getContent()).toContain("[说话人2]");
   });
 
   it("normalizes a legacy grouped transcript when confirmed speaker names rewrite the note", async () => {
@@ -116,7 +153,8 @@ describe("speaker confirmation consumer contract", () => {
       `<!-- qnalog-transcript-end:${id} -->`, "</details>",
     ].join("\n");
     const f = makeFixture({ content: `[说话人1] 负责产品方案。\n${oldTranscript}` });
-    await f.service.confirmSpeakerNamesBeforeFinal(f.session, f.segments);
+    f.session.speakerChannels = NAMED;
+    await f.service.applyKnownSpeakerNamesBeforeFinal(f.session, f.segments);
     const rewritten = f.getContent();
     expect(rewritten).not.toMatch(/^\*\*(?:分段原始转写（\d+ 段）|Segmented raw transcript \(\d+ segments?\))\*\*$/m);
     expect(rewritten).toMatch(/<summary>(?:原始转写 · 段落|Raw transcript · Segment) 1 \(00:00–00:01\)<\/summary>/);
@@ -129,45 +167,27 @@ describe("speaker confirmation consumer contract", () => {
       "spk-1": { id: "spk-1", channel: 1, label: "说话人1", personName: "张三" },
       "spk-2": { id: "spk-2", channel: 2, label: "说话人2", personName: "李四" },
     };
-    await f.service.confirmSpeakerNamesBeforeFinal(f.session, f.segments);
+    await f.service.applyKnownSpeakerNamesBeforeFinal(f.session, f.segments);
     expect(modalOpen).not.toHaveBeenCalled();
     expect(f.progress).toHaveLength(0);
     expect(f.host.app.fileManager.processFrontMatter).toHaveBeenCalledOnce();
   });
 
-  it("marks session-scoped provider labels as stable across segments", async () => {
-    const f = makeFixture();
-    f.host.profiles.getTranscribeProviderProfile.mockReturnValue({ speakerLabelScope: "session", requiresWholeSession: true } as never);
-    await f.service.confirmSpeakerNamesBeforeFinal(f.session, f.segments);
-    expect(f.host.profiles.getTranscribeProviderProfile).toHaveBeenCalledWith("siliconflow", {});
-    expect(modalArgs[0]?.[4]).toEqual({ unstableAcrossSegments: false });
-  });
-
   it("does not rewrite note text when no speaker label remains to replace", async () => {
     const f = makeFixture({ content: "The transcript body already uses names." });
-    await f.service.confirmSpeakerNamesBeforeFinal(f.session, f.segments);
+    f.session.speakerChannels = NAMED;
+    await f.service.applyKnownSpeakerNamesBeforeFinal(f.session, f.segments);
     expect(f.host.app.fileManager.processFrontMatter).toHaveBeenCalledOnce();
     expect(f.host.app.vault.read).toHaveBeenCalledOnce();
     expect(f.host.app.vault.modify).not.toHaveBeenCalled();
   });
 
 
-  it("does not reopen a cancelled confirmation for the same session", async () => {
-    const f = makeFixture();
-    modalResult.mockImplementation((done) => done(null));
-    const first = await f.service.confirmSpeakerNamesBeforeFinal(f.session, f.segments);
-    const second = await f.service.confirmSpeakerNamesBeforeFinal(f.session, f.segments);
-    expect(f.session._speakerNameConfirmationSkipped).toBe(true);
-    expect(first).toEqual({ segments: f.segments, frontmatter: null, utteranceProjections: [] });
-    expect(second).toEqual({ segments: f.segments, frontmatter: null, utteranceProjections: [] });
-    expect(modalOpen).toHaveBeenCalledOnce();
-    expect(f.host.app.fileManager.processFrontMatter).not.toHaveBeenCalled();
-  });
-
   it("keeps confirmed names when updating the transcript body fails", async () => {
     const f = makeFixture();
+    f.session.speakerChannels = NAMED;
     f.host.app.vault.read.mockRejectedValueOnce(new Error("read failed"));
-    const result = await f.service.confirmSpeakerNamesBeforeFinal(f.session, f.segments);
+    const result = await f.service.applyKnownSpeakerNamesBeforeFinal(f.session, f.segments);
     expect(f.host.app.fileManager.processFrontMatter).toHaveBeenCalledOnce();
     expect(f.session.speakerChannels).toEqual(f.getFrontmatter()[NS_FM_SPEAKERS]);
     expect(result.segments[0].text).toContain("[张三]");
@@ -178,9 +198,11 @@ describe("speaker confirmation consumer contract", () => {
 
   it("propagates frontmatter write failures without mutating session mappings", async () => {
     const f = makeFixture();
+    f.session.speakerChannels = NAMED;
     const failure = new Error("frontmatter write failed");
     f.host.app.fileManager.processFrontMatter.mockRejectedValueOnce(failure);
-    await expect(f.service.confirmSpeakerNamesBeforeFinal(f.session, f.segments)).rejects.toBe(failure);
-    expect(f.session.speakerChannels).toBeUndefined();
+    await expect(f.service.applyKnownSpeakerNamesBeforeFinal(f.session, f.segments)).rejects.toBe(failure);
+    expect(f.session.speakerChannels).toEqual(NAMED);
+    expect(f.host.app.vault.modify).not.toHaveBeenCalled();
   });
 });

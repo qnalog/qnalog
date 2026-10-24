@@ -285,6 +285,13 @@ export class OutlineView extends obsidian.ItemView {
       if (file instanceof obsidian.TFile && this.isRecentNotePath(file.path)) {
         this.queueRecentVaultRefresh(260, file.path);
       }
+      // 笔记面板缓存按路径与修改时间命中，但属性（如说话人姓名）由 metadataCache 稍后才更新；
+      // 面板若在更新前读过属性，同一修改时间下会一直显示旧值，因此属性更新后丢弃该笔记的面板缓存。
+      if (file instanceof obsidian.TFile && !this.notePanelLoading && this.notePanelCacheKey.startsWith(`${file.path}|`)) {
+        this.notePanelCacheKey = "";
+        this.notePanelCacheData = undefined;
+        this.render();
+      }
     }));
     const session = this.plugin.getCurrentSession();
     if (this.plugin.settings.enableRealtimeOutline
