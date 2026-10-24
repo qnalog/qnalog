@@ -180,3 +180,23 @@ describe("number normalization and hypothesis text", () => {
     expect(score.numberNormalizedErrorRate).toBe(0);
   });
 });
+
+describe("offset matching window", () => {
+  it("does not match a repeated short reply to a unit minutes away", () => {
+    const truth = {
+      title: "t", language: "zh" as const,
+      utterances: [
+        { speaker: "A", text: "对。", startMs: 1_000, endMs: 1_500 },
+        { speaker: "B", text: "我们下周再讨论预算。", startMs: 2_000, endMs: 5_000 },
+        { speaker: "A", text: "对。", startMs: 600_000, endMs: 600_500 },
+      ],
+    };
+    const unit = (text: string, startMs: number) => ({ rawText: text, normalizedText: text, speakerId: null, speakerName: null, startMs, endMs: startMs + 500, timing: "provider" as const });
+    // The early 对 is missing from the hypothesis; only the late one is present.
+    const result = { text: "", rawText: null, providerId: "p", units: [unit("我们下周再讨论预算。", 2_100), unit("对。", 600_050)] };
+    const score = scoreTranscript(truth, result).offset;
+    // Matches: 预算 sentence (100 ms) and the late 对 (50 ms); the early 对 stays unmatched instead of a 599 s offset.
+    expect(score.matchedUtterances).toBe(2);
+    expect(score.p90Ms).toBe(100);
+  });
+});

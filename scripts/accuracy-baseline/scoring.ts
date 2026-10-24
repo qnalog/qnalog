@@ -24,7 +24,8 @@
  *   units without text positions cannot be split by character.
  * - Time offset uses units with timing "provider". Each reference utterance is
  *   matched to the provider unit(s) whose text covers it best, and the offset is
- *   |unit start - utterance start| of the earliest matched unit.
+ *   |unit start - utterance start| of the earliest matched unit. Only units that start
+ *   within 30 s of the utterance are considered (OFFSET_MATCH_WINDOW_MS).
  * - Text error rate is edit distance over tokens divided by reference token
  *   count, computed on the units' text when units exist (result.text may carry
  *   time and speaker labels). A second rate first writes Chinese numerals as
@@ -246,20 +247,29 @@ function containment(unitTokens: readonly string[], refBag: ReadonlyMap<string, 
   return unitTokens.length ? hit / unitTokens.length : 0;
 }
 
-export function scoreOffsets(truth: GroundTruth, result: AsrTranscriptResult): OffsetScore {
+/**
+ * Units are only matched to utterances that start within this window. In long recordings short replies
+ * (对。好的。) repeat, and without a window they match units many minutes away.
+ */
+export const OFFSET_MATCH_WINDOW_MS = 30_000;
+
+export function scoreOffsets(truth: GroundTruth, result: AsrTranscriptResult, windowMs = OFFSET_MATCH_WINDOW_MS): OffsetScore {
   const refBags = truth.utterances.map((u) => bagOf(tokenize(u.text)));
   const units = result.units
     .filter((u) => u.timing === "provider" && u.startMs !== null)
     .map((u) => ({ start: u.startMs as number, tokens: tokenize(u.normalizedText || u.rawText) }))
     .filter((u) => u.tokens.length > 0);
+  const near = (a: number, b: number): boolean => Math.abs(a - b) <= windowMs;
   const offsets: number[] = [];
   truth.utterances.forEach((ref, index) => {
     let earliest: number | null = null;
     for (const unit of units) {
+      if (!near(unit.start, ref.startMs)) continue;
       const own = containment(unit.tokens, refBags[index]);
       if (own < 0.5) continue;
-      // A unit belongs to the utterance it matches best.
-      const rival = refBags.some((bag, j) => j !== index && containment(unit.tokens, bag) > own);
+      // A unit belongs to the nearby utterance it matches best.
+      const rival = truth.utterances.some((other, j) => j !== index && near(unit.start, other.startMs)
+        && containment(unit.tokens, refBags[j]) > own);
       if (rival) continue;
       if (earliest === null || unit.start < earliest) earliest = unit.start;
     }
