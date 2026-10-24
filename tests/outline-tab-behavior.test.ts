@@ -385,3 +385,45 @@ describe("outline sidebar repaint on workspace focus changes", () => {
     expect(scheduleUpdate).toHaveBeenCalledTimes(2);
   });
 });
+
+describe("note panel after a property change", () => {
+  it("drops the cached panel data of that note when its metadata changes, so saved speaker names show", async () => {
+    const metaHandlers = new Map<string, (file: unknown) => void>();
+    const view = Object.create(OutlineView.prototype) as OutlineView;
+    const render = vi.fn();
+    Object.assign(view, {
+      containerEl: { children: [null, { empty: () => undefined }] },
+      app: {
+        workspace: { on: (name: string) => name },
+        vault: { on: (name: string) => name },
+        metadataCache: { on: (name: string, handler: (file: unknown) => void) => { metaHandlers.set(name, handler); return name; } },
+      },
+      plugin: {
+        recorder: { on: () => () => undefined },
+        getCurrentSession: () => null,
+        settings: { enableRealtimeOutline: false },
+      },
+      registerEvent: () => undefined,
+      render,
+      scheduleUpdate: vi.fn(),
+      syncActiveRows: vi.fn(),
+      isRecentNotePath: () => false,
+    });
+    await view.onOpen();
+    render.mockClear();
+    const file = Object.assign(new obsidian.TFile(), { path: "QnALog/a.md" });
+    const other = Object.assign(new obsidian.TFile(), { path: "QnALog/b.md" });
+
+    view.notePanelCacheKey = "QnALog/a.md|100";
+    view.notePanelCacheData = { speakerMappings: {} } as never;
+    view.notePanelLoading = false;
+    metaHandlers.get("changed")?.(other);
+    expect(view.notePanelCacheKey).toBe("QnALog/a.md|100");
+    expect(render).not.toHaveBeenCalled();
+
+    metaHandlers.get("changed")?.(file);
+    expect(view.notePanelCacheKey).toBe("");
+    expect(view.notePanelCacheData).toBeUndefined();
+    expect(render).toHaveBeenCalledTimes(1);
+  });
+});
