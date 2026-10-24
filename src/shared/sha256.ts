@@ -132,7 +132,10 @@ export class Sha256TimeBudgetError extends Error {
 export interface Sha256ChunkOptions {
   /** 每块字节数；默认 2 MiB。 */
   chunkBytes?: number;
-  /** 总耗时上限（毫秒）；缺省不限。 */
+  /**
+   * 计算耗时上限（毫秒）；缺省不限。只累计各块实际计算的时间，不含块间让出与应用被系统挂起的间隔
+   * （移动端切到后台或锁屏时插件代码会暂停，按墙钟计时会把这段时间算成超时）。
+   */
   timeBudgetMs?: number;
   /** 读取当前时间；测试可替换。 */
   now?: () => number;
@@ -152,14 +155,15 @@ export async function sha256ArrayBuffer(buffer: ArrayBuffer, options: Sha256Chun
   const now = options.now ?? (() => Date.now());
   const yieldControl = options.yieldControl ?? yieldToEventLoop;
   const budget = options.timeBudgetMs;
-  const startedAt = now();
   const hash = new Sha256();
   const total = buffer.byteLength;
+  let computeMs = 0;
   for (let offset = 0; offset < total; offset += chunkBytes) {
+    const chunkStartedAt = now();
     hash.update(new Uint8Array(buffer, offset, Math.min(chunkBytes, total - offset)));
+    computeMs += Math.max(0, now() - chunkStartedAt);
     if (offset + chunkBytes < total) {
-      const elapsed = now() - startedAt;
-      if (budget !== undefined && elapsed > budget) throw new Sha256TimeBudgetError(offset + chunkBytes, elapsed);
+      if (budget !== undefined && computeMs > budget) throw new Sha256TimeBudgetError(offset + chunkBytes, computeMs);
       await yieldControl();
     }
   }

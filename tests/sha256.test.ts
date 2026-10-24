@@ -100,14 +100,28 @@ describe("Sha256 incremental updates", () => {
     expect(yields).toBe(3);
   });
 
-  it("stops with Sha256TimeBudgetError when the time budget is exceeded", async () => {
+  it("stops with Sha256TimeBudgetError when computation time exceeds the budget", async () => {
     let clock = 0;
+    // Each now() call advances 5 ms, so each chunk counts 5 ms of computation; 10 chunks exceed 25 ms.
     const run = sha256ArrayBuffer(new ArrayBuffer(10_000), {
       chunkBytes: 1000,
       timeBudgetMs: 25,
-      now: () => clock,
-      yieldControl: async () => { clock += 10; },
+      now: () => (clock += 5),
+      yieldControl: async () => {},
     });
     await expect(run).rejects.toBeInstanceOf(Sha256TimeBudgetError);
+  });
+
+  it("does not count time spent between chunks, such as the app being suspended in the background", async () => {
+    let clock = 0;
+    const input = new Uint8Array(10_000).map((_, i) => i % 251);
+    // Computation takes no clock time; each yield jumps the clock by 10 minutes, far beyond the budget.
+    const digest = await sha256ArrayBuffer(input.buffer, {
+      chunkBytes: 1000,
+      timeBudgetMs: 25,
+      now: () => clock,
+      yieldControl: async () => { clock += 600_000; },
+    });
+    expect(digest).toBe(createHash("sha256").update(input).digest("hex"));
   });
 });
