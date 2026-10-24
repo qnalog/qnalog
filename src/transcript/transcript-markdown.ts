@@ -1,6 +1,7 @@
 import { NS_TAG, nsRe } from "../shared/namespace";
 import type { Segment } from "../shared/types";
 import type { TranscriptSegmentRecord } from "./session-transcript";
+import { readSourceIntegrity } from "./source-integrity";
 import { labelPattern, labelText } from "../shared/note-labels";
 import { formatElapsed } from "../shared/util-common";
 import { protectActiveSessionKnowledge } from "../notes/note-document";
@@ -749,6 +750,16 @@ export function isTranscriptSegmentRecord(value: unknown): value is TranscriptSe
     && row.revisions.filter((revision) => revision.revision === row.currentRevision).length === 1;
 }
 
+/** 完整性记录形状非法时丢弃该字段，记录本身照常读取；缺省时保持缺省。 */
+function normalizeRecordSourceIntegrity(record: TranscriptSegmentRecord): TranscriptSegmentRecord {
+  if (!("sourceIntegrity" in record)) return record;
+  const integrity = readSourceIntegrity(record.sourceIntegrity);
+  const next: TranscriptSegmentRecord = { ...record };
+  if (integrity) next.sourceIntegrity = integrity;
+  else delete next.sourceIntegrity;
+  return next;
+}
+
 /** Serialize visible heading/text and its exact source record as one replaceable block. */
 export function serializeTranscriptBlock(segment: Segment, heading: string, displayText: string): string {
   if (!segment.transcript) throw new Error("Cannot serialize a transcript block without a source record");
@@ -846,7 +857,7 @@ export function readTranscriptBlocks(markdown: string): ReadTranscriptBlock[] {
     if (!validSegment(row.segment) || !isTranscriptSegmentRecord(row.transcript)) {
       throw new Error(`Transcript block ${parentId} has an invalid source record`);
     }
-    const transcript = row.transcript;
+    const transcript = normalizeRecordSourceIntegrity(row.transcript);
     if (transcript.id !== parentId) throw new Error(`Transcript block ${parentId} does not match its source record ID`);
     const startBody = textStart.index + textStart[0].length;
     const endBody = textEnd.index;

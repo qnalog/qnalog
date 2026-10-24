@@ -112,6 +112,7 @@ import { RepolishService } from "./notes/repolish-service";
 import { InboxWatcherService } from "./imports/inbox-watcher-service";
 import { KnowledgeExtractionService } from "./indexing/knowledge-extraction-service";
 import { ContinuationService } from "./session/continuation-service";
+import { IntegrityRecordAvailability, createAdapterIntegrityReadPort, runRecordingIntegrityCheck } from "./audio/recording-integrity";
 /**
  * 按设置与 Obsidian 的界面语言，决定插件当前使用的语言并记录到 i18n 模块。
  *
@@ -773,6 +774,32 @@ class QnALogPlugin extends obsidian.Plugin {
           return true;
         }
         void this.recording.startRecording({ appendToFile: file });
+        return true;
+      },
+    });
+
+    // 录音完整性核对：只在命令面板提供，不进右键菜单；当前笔记的转写账本有完整性记录时可用。核对只读，不改文件。
+    const integrityAvailability = new IntegrityRecordAvailability((path) => this.app.vault.adapter.read(path));
+    const checkRecordingIntegrity = (file: obsidian.TFile) => {
+      void runRecordingIntegrityCheck({
+        ...createAdapterIntegrityReadPort(this.app.vault.adapter),
+        notify: (message, timeoutMs) => { new obsidian.Notice(message, timeoutMs); },
+      }, file.path);
+    };
+    this.registerEvent(this.app.workspace.on("file-open", (file) => {
+      if (file instanceof obsidian.TFile && file.extension === "md") void integrityAvailability.refresh(file.path, file.stat.mtime);
+    }));
+    this.registerEvent(this.app.metadataCache.on("changed", (file) => {
+      if (file === this.app.workspace.getActiveFile()) void integrityAvailability.refresh(file.path, file.stat.mtime);
+    }));
+    this.addCommand({
+      id: "check-recording-integrity",
+      name: t("Check recording integrity of the current note"),
+      checkCallback: (checking) => {
+        const file = this.app.workspace.getActiveFile();
+        if (!(file instanceof obsidian.TFile) || file.extension !== "md") return false;
+        if (!integrityAvailability.availableNow(file.path, file.stat.mtime)) return false;
+        if (!checking) checkRecordingIntegrity(file);
         return true;
       },
     });

@@ -31,6 +31,7 @@ import { ViewShellService } from "../ui/view-shell-service";
 import { SessionFinalizeService } from "../notes/session-finalize-service";
 import { nsMarker } from "../shared/namespace";
 import { attachTextTranscript, attachTranscriptResult } from "../transcript/session-transcript";
+import { computeSourceIntegrity, type SourceIntegrity } from "../transcript/source-integrity";
 import { serializeTranscriptBlock } from "../transcript/transcript-markdown";
 
 import { t } from "../shared/i18n";
@@ -98,6 +99,23 @@ export class ImportService {
       },
     });
     modal.open();
+  }
+
+  /** 计算导入音频的完整性记录；任何失败都只写诊断日志并返回 null，不影响转写与写笔记。 */
+  async computeImportIntegrity(audioPath: string, bytes: ArrayBuffer): Promise<SourceIntegrity | null> {
+    try {
+      return await computeSourceIntegrity(bytes);
+    } catch (error) {
+      try {
+        await this.host.diagnostics.logDiagnostic("warn", "audio.integrity_record_failed", t("Could not record the audio checksum. The audio file was not changed."), {
+          audioPath,
+          sizeBytes: bytes.byteLength,
+          source: "import",
+          error: diagnosticError(error),
+        });
+      } catch { /* diagnostics must not change import behavior */ }
+      return null;
+    }
   }
 
   async importAudioFiles(paths, modeOverride, options: ImportAudioFilesOptions = {}): Promise<ImportAudioFilesResult | undefined> {
@@ -252,6 +270,7 @@ export class ImportService {
       let blob;
       let mime;
       let durationMs = 0;
+      let sourceIntegrity: SourceIntegrity | null = null;
       try {
         const ab = indexedFile instanceof obsidian.TFile
           ? await this.host.app.vault.readBinary(indexedFile)
@@ -261,6 +280,8 @@ export class ImportService {
           await this.host.diagnostics.logDiagnostic("warn", "import.empty_file", t("Imported audio file is empty."), { audioName: displayName, size: 0 });
           continue;
         }
+        // 只为保留在知识库中的源音频记录完整性；外部来源的临时缓存不记录。失败只写诊断日志。
+        if (keepSourceAudio) sourceIntegrity = await this.computeImportIntegrity(audioPath, ab);
         mime = mimeFromExt(file.extension);
         blob = new Blob([ab], { type: mime });
         durationMs = await getAudioDurationMs(blob);
@@ -492,7 +513,7 @@ export class ImportService {
         isFinal,
         source: "import",
         queueTaskId: retryTask ? retryTask.id : undefined,
-      }, session.id, error ? null : result, "asr");
+      }, session.id, error ? null : result, "asr", sourceIntegrity);
       session.segments.push(segmentRecord);
 
       const audioAnchor = keepSourceAudio ? getAudioTimeLink(displayName, startOffsetMs) : "";

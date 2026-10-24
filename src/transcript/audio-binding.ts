@@ -1,13 +1,17 @@
 import type { Segment } from "../shared/types";
-import { getCurrentTranscript, type TranscriptSegmentRecord } from "./session-transcript";
-import type { TranscriptAudioRef, TranscriptTiming } from "./session-transcript";
+import { getCurrentTranscript, withSourceIntegrity, type TranscriptAudioRef, type TranscriptSegmentRecord, type TranscriptTiming } from "./session-transcript";
+import type { SourceIntegrity } from "./source-integrity";
 
 function finiteNonNegative(value: number | undefined): number | null {
   return value !== undefined && Number.isFinite(value) && value >= 0 ? value : null;
 }
 
-/** Rebind source units to a retained session recording without changing unit identities. */
-export function bindTranscriptSegmentToAudio(segment: Segment, path: string, name: string): Segment {
+/**
+ * Rebind source units to a retained session recording without changing unit identities.
+ * `integrity` 是该录音读回核对后的完整性记录；给出时写入记录，缺省时保留路径未变的已有记录。
+ * 只有完整性记录变化时不增加 normalizationRevision，避免已有整理结果被判为过期。
+ */
+export function bindTranscriptSegmentToAudio(segment: Segment, path: string, name: string, integrity: SourceIntegrity | null = null): Segment {
   const record = segment.transcript;
   const targetPath = String(path || "");
   if (!record || !targetPath) return segment;
@@ -41,17 +45,21 @@ export function bindTranscriptSegmentToAudio(segment: Segment, path: string, nam
       || utterance.audioRef?.precision !== audioRef.precision) changed = true;
     return { ...utterance, startMs, endMs, timing, audioRef };
   });
-  if (!changed) return segment;
+  const nextIntegrity = integrity || (record.sourcePath === targetPath ? record.sourceIntegrity : undefined);
+  if (!changed) {
+    const withIntegrity = withSourceIntegrity(record, nextIntegrity);
+    return withIntegrity === record ? segment : { ...segment, transcript: withIntegrity };
+  }
   const updatedRevision = {
     ...current,
     normalizationRevision: current.normalizationRevision + 1,
     utterances,
   };
-  const updatedRecord: TranscriptSegmentRecord = {
+  const updatedRecord: TranscriptSegmentRecord = withSourceIntegrity({
     ...record,
     sourcePath: targetPath,
     sourceName: name,
     revisions: record.revisions.map((revision) => revision.revision === current.revision ? updatedRevision : revision),
-  };
+  }, nextIntegrity);
   return { ...segment, audioPath: targetPath, audioName: name, transcript: updatedRecord };
 }

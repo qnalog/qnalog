@@ -20,6 +20,7 @@ import { NS_AUDIO_PREFIX, NS_MACHINE_SHELL_RE } from "../shared/namespace";
 import { t } from "../shared/i18n";
 import { DEFAULT_SETTINGS } from "../shared/defaults";
 import type { DiagnosticsService } from "../diagnostics/diagnostics-service";
+import { computeSourceIntegrity, type SourceIntegrity } from "../transcript/source-integrity";
 
 export interface LiveAsrPipelineHost {
   getSettings(): Pick<PluginSettings, "audioFolder" | "segmentCacheFolder" | "keepSegmentAudioFiles" | "audioChannelMode" | "activeTranscribeProvider" | "transcribeProviders" | "transcribeEndpoint" | "transcribeApiKey" | "transcribeModel" | "transcribeLanguage">;
@@ -441,8 +442,9 @@ export class LiveAsrPipelineService implements LiveAsrPipeline {
       const ab = await seg.masterBlob.arrayBuffer();
       await this.host.vault.createBinary(target, ab);
       // 逐字节读回核对；无法读取或内容不符时保留增量分片与分段缓存。
+      let saved: ArrayBuffer;
       try {
-        const saved = await this.host.vault.adapter.readBinary(target);
+        saved = await this.host.vault.adapter.readBinary(target);
         let matches = saved.byteLength === ab.byteLength;
         if (matches) {
           const expectedBytes = new Uint8Array(ab);
@@ -460,6 +462,8 @@ export class LiveAsrPipelineService implements LiveAsrPipeline {
         new obsidian.Notice(t("The full recording could not be verified. Check the recording segments before closing Obsidian."), 10000);
         return;
       }
+      // 完整性记录只在读回核对通过后、对读回的字节计算；失败只写诊断日志，不影响后续保存与清理。
+      const integrity = await this.computeMasterAudioIntegrity(session, target, saved);
       try { await this.host.discardMasterPartials(session.id, target, ab.byteLength); }
       catch (e) {
         console.error("[QnALog] verify saved master audio failed", e);
@@ -467,6 +471,7 @@ export class LiveAsrPipelineService implements LiveAsrPipeline {
       }
       session.masterAudioPath = target;
       session.masterAudioName = target.split("/").pop() || target;
+      if (integrity) session.masterAudioIntegrity = integrity;
       const oldNames = new Set();
       for (const item of session.segments || []) {
         if (item.audioName) oldNames.add(item.audioName);
@@ -509,6 +514,21 @@ export class LiveAsrPipelineService implements LiveAsrPipeline {
     } catch (e) {
       console.error("[QnALog] master audio write failed", e);
       new obsidian.Notice(`${t("Failed to write the full recording: ")}${(e && e.message) || e}`, 8000);
+    }
+  }
+  private async computeMasterAudioIntegrity(session: RecordingSession, path: string, saved: ArrayBuffer): Promise<SourceIntegrity | null> {
+    try {
+      return await computeSourceIntegrity(saved);
+    } catch (e) {
+      try {
+        await this.host.diagnostics.logDiagnostic("warn", "audio.integrity_record_failed", t("Could not record the audio checksum. The audio file was not changed."), {
+          sessionId: session.id,
+          audioPath: path,
+          sizeBytes: saved.byteLength,
+          error: diagnosticError(e),
+        });
+      } catch { /* diagnostics must not change master audio saving */ }
+      return null;
     }
   }
   startMasterAudioSave(session, seg) {

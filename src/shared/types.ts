@@ -1,4 +1,5 @@
 import type { TranscriptSegmentRecord } from "../transcript/session-transcript";
+import type { SourceIntegrity } from "../transcript/source-integrity";
 import type { LiveAsrCircuitState } from "../asr/live-segment-policy";
 export type AudioInputMode = "mic" | "mix-virtual" | "virtualCable";
 export type AudioChannelMode = "auto" | "mono" | "multichannel";
@@ -491,6 +492,8 @@ export interface RecordingSession {
   _channelDownmixNotified?: boolean;
   masterAudioPath?: string;
   masterAudioName?: string;
+  /** 母带读回核对通过后计算的完整性记录；计算失败或超时时缺省。由收尾的录音绑定步骤写入转写账本。 */
+  masterAudioIntegrity?: SourceIntegrity;
   multiSourceAudio?: boolean;
   temporarySourcePaths?: string[];
   textImportSources?: unknown[];
