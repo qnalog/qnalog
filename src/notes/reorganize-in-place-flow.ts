@@ -1,7 +1,7 @@
 import * as obsidian from "obsidian";
 import { buildEmptyLlmOutputFallback, replaceRecordingPlaceholder } from "./note-write-content";
 import { hasOrganizedBody } from "./organized-body";
-import { AI_FAILURE_PLACEHOLDER_RE, findActiveVersionBlock, splitLeadingFrontmatter } from "./note-document";
+import { AI_FAILURE_PLACEHOLDER_RE, countTranscriptBlockIds, findActiveVersionBlock, hasRawMaterial, splitLeadingFrontmatter } from "./note-document";
 import { readRepolishInput } from "./repolish-input";
 import { extractTranscriptSegments } from "./note-transcript-ledger";
 import { getTaskErrorMessage } from "../shared/task-activity";
@@ -116,8 +116,8 @@ function extractOrganizedBody(snapshot: string): string {
 }
 
 /**
- * 标题「原始材料」之前、版本块之后可能还留有原始转写块（索引更新把标题挪到了转写之后）。
- * 这段内容不属于整理正文，重写时原样保留在标题之前。
+ * 标题「原始材料」之前、版本块之后可能还留有原始转写块（版本激活时标题曾被丢掉，索引更新再把标题补在转写之后）。
+ * 这段内容不属于整理正文，重写时原样移到标题之后。
  */
 const RAW_TAIL_ANCHOR_RE = new RegExp(`<details\\b|<!--\\s*${nsRe("")}(?!speaker-ref)|<span\\s+hidden\\b`, "i");
 
@@ -167,9 +167,29 @@ export function buildReorganizedNote(
     .filter(Boolean).join("\n\n");
   const frontmatter = mergeFrontmatter(current.frontmatter, generatedParts.frontmatter, leadingFrontmatter);
   const rawTail = removeOrganizedFailureSections(extractRawTailBeforeBoundary(current.body.slice(0, boundary.index)));
-  const preservedRaw = rawTail ? `---\n\n${rawTail}\n\n` : "";
   const keptTail = removeOrganizedFailureSections(current.body.slice(boundary.index));
-  return normalizeSessionKnowledgeMarkers(`${frontmatter}${rewrittenBody}\n\n${preservedRaw}${keptTail}`);
+  // 标题之前残留的原始材料移到「原始材料」标题之后：整理正文（标题之前）只含新正文，
+  // 原稿快照与版本正文都从这一段取，混入原始材料会在每次重新整理时复制一份（2026-10-24 回归）。
+  const heading = boundary[0];
+  const afterHeading = keptTail.slice(heading.length).replace(/^\s+/, "");
+  const rawSection = !rawTail ? keptTail
+    : keptTail.startsWith(heading) ? `${heading}\n\n${rawTail}\n\n${afterHeading}`
+      : `---\n\n${rawTail}\n\n${keptTail}`;
+  return normalizeSessionKnowledgeMarkers(`${frontmatter}${rewrittenBody}\n\n${rawSection}`);
+}
+
+/**
+ * 写入前核对原始材料只有一份：转写块不重复、「原始材料」标题至多一个、整理正文里没有原始材料，
+ * 且转写分段数不比整理前多（重新整理不会带来新音频）。任何一项不满足都拒绝写入，笔记与录音保持原样。
+ */
+export function assertSingleRawMaterial(snapshot: string, next: string, inputSegmentCount: number): void {
+  const refuse = () => { throw new Error(t("The reorganized note would duplicate the original material; the note was not changed.")); };
+  if ([...countTranscriptBlockIds(next).values()].some((count) => count > 1)) refuse();
+  if ((next.match(new RegExp(`^##\\s+(?:📁\\s*)?(?:${labelPattern("originalMaterial").source})\\s*$`, "gim")) || []).length > 1) refuse();
+  const nextBody = splitLeadingFrontmatter(next).body;
+  if (hasRawMaterial(nextBody.slice(0, findOriginalMaterialBoundary(nextBody).index))) refuse();
+  const before = Math.max(inputSegmentCount, extractTranscriptSegments(snapshot).length);
+  if (extractTranscriptSegments(next).length > before) refuse();
 }
 
 function lastSegmentEndMs(segments: Segment[]): number | null {
@@ -242,6 +262,7 @@ export async function reorganizeNoteInPlace(port: ReorganizeInPlacePort, file: u
     if (extractTranscriptSegments(next).length < input.segments.length) {
       throw new Error(t("The reorganized note would lose original transcript segments; the note was not changed."));
     }
+    assertSingleRawMaterial(snapshot, next, input.segments.length);
     port.tasks.patchTaskActivity(taskId, { stage: "writing", stageLabel: t("Writing"), detail: t("Replacing the organized note body"), progress: 78 });
     if (await port.getVault().read(file) !== snapshot) {
       throw new Error(t("The note changed while reorganizing; the result was not written. Review the note and try again."));
@@ -265,6 +286,8 @@ export async function reorganizeNoteInPlace(port: ReorganizeInPlacePort, file: u
     try {
       const updatedParts = splitLeadingFrontmatter(next);
       const updatedBody = extractOrganizedBody(next).replace(/^#\s+[^\n]*(?:\n+|$)/, "").trim();
+      // 原稿快照只存正文（containsRaw:false）；混入原始材料会在激活时再复制一份。
+      if (hasRawMaterial(updatedBody)) throw new Error(t("The reorganized note would duplicate the original material; the note was not changed."));
       const originalPayload = buildVersionPayload(updatedParts.frontmatter, updatedBody);
       snapshotUpdate = await port.replaceOriginalVersionBody(file, originalPayload);
       if (findActiveVersionBlock(snapshot) && snapshotUpdate?.path) {

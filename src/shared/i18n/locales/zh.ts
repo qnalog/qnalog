@@ -2737,6 +2737,8 @@ export const ZH: MessageTable = {
   "The outline covers only {0}/{1} segments of the whole note; the rest still went into the notes.": "整篇笔记大纲仅覆盖 {0}/{1} 段，其余转写仍已用于正文笔记。",
   "Index data": "索引数据",
   "Where decisions and actions were said": "决定与待办的原话出处",
+  "The reorganized note would duplicate the original material; the note was not changed.": "重新整理会复制原始材料，笔记未更改。",
+  "A version without original material cannot contain original material; the version was not saved.": "只含正文的版本不能带原始材料，版本未保存。",
   "The AI model chose these sources from the transcript. Click a time to listen and check.": "以下出处由 AI 模型从转写中选出，请点击时间回听核对。",
   "Decision": "决定",
   "Action item": "待办",

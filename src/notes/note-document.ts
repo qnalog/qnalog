@@ -9,7 +9,7 @@ import {
   nsMarker,
   nsRe,
 } from "../shared/namespace";
-import { UTILITY_DETAILS_SUMMARY_RE } from "../shared/note-labels";
+import { UTILITY_DETAILS_SUMMARY_RE, labelPattern } from "../shared/note-labels";
 
 export function stripFrontmatterSimple(text: string): string {
   return String(text || "").replace(/^\uFEFF?---\r?\n[\s\S]*?\r?\n---\r?\n?/, "");
@@ -354,3 +354,21 @@ export function extractSessionId(content: string, fallback: string): string {
   const match = String(content || "").match(NS_SESSION_VALUE_RE);
   return match ? match[1].trim() : fallback;
 }
+
+/**
+ * 文本里是否带原始材料：转写块标记、转写数据、分段块标记或「原始材料」标题。
+ * 用于确认整理正文与只含正文的版本快照里没有混入原始材料。
+ */
+export function hasRawMaterial(text: string): boolean {
+  return new RegExp(`${NS_TAG}-transcript-(?:start|data)|data-${NS_TAG}-transcript-data|${NS_TAG}-segments-start|^##\\s+(?:📁\\s*)?(?:${labelPattern("originalMaterial").source})\\s*$`, "im").test(String(text || ""));
+}
+
+/** 每个转写块 ID 出现的次数（按 transcript-start 标记计）；同一 ID 出现两次说明原始材料被复制。 */
+export function countTranscriptBlockIds(text: string): Map<string, number> {
+  const counts = new Map<string, number>();
+  for (const match of String(text || "").matchAll(new RegExp(`<!--\\s*${NS_TAG}-transcript-start:([^\\s>]+)\\s*-->`, "g"))) {
+    counts.set(match[1], (counts.get(match[1]) || 0) + 1);
+  }
+  return counts;
+}
+

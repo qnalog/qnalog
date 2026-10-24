@@ -62,7 +62,8 @@ export function replaceActiveVersionBlock(
   const parts = splitLeadingFrontmatter(extracted.withoutRaw);
   const bodyText = parts.body || "";
   const titleMatch = bodyText.match(/^#\s+[^\n]+\n*/);
-  const rawTail = extracted.tail ? `\n\n---\n\n${extracted.tail.trimEnd()}\n` : "\n";
+  // 原始材料放在「原始材料」标题之后；不带标题时，后续写入会把材料留在标题之前（2026-10-24 重复回归）。
+  const rawTail = extracted.tail ? `\n\n---\n\n## ${labelText("originalMaterial")}\n\n${extracted.tail.trimEnd()}\n` : "\n";
   if (titleMatch) {
     const titleBlock = titleMatch[0].trimEnd();
     const adopted = normalizeRawMaterialScaffold([
