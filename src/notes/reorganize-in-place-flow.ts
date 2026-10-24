@@ -10,7 +10,7 @@ import type { Segment } from "../shared/types";
 import type { TaskActivity, TaskActivityInput } from "../shared/task-activity";
 import type { OriginalSnapshotBodyUpdate } from "../versions/original-snapshot-store";
 import { buildVersionPayload } from "../versions/version-content";
-import { NS_FM, readNamespaceFrontmatter } from "../shared/namespace";
+import { NS_FM, nsRe, readNamespaceFrontmatter } from "../shared/namespace";
 import { normalizeSessionKnowledgeMarkers } from "../briefing/session-knowledge";
 import { stripEvidenceLinkBlocks } from "../briefing/evidence-links";
 import type { ErrataRules } from "../errata/errata-apply";
@@ -119,12 +119,15 @@ function extractOrganizedBody(snapshot: string): string {
  * 标题「原始材料」之前、版本块之后可能还留有原始转写块（索引更新把标题挪到了转写之后）。
  * 这段内容不属于整理正文，重写时原样保留在标题之前。
  */
+const RAW_TAIL_ANCHOR_RE = new RegExp(`<details\\b|<!--\\s*${nsRe("")}(?!speaker-ref)|<span\\s+hidden\\b`, "i");
+
 function extractRawTailBeforeBoundary(preBoundary: string): string {
   const active = findActiveVersionBlock(preBoundary);
   const from = active ? active.end : (preBoundary.match(/^\s*#\s+[^\r\n]+(?:\r?\n|$)/)?.[0].length ?? 0);
   // 旧的「原话出处」区块属于旧整理正文，不是原始材料；新正文自带新区块。
   const tail = stripEvidenceLinkBlocks(preBoundary.slice(from));
-  const anchor = tail.search(/<details\b|<!--\s*qnalog-|<span\s+hidden\b/i);
+  // 事后命名说话人会在整理正文里写入行内 speaker-ref 标记；它属于旧正文，不能当作原始材料的起点。
+  const anchor = tail.search(RAW_TAIL_ANCHOR_RE);
   if (anchor < 0) return "";
   return tail.slice(anchor).replace(/(?:\r?\n)+\s*---\s*$/, "").trim();
 }
