@@ -24,9 +24,13 @@
  *   units without text positions cannot be split by character.
  * - Time offset uses units with timing "provider". Each reference utterance is
  *   matched to the provider unit(s) whose text covers it best, and the offset is
- *   |unit start - utterance start| of the earliest matched unit.
+ *   |unit start - utterance start| of the earliest matched unit. Only units that start
+ *   within 30 s of the utterance are considered (OFFSET_MATCH_WINDOW_MS).
  * - Text error rate is edit distance over tokens divided by reference token
- *   count. Tokens are single CJK characters and lower-cased Latin/digit words.
+ *   count, computed on the units' text when units exist (result.text may carry
+ *   time and speaker labels). A second rate first writes Chinese numerals as
+ *   Arabic digits in both texts, because services differ in how they write numbers.
+ *   Tokens are single CJK characters and lower-cased Latin/digit words.
  */
 import type { AsrTranscriptResult } from "../../src/asr/transcript-result";
 
@@ -75,6 +79,8 @@ export interface TextScore {
   hypothesisTokens: number;
   editDistance: number;
   errorRate: number;
+  /** Same comparison after Chinese numerals in both texts are written as Arabic digits (十一 → 11, 百分之十五 → 15). */
+  numberNormalizedErrorRate: number;
 }
 
 export interface AccuracyReport {
@@ -241,20 +247,29 @@ function containment(unitTokens: readonly string[], refBag: ReadonlyMap<string, 
   return unitTokens.length ? hit / unitTokens.length : 0;
 }
 
-export function scoreOffsets(truth: GroundTruth, result: AsrTranscriptResult): OffsetScore {
+/**
+ * Units are only matched to utterances that start within this window. In long recordings short replies
+ * (对。好的。) repeat, and without a window they match units many minutes away.
+ */
+export const OFFSET_MATCH_WINDOW_MS = 30_000;
+
+export function scoreOffsets(truth: GroundTruth, result: AsrTranscriptResult, windowMs = OFFSET_MATCH_WINDOW_MS): OffsetScore {
   const refBags = truth.utterances.map((u) => bagOf(tokenize(u.text)));
   const units = result.units
     .filter((u) => u.timing === "provider" && u.startMs !== null)
     .map((u) => ({ start: u.startMs as number, tokens: tokenize(u.normalizedText || u.rawText) }))
     .filter((u) => u.tokens.length > 0);
+  const near = (a: number, b: number): boolean => Math.abs(a - b) <= windowMs;
   const offsets: number[] = [];
   truth.utterances.forEach((ref, index) => {
     let earliest: number | null = null;
     for (const unit of units) {
+      if (!near(unit.start, ref.startMs)) continue;
       const own = containment(unit.tokens, refBags[index]);
       if (own < 0.5) continue;
-      // A unit belongs to the utterance it matches best.
-      const rival = refBags.some((bag, j) => j !== index && containment(unit.tokens, bag) > own);
+      // A unit belongs to the nearby utterance it matches best.
+      const rival = truth.utterances.some((other, j) => j !== index && near(unit.start, other.startMs)
+        && containment(unit.tokens, refBags[j]) > own);
       if (rival) continue;
       if (earliest === null || unit.start < earliest) earliest = unit.start;
     }
@@ -271,15 +286,60 @@ export function timingShares(result: AsrTranscriptResult): TimingShares {
   return { provider: share("provider"), audioSpan: share("audio-span"), unknown: share("unknown"), totalUnits: total };
 }
 
+const CN_DIGITS: Record<string, number> = { 零: 0, 〇: 0, 一: 1, 二: 2, 两: 2, 三: 3, 四: 4, 五: 5, 六: 6, 七: 7, 八: 8, 九: 9 };
+const CN_UNITS: Record<string, number> = { 十: 10, 百: 100, 千: 1000 };
+const CN_NUMBER_RUN = /[零〇一二两三四五六七八九十百千万亿]+/g;
+
+/** Reads one run of Chinese numerals. Runs without unit characters (二〇二六) are read digit by digit. */
+function chineseRunToArabic(run: string): string {
+  if (!/[十百千万亿]/.test(run)) return [...run].map((ch) => String(CN_DIGITS[ch])).join("");
+  let total = 0;
+  let section = 0;
+  let digit = 0;
+  for (const ch of run) {
+    if (ch in CN_DIGITS) {
+      digit = CN_DIGITS[ch];
+    } else if (ch in CN_UNITS) {
+      section += (digit || 1) * CN_UNITS[ch];
+      digit = 0;
+    } else {
+      const big = ch === "万" ? 10_000 : 100_000_000;
+      total = (total + section + digit) * big;
+      section = 0;
+      digit = 0;
+    }
+  }
+  return String(total + section + digit);
+}
+
+/** Writes Chinese numerals as Arabic digits and drops 百分之 before a number; applied to both texts. */
+export function normalizeNumbers(text: string): string {
+  return String(text || "")
+    .replace(/百分之([零〇一二两三四五六七八九十百千万亿]+)/g, "$1")
+    .replace(CN_NUMBER_RUN, chineseRunToArabic);
+}
+
+/** Hypothesis text: the units' text when the service returned units, otherwise the whole text. */
+function hypothesisText(result: AsrTranscriptResult): string {
+  if (result.units.length) return result.units.map((u) => u.normalizedText || u.rawText).join(" ");
+  return result.text || "";
+}
+
 export function scoreText(truth: GroundTruth, result: AsrTranscriptResult): TextScore {
-  const ref = tokenize(truth.utterances.map((u) => u.text).join(" "));
-  const hyp = tokenize(result.text || result.units.map((u) => u.normalizedText || u.rawText).join(" "));
+  const refText = truth.utterances.map((u) => u.text).join(" ");
+  const hypText = hypothesisText(result);
+  const ref = tokenize(refText);
+  const hyp = tokenize(hypText);
   const distance = editDistance(ref, hyp);
+  const refN = tokenize(normalizeNumbers(refText));
+  const hypN = tokenize(normalizeNumbers(hypText));
+  const distanceN = editDistance(refN, hypN);
   return {
     referenceTokens: ref.length,
     hypothesisTokens: hyp.length,
     editDistance: distance,
     errorRate: ref.length ? distance / ref.length : hyp.length ? 1 : 0,
+    numberNormalizedErrorRate: refN.length ? distanceN / refN.length : hypN.length ? 1 : 0,
   };
 }
 
@@ -308,6 +368,6 @@ export function formatReport(report: AccuracyReport): string {
     `Speaker attribution: wrong ${pct(s.wrongShare)} of labelled time, coverage ${pct(s.coverage)}`,
     `Start offset: median ${ms(o.medianMs)}, p90 ${ms(o.p90Ms)} (${o.matchedUtterances} utterances)`,
     `Timing precision: provider ${pct(t.provider)}, audio-span ${pct(t.audioSpan)}, unknown ${pct(t.unknown)} (${t.totalUnits} units)`,
-    `Text error rate: ${pct(report.text.errorRate)} (${report.text.editDistance} edits / ${report.text.referenceTokens} reference tokens)`,
+    `Text error rate: ${pct(report.text.errorRate)} (${report.text.editDistance} edits / ${report.text.referenceTokens} reference tokens); with numbers normalized ${pct(report.text.numberNormalizedErrorRate)}`,
   ].join("\n");
 }

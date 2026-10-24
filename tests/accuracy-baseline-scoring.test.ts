@@ -2,6 +2,8 @@ import { readFileSync } from "node:fs";
 import { describe, expect, it } from "vitest";
 import {
   editDistance,
+  normalizeNumbers,
+  scoreText,
   scoreTranscript,
   tokenize,
   type GroundTruth,
@@ -156,5 +158,45 @@ describe("accuracy baseline scoring", () => {
     expect(r.offset.matchedUtterances).toBe(7);
     expect(r.speaker.wrongShare).toBeGreaterThan(0);
     expect(r.speaker.mapping).toEqual({ spk_2: "Alice", spk_0: "Bob", spk_1: "Carol" });
+  });
+});
+
+describe("number normalization and hypothesis text", () => {
+  it("writes Chinese numerals as Arabic digits", () => {
+    expect(normalizeNumbers("还剩十一个，四十二万，百分之十五，二〇二六年，两点")).toBe("还剩11个，420000，15，2026年，2点");
+  });
+
+  it("scores units' text, not result.text with time and speaker labels", () => {
+    const truth = { title: "t", language: "zh" as const, utterances: [{ speaker: "A", text: "还剩十一个", startMs: 0, endMs: 1000 }] };
+    const result = {
+      text: "[00:00] [Speaker 1] 还剩11个",
+      rawText: null,
+      providerId: "p",
+      units: [{ rawText: "还剩11个", normalizedText: "还剩11个", speakerId: "0", speakerName: null, startMs: 0, endMs: 1000, timing: "provider" as const }],
+    };
+    const score = scoreText(truth, result);
+    // Reference 还 剩 十 一 个 (5) vs hypothesis 还 剩 11 个 (4): 十→11 substitution plus 一 deletion = 2 edits.
+    expect(score.editDistance).toBe(2);
+    expect(score.numberNormalizedErrorRate).toBe(0);
+  });
+});
+
+describe("offset matching window", () => {
+  it("does not match a repeated short reply to a unit minutes away", () => {
+    const truth = {
+      title: "t", language: "zh" as const,
+      utterances: [
+        { speaker: "A", text: "对。", startMs: 1_000, endMs: 1_500 },
+        { speaker: "B", text: "我们下周再讨论预算。", startMs: 2_000, endMs: 5_000 },
+        { speaker: "A", text: "对。", startMs: 600_000, endMs: 600_500 },
+      ],
+    };
+    const unit = (text: string, startMs: number) => ({ rawText: text, normalizedText: text, speakerId: null, speakerName: null, startMs, endMs: startMs + 500, timing: "provider" as const });
+    // The early 对 is missing from the hypothesis; only the late one is present.
+    const result = { text: "", rawText: null, providerId: "p", units: [unit("我们下周再讨论预算。", 2_100), unit("对。", 600_050)] };
+    const score = scoreTranscript(truth, result).offset;
+    // Matches: 预算 sentence (100 ms) and the late 对 (50 ms); the early 对 stays unmatched instead of a 599 s offset.
+    expect(score.matchedUtterances).toBe(2);
+    expect(score.p90Ms).toBe(100);
   });
 });

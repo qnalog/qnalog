@@ -31,8 +31,8 @@
       "timing": "provider"
     },
     {
-      "rawText": "那 release 定在下周五可以吗？",
-      "normalizedText": "那 release 定在下周五可以吗？",
+      "rawText": "那 release 定在下周伍可以吗？",
+      "normalizedText": "那 release 定在下周伍可以吗？",
       "speakerId": "spk_2",
       "speakerName": null,
       "startMs": 11320,
