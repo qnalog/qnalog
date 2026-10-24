@@ -16,7 +16,7 @@ import { labelText } from "../shared/note-labels";
 import { t } from "../shared/i18n";
 import { NS_TAG } from "../shared/namespace";
 import type { Segment } from "../shared/types";
-import type { Utterance } from "../transcript/session-transcript";
+import type { TranscriptAudioRef, Utterance } from "../transcript/session-transcript";
 import {
   buildKnowledgeEvidenceIndex,
   resolveIndexedUtterance,
@@ -148,10 +148,15 @@ function renderSpeaker(name: string | null): string {
   return inlineText(name || "");
 }
 
+/** 录音文件内的起点（毫秒）；没有引用、起点缺失或不是非负有限数时返回 null。精度由调用方按 `ref.precision` 判断。 */
+export function audioRefStartMs(ref: TranscriptAudioRef | null | undefined): number | null {
+  return ref && typeof ref.startMs === "number" && Number.isFinite(ref.startMs) && ref.startMs >= 0 ? ref.startMs : null;
+}
+
 /** 精度按 audioRef.precision：provider 不加后缀；audio-span 加「约」；segment 指向段起点并注明「约在此段」；unknown 不出链接。 */
 function renderTime(utterance: Utterance): string {
   const ref = utterance.audioRef;
-  const startMs = ref && typeof ref.startMs === "number" && Number.isFinite(ref.startMs) && ref.startMs >= 0 ? ref.startMs : null;
+  const startMs = audioRefStartMs(ref);
   if (!ref || startMs === null || ref.precision === "unknown") return labelText("evidenceTimeUnknown").trim();
   const label = formatElapsed(startMs);
   const target = linkTarget(ref.path) || linkTarget(ref.name);

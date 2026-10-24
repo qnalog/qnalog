@@ -53,6 +53,7 @@ const CONTENT_FILES: Record<string, string> = {
   "src/audio/speaker-mentions.ts": "说话人提及标记与编号标签匹配（写入笔记正文的内容，括号随笔记语言而非界面语言）",
   "src/recent/recent-notes.ts": "最近主题词条数据（过滤 token）",
   "src/shared/util-text.ts": "笔记文本解析辅助的匹配串",
+  "src/shared/chinese-numerals.ts": "中文数字与阿拉伯数字的换算表（match）",
   "src/shared/util-note.ts": "笔记工具的匹配与标记",
   "src/topics/topic-page.ts": "主题页正文模板、章节名与引用标签（写入用户主题页的内容）",
   "src/topics/topic-integration.ts": "发送模型的结构标签与未核实标记（内部提示词/笔记内容）",

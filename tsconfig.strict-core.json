@@ -173,6 +173,9 @@
     "src/ui/topic-preview-modal.ts",
     "src/ui/topic-ui-actions.ts",
     "src/ui/topics-panel.ts",
-    "src/ui/topic-prompt-row.ts"
+    "src/ui/topic-prompt-row.ts",
+    "src/shared/chinese-numerals.ts",
+    "src/notes/recording-search.ts",
+    "src/ui/recording-search-panel.ts"
   ]
 }

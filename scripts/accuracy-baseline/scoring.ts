@@ -4,7 +4,8 @@
  * Location: scripts/accuracy-baseline/. The folder is outside tsconfig "include"
  * (src only), so neither the plugin bundle nor the `tsc` build reads it. The CLI
  * (scripts/accuracy-baseline.mjs) bundles this file with esbuild at run time,
- * the same way scripts/eval-related-notes.mjs does. It only imports a type.
+ * the same way scripts/eval-related-notes.mjs does. It imports a type and the
+ * numeral normalizer shared with the plugin (src/shared/chinese-numerals.ts).
  *
  * Ground-truth file format (JSON):
  *   {
@@ -33,6 +34,7 @@
  *   Tokens are single CJK characters and lower-cased Latin/digit words.
  */
 import type { AsrTranscriptResult } from "../../src/asr/transcript-result";
+import { normalizeChineseNumbers } from "../../src/shared/chinese-numerals";
 
 export interface ReferenceUtterance {
   speaker: string;
@@ -286,38 +288,8 @@ export function timingShares(result: AsrTranscriptResult): TimingShares {
   return { provider: share("provider"), audioSpan: share("audio-span"), unknown: share("unknown"), totalUnits: total };
 }
 
-const CN_DIGITS: Record<string, number> = { 零: 0, 〇: 0, 一: 1, 二: 2, 两: 2, 三: 3, 四: 4, 五: 5, 六: 6, 七: 7, 八: 8, 九: 9 };
-const CN_UNITS: Record<string, number> = { 十: 10, 百: 100, 千: 1000 };
-const CN_NUMBER_RUN = /[零〇一二两三四五六七八九十百千万亿]+/g;
-
-/** Reads one run of Chinese numerals. Runs without unit characters (二〇二六) are read digit by digit. */
-function chineseRunToArabic(run: string): string {
-  if (!/[十百千万亿]/.test(run)) return [...run].map((ch) => String(CN_DIGITS[ch])).join("");
-  let total = 0;
-  let section = 0;
-  let digit = 0;
-  for (const ch of run) {
-    if (ch in CN_DIGITS) {
-      digit = CN_DIGITS[ch];
-    } else if (ch in CN_UNITS) {
-      section += (digit || 1) * CN_UNITS[ch];
-      digit = 0;
-    } else {
-      const big = ch === "万" ? 10_000 : 100_000_000;
-      total = (total + section + digit) * big;
-      section = 0;
-      digit = 0;
-    }
-  }
-  return String(total + section + digit);
-}
-
 /** Writes Chinese numerals as Arabic digits and drops 百分之 before a number; applied to both texts. */
-export function normalizeNumbers(text: string): string {
-  return String(text || "")
-    .replace(/百分之([零〇一二两三四五六七八九十百千万亿]+)/g, "$1")
-    .replace(CN_NUMBER_RUN, chineseRunToArabic);
-}
+export const normalizeNumbers = normalizeChineseNumbers;
 
 /** Hypothesis text: the units' text when the service returned units, otherwise the whole text. */
 function hypothesisText(result: AsrTranscriptResult): string {

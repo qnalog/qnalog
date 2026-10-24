@@ -57,6 +57,8 @@ import { MEETING_METADATA_KINDS } from "../notes/meeting-workbench";
 import { isImageMeetingMaterial, normalizeMeetingWorkbench } from "../notes/meeting-workbench-state";
 
 import { extractNotePanelData } from "../notes/detail-blocks";
+import { RecordingSearchController } from "./recording-search-panel";
+import type { RecordingSearchTarget } from "../notes/recording-search";
 import { deleteNoteWithVariants, getDirectNoteVariants, type NoteVariantSnapshot } from "../notes/delete-note-with-variants";
 
 import { getSessionLatestSegmentEndMs, isSameVaultPath, probeAudioDurationMs, resolveAudioFileRef } from "../notes/audio-refs";
@@ -187,6 +189,8 @@ export class OutlineView extends obsidian.ItemView {
   /** 内联回听对应的音频文件。 */
   declare inlineAudioFile: unknown;
   declare inlinePlaybackController: OutlinePlaybackController | null;
+  /** 笔记面板「在录音中查找」的查询、计时与焦点状态。 */
+  declare recordingSearch: RecordingSearchController;
   declare inlinePlaybackState: { currentMs: number; totalMs: number; sourcePath: string; playing: boolean; error: string } | null;
   /** 内联回听对应的大纲 DOM 容器。 */
   declare inlineOutlineBody: unknown;
@@ -240,6 +244,7 @@ export class OutlineView extends obsidian.ItemView {
     this.inlineOutlineBody = null;
     this.inlinePlaybackController = null;
     this.inlinePlaybackState = null;
+    this.recordingSearch = new RecordingSearchController();
     this.outlineViewingMs = null;
     this.lastLiveOutlineFocusKey = "";
     this._outlineFollowRaf = 0;
@@ -312,6 +317,7 @@ export class OutlineView extends obsidian.ItemView {
     if (this._outlineFollowRaf) { cancelAnimationFrame(this._outlineFollowRaf); this._outlineFollowRaf = 0; }
     this.sediment?.dispose();
     this.disposeInlineAudio();
+    this.recordingSearch?.dispose();
   }
   // Moves the highlight to the rows of the open file.
   syncActiveRows() {
@@ -469,6 +475,7 @@ export class OutlineView extends obsidian.ItemView {
         if (this.containerEl.children[1] === root) root.scrollTop = restoreTop;
       });
     };
+    this.recordingSearch?.captureFocusBeforeRender();
     this.disposeInlineAudio();
     root.empty();
     root.addClass("qnalog-outline");
@@ -1217,6 +1224,7 @@ export class OutlineView extends obsidian.ItemView {
     appendBtn.onclick = () => { void this.plugin.recording.startRecording({ appendToFile: file }); };
 
     this.renderCompletedNotePlayer(root, data, file);
+    this.renderRecordingSearch(root, data, file);
     if (data.speakerIds && data.speakerIds.length) this.sediment?.renderSedimentSpeakerMap(root, file, data);
 
     const outlineSec = root.createDiv({ cls: "qnalog-outline-section" });
@@ -1258,6 +1266,40 @@ export class OutlineView extends obsidian.ItemView {
         onTimeLink: (payload: unknown) => this.seekInlineAudio(payload),
       }));
     }
+  }
+
+  /** 「在录音中查找」：笔记有录音（内联播放器已建立）且有转写时显示在播放器下方。 */
+  renderRecordingSearch(root, data, file) {
+    const index = data && data.recordingSearch;
+    if (!this.inlineAudioEl || !index || !index.entries.length) {
+      if (this.recordingSearch.takeUnavailableFocusRequest()) {
+        new obsidian.Notice(i18nT("This note has no recording with a transcript to search."), 6000);
+      }
+      return;
+    }
+    this.recordingSearch.render(root, {
+      index,
+      filePath: file.path,
+      onSeek: (target) => this.seekRecordingSearchTarget(target, file),
+    });
+  }
+
+  /** 查找结果与正文时间链接走同一条点击路径：解析音频与笔记时钟后交给 seekInlineAudio。 */
+  seekRecordingSearchTarget(target: RecordingSearchTarget, file) {
+    void this.plugin.audioLinks.openAudioTimeLink(target.linkPath, target.label, file.path, {
+      onTimeLink: (payload) => this.seekInlineAudio(payload),
+    }).catch((e) => {
+      console.error("[QnALog] open recording search result failed", e);
+      new obsidian.Notice(`${i18nT("QnALog review failed: ")}${(e && e.message) || e}`);
+    });
+  }
+
+  /** 命令「在当前笔记的录音中查找」：切到笔记面板并聚焦查找框（笔记面板仍在读取时，读取完成后聚焦）。 */
+  focusRecordingSearch() {
+    this.showRecentHome = false;
+    this.idlePanelTab = "outline";
+    this.recordingSearch.requestFocus();
+    this.render();
   }
 
   renderCompletedNotePlayer(root, data, sourceFile) {

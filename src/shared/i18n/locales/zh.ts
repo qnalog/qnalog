@@ -3076,4 +3076,12 @@ export const ZH: MessageTable = {
   "file is larger than 256 MiB; not checked": "文件超过 256 MiB，未核对",
   "could not be read; not checked": "读取失败，未核对",
   "Could not write the recording checksum into the transcript ledger.": "未能把录音校验值写入转写账本。",
+  "Find in recording": "在录音中查找",
+  "Find in the current note's recording": "在当前笔记的录音中查找",
+  "approx.": "约",
+  "approximately in this segment": "约在此段",
+  "time unknown": "时间未知",
+  "{0} more results not shown; add words to narrow the search.": "另有 {0} 条结果未显示，可增加关键词缩小范围。",
+  "Play from {0}": "从 {0} 开始播放",
+  "This note has no recording with a transcript to search.": "这篇笔记没有可查找的录音转写。",
 };

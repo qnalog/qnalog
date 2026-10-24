@@ -12349,3 +12349,155 @@ button.qnalog-wizard-btn-secondary {
   opacity: 0;
   pointer-events: none;
 }
+
+/* 笔记面板「在录音中查找」：播放器下方的查找框与结果列表 */
+.qnalog-outline .qnalog-recording-search {
+  display: grid;
+  gap: 6px;
+  min-width: 0;
+}
+
+.qnalog-outline .qnalog-recording-search-box {
+  display: flex;
+  align-items: center;
+  min-width: 0;
+  height: 34px;
+  padding: 0 8px 0 10px;
+  gap: 7px;
+  border: 1px solid var(--qnalog-border-line, var(--background-modifier-border));
+  border-radius: 9px;
+  background: color-mix(in srgb, var(--background-secondary) 76%, var(--background-primary));
+}
+
+.qnalog-outline .qnalog-recording-search-box:focus-within {
+  border-color: var(--interactive-accent);
+}
+
+.qnalog-outline .qnalog-recording-search-icon {
+  display: inline-flex;
+  flex: 0 0 auto;
+  align-items: center;
+  color: var(--text-muted);
+}
+
+.qnalog-outline .qnalog-recording-search-icon svg {
+  width: 15px;
+  height: 15px;
+}
+
+.qnalog-outline .qnalog-recording-search-input,
+.qnalog-outline .qnalog-recording-search-input:focus {
+  flex: 1 1 auto;
+  min-width: 0;
+  height: 30px;
+  padding: 0;
+  border: 0;
+  border-radius: 0;
+  outline: none;
+  background: transparent;
+  box-shadow: none;
+  color: var(--text-normal);
+  font-size: var(--font-ui-smaller);
+}
+
+.qnalog-outline.is-mobile .qnalog-recording-search-input {
+  font-size: 16px; /* 移动端输入框字号低于 16px 时 iOS 会自动放大页面 */
+}
+
+.qnalog-outline .qnalog-recording-search-results {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  align-content: start;
+  gap: 2px;
+  min-width: 0;
+  max-height: min(50vh, 420px);
+  overflow-y: auto;
+  overscroll-behavior: contain;
+}
+
+.qnalog-outline .qnalog-recording-search-results:empty {
+  display: none;
+}
+
+.qnalog-outline .qnalog-recording-search-row {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  gap: 2px;
+  min-width: 0;
+  padding: 6px 8px;
+  border-radius: 7px;
+  color: var(--text-normal);
+  text-align: start;
+  cursor: pointer;
+}
+
+.qnalog-outline .qnalog-recording-search-row:hover,
+.qnalog-outline .qnalog-recording-search-row:focus-visible {
+  background: var(--background-modifier-hover);
+}
+
+.qnalog-outline .qnalog-recording-search-row:focus-visible {
+  outline: 2px solid var(--interactive-accent);
+  outline-offset: -2px;
+}
+
+.qnalog-outline .qnalog-recording-search-row.is-unplayable {
+  cursor: default;
+  opacity: 0.75;
+}
+
+.qnalog-outline .qnalog-recording-search-meta {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 2px 8px;
+  min-width: 0;
+  color: var(--text-muted);
+  font-size: var(--qnalog-font-ui-smallest);
+}
+
+.qnalog-outline .qnalog-recording-search-time {
+  color: var(--text-accent);
+  font-variant-numeric: tabular-nums;
+}
+
+.qnalog-outline .qnalog-recording-search-precision {
+  color: var(--text-faint);
+}
+
+.qnalog-outline .qnalog-recording-search-speaker {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.qnalog-outline .qnalog-recording-search-speaker.is-hit {
+  padding: 0 4px;
+  border-radius: 4px;
+  background: var(--text-highlight-bg);
+  color: var(--text-normal);
+}
+
+.qnalog-outline .qnalog-recording-search-snippet {
+  min-width: 0;
+  font-size: var(--font-ui-smaller);
+  line-height: 1.45;
+  overflow-wrap: anywhere;
+}
+
+.qnalog-outline .qnalog-recording-search-hit {
+  padding: 0 1px;
+  border-radius: 3px;
+  background: var(--text-highlight-bg);
+  color: var(--text-normal);
+}
+
+.qnalog-outline .qnalog-recording-search-status {
+  color: var(--text-muted);
+  font-size: var(--qnalog-font-ui-smallest);
+}
+
+.qnalog-outline .qnalog-recording-search-status:empty {
+  display: none;
+}
