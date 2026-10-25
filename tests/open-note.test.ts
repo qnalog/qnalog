@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from "vitest";
-import { findOpenMarkdownLeaf, openOrRevealFile } from "../src/shared/open-note";
+import { findOpenMarkdownLeaf, openFileAtLine, openOrRevealFile } from "../src/shared/open-note";
 
 vi.mock("obsidian", () => ({
   normalizePath: (path: string) => path.replace(/\\/g, "/").replace(/\/+/g, "/").replace(/^\.?\//, "").replace(/\/$/, ""),
@@ -49,5 +49,38 @@ describe("open or reveal a note", () => {
     expect(workspace.getLeaf).toHaveBeenCalledWith(true);
     expect(newLeaf.openFile).toHaveBeenCalledWith(topicFile);
     expect(workspace.revealLeaf).not.toHaveBeenCalled();
+  });
+});
+
+describe("open a note at a line", () => {
+  function lineApp(existing: Array<{ view: Record<string, unknown> }>) {
+    const editor = { setCursor: vi.fn(), scrollIntoView: vi.fn() };
+    const newLeaf = { view: { file: null, editor } as Record<string, unknown>, openFile: vi.fn(async () => undefined) };
+    const workspace = {
+      getLeavesOfType: vi.fn(() => existing),
+      revealLeaf: vi.fn(async () => undefined),
+      setActiveLeaf: vi.fn(),
+      getLeaf: vi.fn(() => newLeaf),
+    };
+    return { app: { workspace } as never, workspace, newLeaf, editor };
+  }
+
+  it("opens the note with the line in the open state, then puts the cursor there and scrolls it into view", async () => {
+    const { app, workspace, newLeaf, editor } = lineApp([]);
+    await openFileAtLine(app, topicFile, 12);
+    expect(workspace.getLeaf).toHaveBeenCalledWith(true);
+    expect(newLeaf.openFile).toHaveBeenCalledWith(topicFile, { active: true, eState: { line: 12 } });
+    expect(editor.setCursor).toHaveBeenCalledWith({ line: 12, ch: 0 });
+    expect(editor.scrollIntoView).toHaveBeenCalledWith({ from: { line: 12, ch: 0 }, to: { line: 12, ch: 0 } }, true);
+    expect(workspace.setActiveLeaf).toHaveBeenCalledWith(newLeaf, { focus: true });
+  });
+
+  it("reuses the tab that already shows the note and skips the cursor when the view has no editor", async () => {
+    const shown = { view: { file: { path: "QnALog/主题/Topic.md" } }, openFile: vi.fn(async () => undefined) };
+    const { app, workspace } = lineApp([shown]);
+    await openFileAtLine(app, topicFile, 3);
+    expect(workspace.getLeaf).not.toHaveBeenCalled();
+    expect(shown.openFile).toHaveBeenCalledWith(topicFile, { active: true, eState: { line: 3 } });
+    expect(workspace.revealLeaf).toHaveBeenCalledWith(shown);
   });
 });

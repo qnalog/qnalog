@@ -51,6 +51,7 @@ import { openCreateTopic, openTopicJoin } from "./topic-ui-actions";
 import { isBrowseTab, nextSidebarTab, scrollTopAfterRender } from "./sidebar-tab-policy";
 import { syncActiveRow } from "./row-active";
 import { renderTopicPromptRow } from "./topic-prompt-row";
+import { openTodoSummaryView } from "./todo-summary-view";
 import { openVocabularyFile } from "../vocabulary/open-vocabulary-file";
 
 import { MEETING_METADATA_KINDS } from "../notes/meeting-workbench";
@@ -1728,6 +1729,12 @@ export class OutlineView extends obsidian.ItemView {
         notify: (message) => new obsidian.Notice(message),
       });
     };
+    const todoBtn = actions.createEl("button", {
+      cls: "clickable-icon qnalog-outline-todo-summary-btn",
+      attr: { "aria-label": i18nT("Open to-do summary"), title: i18nT("Open to-do summary") },
+    });
+    try { obsidian.setIcon(todoBtn, "list-checks"); } catch { todoBtn.setText(i18nT("Open to-do summary")); }
+    todoBtn.onclick = () => { void openTodoSummaryView(this.app.workspace); };
     const btn = actions.createEl("button", {
       cls: "clickable-icon qnalog-outline-settings-btn",
       attr: { "aria-label": i18nT("Open QnALog settings"), title: i18nT("Open QnALog settings") },

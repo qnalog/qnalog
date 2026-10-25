@@ -64,6 +64,12 @@ function attribute(tag: string, name: string): string {
   return new RegExp(`\\s${name}=["']([^"']*)["']`).exec(tag)?.[1] ?? "";
 }
 
+/** 全部完整区块在 `markdown` 中的起止偏移（含起止标记）；只有起始标记的残片不计入。 */
+export function findEvidenceLinkBlockRanges(markdown: string): Array<{ start: number; end: number }> {
+  const text = String(markdown || "");
+  return [...text.matchAll(blockPattern(true))].map((match) => ({ start: match.index, end: match.index + match[0].length }));
+}
+
 /** 删除全部完整区块（起止标记之间的内容一并删除）；只有起始标记、没有结束标记的残片不动。 */
 export function stripEvidenceLinkBlocks(markdown: string): string {
   const text = String(markdown || "");

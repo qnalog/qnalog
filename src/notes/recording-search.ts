@@ -226,9 +226,11 @@ export function buildRecordingSearchIndex(segments: readonly Segment[], knowledg
   return { entries: keyed.map((row) => row.entry) };
 }
 
-interface ResolvedTime { startMs: number; precision: TranscriptTiming; linkPath: string }
+/** Start time of an utterance inside its audio file, with the link path a time link opens. */
+export interface ResolvedTime { startMs: number; precision: TranscriptTiming; linkPath: string }
 
-function utteranceTime(utterance: Utterance): ResolvedTime | null {
+/** Null when the utterance has no audio reference, no usable start, unknown precision or no audio link path. */
+export function utteranceTime(utterance: Utterance): ResolvedTime | null {
   const ref = utterance.audioRef;
   const startMs = audioRefStartMs(ref);
   if (!ref || startMs === null || ref.precision === "unknown") return null;

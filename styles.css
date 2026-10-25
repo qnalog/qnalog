@@ -12501,3 +12501,198 @@ button.qnalog-wizard-btn-secondary {
 .qnalog-outline .qnalog-recording-search-status:empty {
   display: none;
 }
+
+/* ── To-do summary view (main editor area) ── */
+.qnalog-todo-summary {
+  padding: var(--size-4-4) var(--size-4-4) var(--size-4-8);
+}
+
+.qnalog-todo-summary-header {
+  display: flex;
+  flex-direction: column;
+  gap: var(--size-4-2);
+  max-width: 880px;
+  margin: 0 auto var(--size-4-4);
+}
+
+.qnalog-todo-summary-title-row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: var(--size-4-2);
+}
+
+.qnalog-todo-summary-title {
+  color: var(--text-normal);
+  font-size: var(--font-ui-large);
+  font-weight: var(--font-semibold);
+}
+
+.qnalog-todo-summary-counts {
+  color: var(--text-muted);
+  font-size: var(--font-ui-small);
+}
+
+.qnalog-todo-summary-controls {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--size-4-2);
+}
+
+.qnalog-todo-summary-select {
+  max-width: 100%;
+}
+
+.qnalog-todo-summary-due-filter {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--size-4-1);
+  color: var(--text-muted);
+  font-size: var(--font-ui-small);
+  cursor: pointer;
+}
+
+.qnalog-todo-summary-list {
+  display: flex;
+  flex-direction: column;
+  gap: var(--size-4-4);
+  max-width: 880px;
+  margin: 0 auto;
+}
+
+.qnalog-todo-summary-empty {
+  padding: var(--size-4-6) 0;
+  color: var(--text-muted);
+  font-size: var(--font-ui-small);
+  text-align: center;
+}
+
+.qnalog-todo-summary-group-head {
+  display: flex;
+  align-items: baseline;
+  gap: var(--size-4-2);
+  padding-bottom: var(--size-4-1);
+  border-bottom: 1px solid var(--background-modifier-border);
+}
+
+.qnalog-todo-summary-group-title {
+  flex: 0 1 auto;
+  min-width: 0;
+  overflow: hidden;
+  color: var(--text-normal);
+  font-size: var(--font-ui-medium);
+  font-weight: var(--font-semibold);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.qnalog-todo-summary-group-title.is-link,
+.qnalog-todo-summary-text,
+.qnalog-todo-summary-source,
+.qnalog-todo-summary-time {
+  cursor: pointer;
+}
+
+.qnalog-todo-summary-group-title.is-link:hover,
+.qnalog-todo-summary-source:hover {
+  color: var(--text-accent);
+}
+
+.qnalog-todo-summary-group-date,
+.qnalog-todo-summary-group-count {
+  flex: 0 0 auto;
+  color: var(--text-faint);
+  font-size: var(--font-ui-smaller);
+}
+
+.qnalog-todo-summary-group-count {
+  margin-left: auto;
+}
+
+.qnalog-todo-summary-row {
+  display: flex;
+  align-items: flex-start;
+  gap: var(--size-4-2);
+  padding: var(--size-4-2) var(--size-4-1);
+  border-radius: var(--radius-s);
+}
+
+.qnalog-todo-summary-row:hover {
+  background: var(--background-modifier-hover);
+}
+
+.qnalog-todo-summary-checkbox {
+  flex: 0 0 auto;
+  margin-top: 3px;
+  cursor: pointer;
+}
+
+.qnalog-todo-summary-body {
+  display: flex;
+  flex: 1 1 auto;
+  flex-direction: column;
+  gap: var(--size-2-1);
+  min-width: 0;
+}
+
+.qnalog-todo-summary-text {
+  color: var(--text-normal);
+  font-size: var(--font-ui-medium);
+  line-height: var(--line-height-normal);
+  overflow-wrap: anywhere;
+}
+
+.qnalog-todo-summary-row.is-done .qnalog-todo-summary-text {
+  color: var(--text-muted);
+  text-decoration: line-through;
+}
+
+.qnalog-todo-summary-meta {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--size-2-1) var(--size-4-3);
+  color: var(--text-muted);
+  font-size: var(--font-ui-smaller);
+}
+
+.qnalog-todo-summary-meta:empty {
+  display: none;
+}
+
+.qnalog-todo-summary-acceptance {
+  color: var(--text-warning);
+}
+
+.qnalog-todo-summary-time {
+  color: var(--text-accent);
+}
+
+.qnalog-todo-summary-time:hover {
+  text-decoration: underline;
+}
+
+.qnalog-todo-summary-text:focus-visible,
+.qnalog-todo-summary-source:focus-visible,
+.qnalog-todo-summary-time:focus-visible,
+.qnalog-todo-summary-group-title.is-link:focus-visible {
+  outline: 2px solid var(--interactive-accent);
+  outline-offset: 1px;
+  border-radius: var(--radius-s);
+}
+
+@media (max-width: 520px) {
+  .qnalog-todo-summary {
+    padding: var(--size-4-3) var(--size-4-3) var(--size-4-6);
+  }
+
+  .qnalog-todo-summary-controls .qnalog-todo-summary-select {
+    flex: 1 1 40%;
+    min-width: 0;
+  }
+
+  .qnalog-todo-summary-row {
+    padding: var(--size-4-3) 0;
+  }
+}
