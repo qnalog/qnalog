@@ -29,7 +29,7 @@ import { escapeRegExp } from "../shared/util-common";
 import { LIVE_ASR_TASK_STATUS } from "../asr/live-segment-policy";
 
 import { getRecentNoteParentPath, getRecentNotePathRelativeToRoot, isPathUnderRecentNoteRoots, normalizeRecentNoteRoots } from "./recent-note-paths";
-import { NS_TAG, NS_TYPE_VERSION_CACHE, isDerivedVersionType, isTopicErrataFrontmatter, readNamespaceFrontmatter } from "../shared/namespace";
+import { NS_TAG, NS_TYPE_VERSION_CACHE, isTopicErrataFrontmatter, isUnpromotedVariantFrontmatter, readNamespaceFrontmatter } from "../shared/namespace";
 import { isErrataPath } from "../errata/errata-path";
 
 import { t } from "../shared/i18n";
@@ -222,9 +222,7 @@ export function getRecentNotes(plugin, limit) {
     const frontmatter = ((plugin.app.metadataCache.getFileCache(f) || {}).frontmatter) || {};
     if (readNamespaceFrontmatter(frontmatter, "type") === NS_TYPE_VERSION_CACHE) continue;
     // 派生版本（清稿/另存版本等）不当独立会议罗列，按 qnalog_source_path 归并到母本。
-    const isPromotedVariant = readNamespaceFrontmatter(frontmatter, "promotedVariant") === true;
-    if (!isPromotedVariant && (isDerivedVersionType(readNamespaceFrontmatter(frontmatter, "type"))
-      || readNamespaceFrontmatter(frontmatter, "containsRaw") === false)) {
+    if (isUnpromotedVariantFrontmatter(frontmatter)) {
       variantFiles.push({ file: f, fm: frontmatter });
       continue;
     }

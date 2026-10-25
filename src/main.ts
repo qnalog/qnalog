@@ -1,6 +1,6 @@
 /* eslint-disable @typescript-eslint/no-unsafe-assignment, @typescript-eslint/no-unsafe-member-access, @typescript-eslint/no-unsafe-call, @typescript-eslint/no-unsafe-argument, @typescript-eslint/no-unsafe-return -- QnALog's settings/data layer is intentionally dynamically typed (files use @ts-nocheck and read untyped JSON from loadData); these type-only rules yield no actionable findings here and are tracked for incremental typing */
 import * as obsidian from "obsidian";
-import { NS_ERRATA_FOLDER, NS_MERGE_BLOCK_RE, NS_ROOT, QNALOG_PLUGIN_ICON_ID, isTopicErrataFrontmatter, readNamespaceFrontmatter } from "./shared/namespace";
+import { NS_ERRATA_FOLDER, NS_MERGE_BLOCK_RE, NS_ROOT, NS_VIEW_TODO_SUMMARY, QNALOG_PLUGIN_ICON_ID, isTopicErrataFrontmatter, readNamespaceFrontmatter } from "./shared/namespace";
 import { QNALOG_PLUGIN_ICON_SVG } from "./ui/plugin-icon";
 
 import { QnALogSettingTab } from "./ui/settings-tab";
@@ -61,7 +61,9 @@ import { TaskQueue } from "./queue/task-queue";
 
 // 以下 1 个声明已抽到 ./ui/outline-view（纯搬迁、零行为改动），这里 import 回来保持裸名调用点不变。
 import { OutlineView } from "./ui/outline-view";
-import { openOrRevealFile } from "./shared/open-note";
+import { openFileAtLine, openOrRevealFile } from "./shared/open-note";
+import { TodoSummaryView, openTodoSummaryView, type TodoSummaryViewPort } from "./ui/todo-summary-view";
+import { getTodayDailyNoteInfo } from "./shared/util-note";
 
 import { DiagnosticsService } from "./diagnostics/diagnostics-service";
 import type { DiagnosticsSnapshot } from "./diagnostics/diagnostics-service";
@@ -607,6 +609,7 @@ class QnALogPlugin extends obsidian.Plugin {
 
     this.registerView(VIEW_TYPE_OUTLINE, (leaf) => new OutlineView(leaf, this, this.createTopicsUiPort(), this.createErrataUiPort(), this.createRegenerateActionsPort(), this.createSedimentUiPort()));
     this.addRibbonIcon(QNALOG_PLUGIN_ICON_ID, t("QnALog voice notes panel"), () => this.shell.openOutlineView());
+    this.registerView(NS_VIEW_TODO_SUMMARY, (leaf) => new TodoSummaryView(leaf, this.createTodoSummaryPort()));
     this.registerMarkdownPostProcessor((el, ctx) => this.audioLinks.enhanceAudioTimeLinks(el, ctx));
 
     this.bubble = new BubbleWidget(this);
@@ -688,6 +691,7 @@ class QnALogPlugin extends obsidian.Plugin {
     this.addCommand({ id: "import-audio", name: t("Import Existing Audio File: Transcribe + Polish"), callback: () => new ImportAudioModal(this.app, this).open() });
     this.addCommand({ id: "check-updates", name: t("Check for Updates"), callback: () => this.checkForUpdates({ silent: false }) });
     this.addCommand({ id: "open-outline", name: t("Open Voice Notes Panel"), callback: () => this.shell.openOutlineView() });
+    this.addCommand({ id: "open-todo-summary", name: t("Open to-do summary"), callback: () => { void openTodoSummaryView(this.app.workspace); } });
     this.addCommand({
       id: "find-in-recording",
       name: t("Find in the current note's recording"),
@@ -1109,6 +1113,56 @@ class QnALogPlugin extends obsidian.Plugin {
       },
       reorganizeNoteInPlace: (file, options) => this.repolish.reorganizeNoteInPlace(file, options),
       saveAsNewVersion: (file, mode, preference) => this.repolish.repolishMarkdownFile(file, mode, preference),
+    };
+  }
+
+  createTodoSummaryPort(): TodoSummaryViewPort {
+    const fileAt = (path: string) => {
+      const file = this.app.vault.getAbstractFileByPath(obsidian.normalizePath(path));
+      return file instanceof obsidian.TFile ? file : null;
+    };
+    return {
+      listNotes: () => getRecentNotes(this, Number.MAX_SAFE_INTEGER)
+        .map((item) => ({ path: item.file.path, title: item.title, timestamp: item.timestamp, dateLabel: item.dateKey })),
+      getScope: () => {
+        const daily = getTodayDailyNoteInfo(this.app);
+        return {
+          notesFolder: this.settings.mdFolder,
+          excludedFolders: [this.settings.topicsFolder, daily && daily.folder ? daily.folder : ""].filter(Boolean),
+        };
+      },
+      getListItems: (path) => {
+        const items = this.app.metadataCache.getCache(path)?.listItems;
+        return items ? items.map((item) => ({ line: item.position.start.line, task: item.task })) : null;
+      },
+      getFrontmatter: (path) => this.app.metadataCache.getCache(path)?.frontmatter ?? null,
+      readCached: async (path) => { const file = fileAt(path); return file ? this.app.vault.cachedRead(file) : null; },
+      read: async (path) => { const file = fileAt(path); return file ? this.app.vault.read(file) : null; },
+      process: async (path, update) => {
+        const file = fileAt(path);
+        if (!file) return false;
+        await this.app.vault.process(file, update);
+        return true;
+      },
+      openNoteAtLine: async (path, line) => {
+        const file = fileAt(path);
+        if (file) await openFileAtLine(this.app, file, line);
+        else new obsidian.Notice(t("The note has changed; open it to update this to-do."));
+      },
+      openTimeLink: (linkPath, label, sourcePath) => this.audioLinks.openAudioTimeLink(linkPath, label, sourcePath, {}),
+      notify: (message) => { new obsidian.Notice(message, 6000); },
+      subscribe: (onChange) => {
+        const refs = [
+          this.app.metadataCache.on("changed", (file) => onChange([file.path])),
+          this.app.vault.on("rename", (file, oldPath) => onChange([file.path, oldPath])),
+          this.app.vault.on("delete", (file) => onChange([file.path])),
+        ];
+        return () => {
+          this.app.metadataCache.offref(refs[0]);
+          this.app.vault.offref(refs[1]);
+          this.app.vault.offref(refs[2]);
+        };
+      },
     };
   }
 

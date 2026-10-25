@@ -312,8 +312,17 @@ export function isDerivedVersionType(value: unknown): boolean {
   return text === NS_TYPE_DERIVED;
 }
 
+/** 派生版本（清稿、另存版本等）：类型为派生版本或不含原始材料，且未被提升为独立笔记。 */
+export function isUnpromotedVariantFrontmatter(frontmatter: unknown): boolean {
+  if (readNamespaceFrontmatter(frontmatter, "promotedVariant") === true) return false;
+  return isDerivedVersionType(readNamespaceFrontmatter(frontmatter, "type"))
+    || readNamespaceFrontmatter(frontmatter, "containsRaw") === false;
+}
+
 /** 视图类型。 */
 export const NS_VIEW_OUTLINE = "qnalog-outline-view";
+/** 主编辑区的待办汇总视图。 */
+export const NS_VIEW_TODO_SUMMARY = nsRe("todo-summary-view");
 
 /** Custom icon shared by the ribbon entry, sidebar title and live-minutes view. */
 export const QNALOG_PLUGIN_ICON_ID = nsRe("plugin-icon");
