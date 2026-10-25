@@ -427,3 +427,37 @@ describe("note panel after a property change", () => {
     expect(render).toHaveBeenCalledTimes(1);
   });
 });
+
+describe("sidebar header to-do summary icon", () => {
+  type Node = { cls: string; children: Node[]; onclick?: () => void; createDiv: (o?: { cls?: string }) => Node; createSpan: (o?: { cls?: string }) => Node; createEl: (t: string, o?: { cls?: string }) => Node; setText: (t: string) => void };
+  const node = (cls = ""): Node => {
+    const self: Node = {
+      cls,
+      children: [],
+      createDiv: (o = {}) => { const c = node(o.cls); self.children.push(c); return c; },
+      createSpan: (o = {}) => { const c = node(o.cls); self.children.push(c); return c; },
+      createEl: (_t, o = {}) => { const c = node(o.cls); self.children.push(c); return c; },
+      setText: () => undefined,
+    };
+    return self;
+  };
+  const find = (root: Node, cls: string): Node | undefined => root.cls.includes(cls) ? root : root.children.map((c) => find(c, cls)).find(Boolean);
+
+  it("opens the to-do summary from the icon next to the settings button", async () => {
+    const leaf = { setViewState: vi.fn(async () => undefined) };
+    const workspace = { getLeavesOfType: vi.fn(() => []), getLeaf: vi.fn(() => leaf), revealLeaf: vi.fn(async () => undefined) };
+    const view = Object.create(OutlineView.prototype) as OutlineView;
+    Object.assign(view, { app: { workspace, vault: {} }, plugin: { settings: {}, openSettings: vi.fn() } });
+    const head = node();
+    view.renderTitleRow(head, "QnALog");
+    const actions = find(head, "qnalog-outline-title-actions")!;
+    const order = actions.children.map((c) => c.cls);
+    const todoIndex = order.findIndex((cls) => cls.includes("qnalog-outline-todo-summary-btn"));
+    expect(todoIndex).toBeGreaterThanOrEqual(0);
+    expect(order[todoIndex + 1]).toContain("qnalog-outline-settings-btn");
+    actions.children[todoIndex].onclick?.();
+    await Promise.resolve(); await Promise.resolve();
+    expect(workspace.getLeaf).toHaveBeenCalledWith("tab");
+    expect(leaf.setViewState).toHaveBeenCalledWith(expect.objectContaining({ type: expect.stringContaining("todo-summary-view") }));
+  });
+});
