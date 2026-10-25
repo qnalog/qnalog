@@ -312,9 +312,9 @@ function makeLlmReply(request) {
     .filter(Boolean)
     .slice(0, 1);
   const protocol = JSON.stringify({
-    schemaVersion: 2,
+    schemaVersion: 3,
     topics: [{ key: "release", title: "灰度发布", summary: "先进行内部灰度", evidence }],
-    decisions: [{ text: "先做内部灰度", topics: ["release"], evidence }],
+    decisions: [{ key: "pilot", text: "先做内部灰度", status: "proposed", topics: ["release"], evidence }],
     actions: [], questions: [],
   });
   return JSON.stringify({
@@ -582,8 +582,8 @@ async function main() {
     else {
       try {
         savedKnowledge = JSON.parse(knowledgeMatch[1]);
-        if (savedKnowledge.schemaVersion !== 2 || savedKnowledge.status !== "complete" || savedKnowledge.decisions?.length !== 1) {
-          failures.push("纪要知识快照没有按 schema v2 完整保存");
+        if (savedKnowledge.schemaVersion !== 3 || savedKnowledge.status !== "complete" || savedKnowledge.decisions?.length !== 1 || savedKnowledge.decisions?.[0]?.status !== "proposed") {
+          failures.push("纪要知识快照没有按 schema v3 完整保存（含决定状态）");
         }
         if (!savedKnowledge.decisions?.[0]?.evidence?.[0]?.startsWith("seg:s1:")) {
           failures.push("纪要决定没有引用转写账本中的 utterance ID");

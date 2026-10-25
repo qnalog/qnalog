@@ -7,13 +7,40 @@ import { getCurrentTranscript, getTranscriptSourceRevision, type Utterance } fro
 
 
 export type KnowledgeStatus = "complete" | "partial" | "unavailable" | "stale";
-export type KnowledgeIssueReason = "missing-block" | "invalid-json" | "invalid-item" | "unknown-evidence" | "source-presummarized" | "source-changed" | "mode-off";
-export interface KnowledgeItem { id: string; text: string; evidence: string[]; topicIds: string[] }
+/**
+ * Issue reasons. The last five record a field that the parser normalized (a status, an acceptance
+ * value or an owner/due string); the item itself is kept, so these do not make the knowledge partial.
+ */
+export type KnowledgeIssueReason = "missing-block" | "invalid-json" | "invalid-item" | "unknown-evidence" | "source-presummarized" | "source-changed" | "mode-off"
+  | "decision-status-defaulted" | "decision-supersede-unresolved" | "decision-confirm-downgraded" | "action-acceptance-defaulted" | "action-field-dropped" | "item-topics-defaulted";
+/** Decision status (schemaVersion 3). Missing or invalid values from the model become "proposed". */
+export type DecisionStatus = "confirmed" | "proposed" | "disputed" | "open" | "superseded";
+/** Whether the owner of an action took it on (schemaVersion 3). Missing or invalid values become "assigned". */
+export type ActionAcceptance = "accepted" | "assigned" | "volunteered";
+/**
+ * One decision, action or question. `status` and `supersededBy` exist only on schemaVersion 3 decisions;
+ * `owner`, `due` and `acceptance` only on schemaVersion 3 actions. Version 2 items carry none of them.
+ */
+export interface KnowledgeItem {
+  id: string;
+  text: string;
+  evidence: string[];
+  topicIds: string[];
+  status?: DecisionStatus;
+  /** Id of the decision in the same knowledge that replaced this one; set only when status is "superseded". */
+  supersededBy?: string;
+  /** The owner as said in the transcript (verbatim, at most OWNER_DUE_MAX_CHARS). */
+  owner?: string;
+  /** The due time as said in the transcript (verbatim, never converted to a date). */
+  due?: string;
+  acceptance?: ActionAcceptance;
+}
 export interface KnowledgeTopic { id: string; title: string; summary: string; evidence: string[] }
 export interface KnowledgeSourceRevision { segmentId: string; revision: number; normalizationRevision: number }
 export interface UtteranceProjection { utteranceId: string; normalizedText: string; speakerName: string | null }
 export interface SessionKnowledge {
-  schemaVersion:  2;
+  /** 3 since status-tagged decisions; notes written before keep version 2 and are read unchanged. */
+  schemaVersion: 2 | 3;
   id: string;
   sourceRevision: string;
   sources: KnowledgeSourceRevision[];
@@ -36,7 +63,32 @@ export interface ParseSessionKnowledgeContext {
 
 const MARKER_START = new RegExp(`<!--\\s*${NS_SESSION_KNOWLEDGE}(?=\\s|-->)`);
 const MARKER_PAYLOAD = new RegExp(`<!--\\s*${NS_SESSION_KNOWLEDGE}\\s+([\\s\\S]*?)\\s*-->`);
-const REASONS = new Set<KnowledgeIssueReason>(["missing-block", "invalid-json", "invalid-item", "unknown-evidence", "source-presummarized", "source-changed", "mode-off"]);
+export const SESSION_KNOWLEDGE_SCHEMA_VERSION = 3;
+/** Owner and due strings longer than this (in code points) are dropped instead of being cut. */
+export const OWNER_DUE_MAX_CHARS = 40;
+const NORMALIZATION_REASONS = new Set<KnowledgeIssueReason>(["decision-status-defaulted", "decision-supersede-unresolved", "decision-confirm-downgraded", "action-acceptance-defaulted", "action-field-dropped", "item-topics-defaulted"]);
+const REASONS = new Set<KnowledgeIssueReason>(["missing-block", "invalid-json", "invalid-item", "unknown-evidence", "source-presummarized", "source-changed", "mode-off", ...NORMALIZATION_REASONS]);
+const DECISION_STATUSES = new Set<DecisionStatus>(["confirmed", "proposed", "disputed", "open", "superseded"]);
+const ACCEPTANCES = new Set<ActionAcceptance>(["accepted", "assigned", "volunteered"]);
+/** True when the issue only records a normalized status or field; such issues keep the knowledge complete. */
+export function isNormalizationIssue(reason: KnowledgeIssueReason): boolean {
+  return NORMALIZATION_REASONS.has(reason);
+}
+function isDecisionStatus(value: unknown): value is DecisionStatus {
+  return typeof value === "string" && DECISION_STATUSES.has(value as DecisionStatus);
+}
+function isAcceptance(value: unknown): value is ActionAcceptance {
+  return typeof value === "string" && ACCEPTANCES.has(value as ActionAcceptance);
+}
+/** Owner or due as said: whitespace collapsed to one line; empty, non-string or over-long values give null. */
+function verbatimField(value: unknown): { value: string | null; dropped: boolean } {
+  if (value === undefined || value === null) return { value: null, dropped: false };
+  if (typeof value !== "string") return { value: null, dropped: true };
+  const text = value.replace(/\s+/g, " ").trim();
+  if (!text) return { value: null, dropped: false };
+  if (Array.from(text).length > OWNER_DUE_MAX_CHARS) return { value: null, dropped: true };
+  return { value: text, dropped: false };
+}
 function safeJson(value: unknown): string {
   return (JSON.stringify(value) ?? "null").replace(/</g, "\\u003c").replace(/>/g, "\\u003e").replace(/`/g, "\\u0060").replace(/--/g, "\\u002d\\u002d");
 }
@@ -157,7 +209,7 @@ export function parseSessionKnowledgeResponse(raw: string, context: ParseSession
   const issues: SessionKnowledge["issues"] = [];
   const allowedUnits = new Map(context.allowed.map((unit) => [unit.id, unit]));
   const allowed = new Set(allowedUnits.keys());
-  const empty = (): SessionKnowledge => ({ schemaVersion: 2, id: genId(), sourceRevision: context.sourceRevision, sources: sourceCopy(context.sources), status: "partial", issues, topics: [], decisions: [], actions: [], questions: [], projections: [...(context.projections ?? [])].map((projection) => ({ ...projection })) });
+  const empty = (): SessionKnowledge => ({ schemaVersion: 3, id: genId(), sourceRevision: context.sourceRevision, sources: sourceCopy(context.sources), status: "partial", issues, topics: [], decisions: [], actions: [], questions: [], projections: [...(context.projections ?? [])].map((projection) => ({ ...projection })) });
   if (!extracted.found) {
     issues.push({ part: context.part, reason: "missing-block" });
     const knowledge = empty(); knowledge.status = "unavailable";
@@ -166,7 +218,7 @@ export function parseSessionKnowledgeResponse(raw: string, context: ParseSession
   let value: unknown;
   try { value = extracted.payload === null ? null : JSON.parse(extracted.payload); }
   catch { value = null; }
-  if (!isRecord(value) || value.schemaVersion !== 2 || !Array.isArray(value.topics) || !Array.isArray(value.decisions) || !Array.isArray(value.actions) || !Array.isArray(value.questions)) {
+  if (!isRecord(value) || (value.schemaVersion !== 2 && value.schemaVersion !== 3) || !Array.isArray(value.topics) || !Array.isArray(value.decisions) || !Array.isArray(value.actions) || !Array.isArray(value.questions)) {
     issues.push({ part: context.part, reason: "invalid-json" });
     return { body: extracted.body, knowledge: empty() };
   }
@@ -182,28 +234,68 @@ export function parseSessionKnowledgeResponse(raw: string, context: ParseSession
     topicByKey.set(rawTopic.key, { id, title: rawTopic.title, summary: rawTopic.summary, evidence: [...new Set(rawTopic.evidence)] });
   }
   const entries: Record<"decisions" | "actions" | "questions", KnowledgeItem[]> = { decisions: [], actions: [], questions: [] };
+  const normalized = new Set<KnowledgeIssueReason>();
+  const decisionByKey = new Map<string, KnowledgeItem>();
+  const supersedeKeys = new Map<KnowledgeItem, string>();
   for (const kind of ["decisions", "actions", "questions"] as const) {
     const rawItems = value[kind];
     if (!Array.isArray(rawItems)) { invalidItem = true; continue; }
     for (const rawItem of rawItems) {
-      if (!isRecord(rawItem) || typeof rawItem.text !== "string" || !rawItem.text.trim() || !Array.isArray(rawItem.topics) || !rawItem.topics.every((key) => typeof key === "string") || !exactStrings(rawItem.evidence)) { invalidItem = true; continue; }
+      if (!isRecord(rawItem) || typeof rawItem.text !== "string" || !rawItem.text.trim() || !exactStrings(rawItem.evidence)) { invalidItem = true; continue; }
       if (rawItem.evidence.some((id) => !allowed.has(id))) { unknownEvidence = true; continue; }
-      if (rawItem.topics.some((key) => !topicByKey.has(key))) { invalidItem = true; continue; }
-      const topicIds = rawItem.topics.flatMap((key) => {
+      // 主题归属只是索引线索：缺失、格式不对或引用不存在的主题时按无主题处理，不丢弃有证据的条目。
+      const rawTopics = Array.isArray(rawItem.topics) ? rawItem.topics.filter((key): key is string => typeof key === "string") : [];
+      const topicKeys = rawTopics.filter((key) => topicByKey.has(key));
+      if (!Array.isArray(rawItem.topics) || topicKeys.length !== rawItem.topics.length) normalized.add("item-topics-defaulted");
+      const topicIds = topicKeys.flatMap((key) => {
         const topic = topicByKey.get(key);
         return topic ? [topic.id] : [];
       });
       const id = previousId(previous, kind.slice(0, -1) as "decision" | "action" | "question", rawItem.text, rawItem.evidence, context.sources, allowedUnits, topicIds) ?? `${kind.slice(0, -1)}:${genId()}`;
-      entries[kind].push({ id, text: rawItem.text, evidence: [...new Set(rawItem.evidence)], topicIds });
+      const item: KnowledgeItem = { id, text: rawItem.text, evidence: [...new Set(rawItem.evidence)], topicIds };
+      if (kind === "decisions") {
+        if (isDecisionStatus(rawItem.status)) item.status = rawItem.status;
+        else { item.status = "proposed"; normalized.add("decision-status-defaulted"); }
+        if (typeof rawItem.key === "string" && rawItem.key && !decisionByKey.has(rawItem.key)) decisionByKey.set(rawItem.key, item);
+        if (item.status === "superseded") supersedeKeys.set(item, typeof rawItem.supersededBy === "string" ? rawItem.supersededBy : "");
+      } else if (kind === "actions") {
+        for (const field of ["owner", "due"] as const) {
+          const verbatim = verbatimField(rawItem[field]);
+          if (verbatim.value) item[field] = verbatim.value;
+          if (verbatim.dropped) normalized.add("action-field-dropped");
+        }
+        if (isAcceptance(rawItem.acceptance)) item.acceptance = rawItem.acceptance;
+        else { item.acceptance = "assigned"; normalized.add("action-acceptance-defaulted"); }
+      }
+      entries[kind].push(item);
     }
+  }
+  for (const [item, key] of supersedeKeys) {
+    const target = decisionByKey.get(key);
+    if (target && target !== item) item.supersededBy = target.id;
+    else { item.status = "proposed"; normalized.add("decision-supersede-unresolved"); }
+  }
+  for (const item of entries.decisions) {
+    if (downgradeSingleUtteranceConfirmation(item)) normalized.add("decision-confirm-downgraded");
   }
   if (invalidItem) issues.push({ part: context.part, reason: "invalid-item" });
   if (unknownEvidence) issues.push({ part: context.part, reason: "unknown-evidence" });
+  for (const reason of normalized) issues.push({ part: context.part, reason });
   const knowledge = empty();
   knowledge.topics = [...topicByKey.values()];
   knowledge.decisions = entries.decisions; knowledge.actions = entries.actions; knowledge.questions = entries.questions;
-  knowledge.status = issues.length ? "partial" : "complete";
+  knowledge.status = issues.some((issue) => !isNormalizationIssue(issue.reason)) ? "partial" : "complete";
   return { body: extracted.body, knowledge };
+}
+
+/**
+ * Soft check on "confirmed": a confirmation needs the proposal and the agreement, so a decision whose
+ * evidence is a single utterance (necessarily one speaker) becomes "proposed". The item is kept.
+ */
+function downgradeSingleUtteranceConfirmation(item: KnowledgeItem): boolean {
+  if (item.status !== "confirmed" || new Set(item.evidence).size >= 2) return false;
+  item.status = "proposed";
+  return true;
 }
 
 /** Exact-deduplicates merged part objects and refuses to resolve any conflicting utterance identity. */
@@ -222,7 +314,7 @@ export function createUnavailableSessionKnowledge(
     });
   }
   return {
-    schemaVersion: 2,
+    schemaVersion: 3,
     id: `knowledge:${genId()}`,
     sourceRevision: getTranscriptSourceRevision(segments),
     sources: sourceCopy([...sources.values()]),
@@ -267,32 +359,57 @@ export function mergeSessionKnowledge(parts: readonly SessionKnowledge[], segmen
     return item;
   };
   const projections = new Map<string, UtteranceProjection>();
+  const itemKey = (entry: KnowledgeItem) => JSON.stringify([entry.text, [...entry.evidence].sort(), [...entry.topicIds].sort()]);
+  // Part-local decision id → merged decision id, for resolving supersededBy after exact duplicates collapse.
+  const decisionIds = new Map<string, string>();
+  const decisionsByText = new Map<string, KnowledgeItem[]>();
   for (const part of parts) {
     const topicIds = new Map<string, string>();
     for (const topic of part.topics) {
       const canonical = addExact(topics, { ...topic }, (entry) => JSON.stringify([entry.title, entry.summary, [...entry.evidence].sort()]));
       topicIds.set(topic.id, canonical.id);
     }
-    for (const [items, target] of [[part.decisions, decisions], [part.actions, actions], [part.questions, questions]] as const) {
+    for (const [items, target] of [[part.actions, actions], [part.questions, questions]] as const) {
       for (const item of items) {
         const remapped = { ...item, topicIds: item.topicIds.map((id) => topicIds.get(id) || id) };
-        addExact(target, remapped, (entry) => JSON.stringify([entry.text, [...entry.evidence].sort(), [...entry.topicIds].sort()]));
+        addExact(target, remapped, itemKey);
       }
+    }
+    for (const item of part.decisions) {
+      const remapped: KnowledgeItem = { ...item, topicIds: item.topicIds.map((id) => topicIds.get(id) || id) };
+      let canonical = decisions.find((entry) => itemKey(entry) === itemKey(remapped));
+      if (!canonical) { canonical = remapped; decisions.push(canonical); }
+      decisionIds.set(item.id, canonical.id);
+      // The same decision text in a later part: the later part's status applies to every copy.
+      const text = decisionText(item.text);
+      const sameText = decisionsByText.get(text) ?? [];
+      if (!sameText.includes(canonical)) sameText.push(canonical);
+      decisionsByText.set(text, sameText);
+      for (const entry of sameText) setDecisionStatus(entry, item);
     }
     for (const projection of part.projections) projections.set(projection.utteranceId, { ...projection });
   }
+  let supersedeUnresolved = false;
+  for (const decision of decisions) {
+    if (decision.status !== "superseded") continue;
+    const target = decision.supersededBy ? decisionIds.get(decision.supersededBy) : undefined;
+    if (target && target !== decision.id && decisions.some((entry) => entry.id === target)) decision.supersededBy = target;
+    else { setDecisionStatus(decision, { status: "proposed" }); supersedeUnresolved = true; }
+  }
   const issues = parts.flatMap((part) => part.issues.map((issue) => ({ ...issue })));
+  if (supersedeUnresolved) issues.push({ part: 0, reason: "decision-supersede-unresolved" });
   if (sourceConflicts.size) issues.push({ part: 0, reason: "source-changed" });
   if (parts.some((part) => part.sourceRevision !== revision)) issues.push({ part: 0, reason: "source-changed" });
-  const status: KnowledgeStatus = sourceConflicts.size || issues.some((issue) => issue.reason === "source-changed" || issue.reason === "invalid-item" || issue.reason === "invalid-json" || issue.reason === "unknown-evidence")
+  const blockingIssues = issues.filter((issue) => !isNormalizationIssue(issue.reason));
+  const status: KnowledgeStatus = sourceConflicts.size || blockingIssues.some((issue) => issue.reason === "source-changed" || issue.reason === "invalid-item" || issue.reason === "invalid-json" || issue.reason === "unknown-evidence")
     ? "partial"
     : parts.length && parts.every((part) => part.status === "unavailable")
       ? "unavailable"
-      : parts.length && parts.every((part) => part.status === "complete") && !issues.length
+      : parts.length && parts.every((part) => part.status === "complete") && !blockingIssues.length
         ? "complete"
         : "partial";
   return {
-    schemaVersion: 2,
+    schemaVersion: 3,
     id: genId(),
     sourceRevision: revision,
     sources: sourceCopy(sources),
@@ -306,16 +423,33 @@ export function mergeSessionKnowledge(parts: readonly SessionKnowledge[], segmen
   };
 }
 
+function decisionText(text: string): string {
+  return String(text || "").replace(/\s+/g, " ").trim();
+}
+
+/** Copies status and supersededBy from `source`; a version 2 source (no status) leaves the target unchanged. */
+function setDecisionStatus(target: KnowledgeItem, source: Pick<KnowledgeItem, "status" | "supersededBy">): void {
+  if (!source.status) return;
+  target.status = source.status;
+  if (source.status === "superseded" && source.supersededBy) target.supersededBy = source.supersededBy;
+  else delete target.supersededBy;
+}
+
 export function serializeSessionKnowledge(knowledge: SessionKnowledge): string {
   return `<!-- ${NS_SESSION_KNOWLEDGE} ${safeJson(knowledge)} -->`;
 }
 
 function validKnowledge(value: unknown): value is SessionKnowledge {
-  if (!isRecord(value) || value.schemaVersion !== 2 || typeof value.id !== "string" || typeof value.sourceRevision !== "string" || !Array.isArray(value.sources) || !Array.isArray(value.issues) || !Array.isArray(value.topics) || !Array.isArray(value.decisions) || !Array.isArray(value.actions) || !Array.isArray(value.questions) || !Array.isArray(value.projections) || typeof value.status !== "string" || !["complete", "partial", "unavailable", "stale"].includes(value.status)) return false;
+  if (!isRecord(value) || (value.schemaVersion !== 2 && value.schemaVersion !== 3) || typeof value.id !== "string" || typeof value.sourceRevision !== "string" || !Array.isArray(value.sources) || !Array.isArray(value.issues) || !Array.isArray(value.topics) || !Array.isArray(value.decisions) || !Array.isArray(value.actions) || !Array.isArray(value.questions) || !Array.isArray(value.projections) || typeof value.status !== "string" || !["complete", "partial", "unavailable", "stale"].includes(value.status)) return false;
   if (!value.sources.every((source) => isRecord(source) && typeof source.segmentId === "string" && Number.isInteger(source.revision) && Number.isInteger(source.normalizationRevision))) return false;
   if (!value.issues.every((issue) => isRecord(issue) && Number.isInteger(issue.part) && typeof issue.reason === "string" && REASONS.has(issue.reason as KnowledgeIssueReason))) return false;
   if (!value.topics.every((topic) => isRecord(topic) && typeof topic.id === "string" && typeof topic.title === "string" && typeof topic.summary === "string" && exactStrings(topic.evidence))) return false;
-  const validItems = (items: unknown[]) => items.every((item) => isRecord(item) && typeof item.id === "string" && typeof item.text === "string" && exactStrings(item.evidence) && Array.isArray(item.topicIds) && item.topicIds.every((id) => typeof id === "string"));
+  const validItems = (items: unknown[]) => items.every((item) => isRecord(item) && typeof item.id === "string" && typeof item.text === "string" && exactStrings(item.evidence) && Array.isArray(item.topicIds) && item.topicIds.every((id) => typeof id === "string")
+    && (item.status === undefined || isDecisionStatus(item.status))
+    && (item.supersededBy === undefined || typeof item.supersededBy === "string")
+    && (item.owner === undefined || typeof item.owner === "string")
+    && (item.due === undefined || typeof item.due === "string")
+    && (item.acceptance === undefined || isAcceptance(item.acceptance)));
   return validItems(value.decisions) && validItems(value.actions) && validItems(value.questions) && value.projections.every((projection) => isRecord(projection) && typeof projection.utteranceId === "string" && typeof projection.normalizedText === "string" && (projection.speakerName === null || typeof projection.speakerName === "string"));
 }
 
