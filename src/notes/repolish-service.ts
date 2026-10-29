@@ -20,6 +20,9 @@ import type { CleanScriptFlowPort } from "./clean-script-flow";
 import { generateCleanScript as generateCleanScriptFlow, findCleanCopy as findCleanCopyFlow } from "./clean-script-flow";
 import type { Segment } from "../shared/types";
 import type { ErrataService } from "../errata/errata-service";
+import { withGlossaryCorrections, type ErrataRules } from "../errata/errata-apply";
+import { getVocabularyCorrectionPairs, loadVocabularyGroups } from "../vocabulary";
+import type { TermReplacement } from "../shared/term-replacement";
 import { transcribeImportedAudio } from "../asr/long-audio-transcription";
 import { defaultFolderPaths } from "../shared/defaults";
 import { ensureVaultFolder, findAvailableMarkdownPath } from "../shared/util-vault";
@@ -66,6 +69,13 @@ export class RepolishService {
     this._cleanInFlight = new Set();
   }
 
+  /** 本篇勘误加上全库词汇表的「易错写法」，供重新整理、原地整理和清稿共用。 */
+  private async loadCorrectionRules(file: obsidian.TFile): Promise<ErrataRules | null> {
+    const errata = await this.host.errata.loadForFile(file);
+    const glossary = getVocabularyCorrectionPairs(await loadVocabularyGroups(this.host)) as TermReplacement[];
+    return withGlossaryCorrections(errata, glossary);
+  }
+
   async repolishMarkdownFile(file: unknown, mode: string, repolishOptions: RepolishOptions = null): Promise<boolean> {
     return repolishMarkdownFileFlow(this.repolishPort(), file, mode, repolishOptions);
   }
@@ -104,7 +114,7 @@ export class RepolishService {
       },
       ensureOriginalVersionForSource: (file) => this.host.versions.ensureOriginalVersionForSource(file),
       createDerivedNote: (file, content, version, label, mode, style) => this.host.versions.createDerivedNote(file, content, version, label, mode, style),
-      loadErrata: (file) => this.host.errata.loadForFile(file),
+      loadErrata: (file) => this.loadCorrectionRules(file),
     };
   }
 
@@ -159,7 +169,7 @@ export class RepolishService {
     return {
       getVault: () => this.host.app.vault,
       getCachedFrontmatter: (file) => this.host.app.metadataCache.getFileCache(file)?.frontmatter,
-      loadErrata: (file) => this.host.errata.loadForFile(file),
+      loadErrata: (file) => this.loadCorrectionRules(file),
       getDefaultMode: () => getEffectivePolishMode(this.host.settings, this.host.settings.polishMode, "general"),
       detectNoteMode: (file) => {
         const mode = detectRecentNoteMode(this.host, file, this.host.app.metadataCache.getFileCache(file)?.frontmatter);
@@ -213,7 +223,7 @@ export class RepolishService {
       switchVersion: (file, fallbackSourcePath) => this.host.versions.switchVersion(file, fallbackSourcePath),
       getLearnedOutputCeiling: () => getLearnedLlmOutputCeiling(this.host.settings),
       cleanTranscript: (segments: Segment[], ceiling: number, errataPrompt?: string) => cleanTranscript(this.host, segments, ceiling, errataPrompt),
-      loadErrata: (file) => this.host.errata.loadForFile(file),
+      loadErrata: (file) => this.loadCorrectionRules(file),
     };
   }
 }

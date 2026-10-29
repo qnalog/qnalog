@@ -1118,6 +1118,17 @@ function buildAsrTranscriptResult(data, providerId: string, displayText: string,
   };
 }
 
+// 整文件转写（百炼录音文件识别、OpenRouter 说话人分离）的结果不经过上面的分块路径，
+// 词汇表「易错写法」要在这里补做；rawText 保留服务原文，与分块路径一致。
+export function applyVocabularyCorrectionsToResult<T extends AsrTranscriptResult>(result: T, vocabularyGroups): T {
+  if (!result) return result;
+  return {
+    ...result,
+    text: applyVocabularyCorrections(result.text, vocabularyGroups),
+    units: (result.units || []).map((unit) => ({ ...unit, normalizedText: applyVocabularyCorrections(unit.normalizedText, vocabularyGroups) })),
+  };
+}
+
 export async function transcribeAudio(
   plugin,
   blob,
@@ -1147,7 +1158,7 @@ export async function transcribeAudio(
   if (!p.model) throw new Error(t("Transcription model name is not configured (current service: {0}).").replace("{0}", p.name || p.id));
   if (route && isBailian) {
     if (route.endpointKind === "filetrans-http") {
-      return transcribeDashScopeFile(p, blob, { diarization: route.speakerDiarization });
+      return applyVocabularyCorrectionsToResult(await transcribeDashScopeFile(p, blob, { diarization: route.speakerDiarization }), await loadVocabularyGroups(plugin));
     }
   }
   const vocabularyGroups = await loadVocabularyGroups(plugin);

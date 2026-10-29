@@ -184,6 +184,44 @@ describe("long audio transcription", () => {
 
   });
 
+  it("applies the glossary's misspelling corrections to whole-file import results", async () => {
+    const provider = {
+      id: "dashscope-filetrans",
+      endpoint: "https://dashscope.aliyuncs.com/api/v1/services/audio/asr/transcription",
+      apiKey: "test-key",
+      model: "qwen-audio-3.1-asr-flash-filetrans",
+      language: "",
+      protocol: "dashscope-filetrans",
+    };
+    mockFiletransPayloads([
+      { data: { upload_host: "https://oss.example", upload_dir: "audio", oss_access_key_id: "id", policy: "p", signature: "s" } },
+      { output: { task_id: "task-names" } },
+      { output: { task_status: "SUCCEEDED", results: [{ subtask_status: "SUCCEEDED", transcription_url: "https://result.example/transcript" }] } },
+      { output: { transcripts: [{ sentences: [
+        { begin_time: 0, end_time: 500, speaker_id: 0, text: "余涵今天的作业写完了吗？" },
+        { begin_time: 700, end_time: 1200, speaker_id: 1, text: "齐静说还没有。" },
+      ] }] } },
+    ]);
+    vi.stubGlobal("window", { fetch: vi.fn(async () => new Response(null, { status: 200 })) });
+
+    const imported = await transcribeImportedAudio(
+      { settings: {
+        importTranscribeProvider: provider.id,
+        transcribeProviders: { [provider.id]: provider },
+        customVocabulary: "## 易错写法\n- 余涵 => 于涵\n- 齐静 => 祁婧",
+      } },
+      new Blob([new Uint8Array([1, 2, 3])], { type: "audio/wav" }),
+      "audio/wav",
+      { fileName: "family.m4a", pollIntervalMs: 1500, timeoutMs: 60_000 },
+    );
+
+    expect(imported.text).toContain("于涵今天的作业写完了吗？");
+    expect(imported.text).toContain("祁婧说还没有。");
+    expect(imported.text).not.toMatch(/余涵|齐静/);
+    expect(imported.units.map((unit) => unit.normalizedText)).toEqual(["于涵今天的作业写完了吗？", "祁婧说还没有。"]);
+    expect(imported.units.map((unit) => unit.rawText)).toEqual(["余涵今天的作业写完了吗？", "齐静说还没有。"]);
+  });
+
   it("returns a successful blank result when the whole-file task fails with ASR_RESPONSE_HAVE_NO_WORDS", async () => {
     const provider = {
       id: "dashscope-filetrans",
