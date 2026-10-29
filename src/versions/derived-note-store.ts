@@ -2,11 +2,32 @@ import * as obsidian from "obsidian";
 import { splitLeadingFrontmatter } from "../notes/note-document";
 import { NS_FM, NS_TYPE_DERIVED, isDerivedVersionType, readNamespaceFrontmatter, setNamespaceFrontmatter } from "../shared/namespace";
 import { t } from "../shared/i18n";
+import { replaceTerms, type TermReplacement } from "../shared/term-replacement";
 
 export interface DerivedNoteVersion {
   meta?: { sourceId?: string; kind?: string; createdAt?: string } | null;
   frontmatter?: string;
   body?: string;
+  /** 本篇勘误的替换规则：用于新版本的文件名、标题和沿用自原笔记的属性；原笔记本身不改。 */
+  nameCorrections?: readonly TermReplacement[];
+}
+
+// 录音路径与来源标识按原值保留，替换只作用于属性里的文字。
+const UNCORRECTED_FRONTMATTER_KEYS = new Set<string>([NS_FM.audio, NS_FM.source]);
+
+function correctFrontmatterValue(value: unknown, rules: readonly TermReplacement[]): unknown {
+  if (typeof value === "string") return replaceTerms(value, rules);
+  if (Array.isArray(value)) return value.map((item) => correctFrontmatterValue(item, rules));
+  return value;
+}
+
+function correctFrontmatter(frontmatter: Record<string, unknown>, rules: readonly TermReplacement[]): Record<string, unknown> {
+  if (!rules.length) return frontmatter;
+  const corrected: Record<string, unknown> = {};
+  for (const [key, value] of Object.entries(frontmatter)) {
+    corrected[key] = UNCORRECTED_FRONTMATTER_KEYS.has(key) ? value : correctFrontmatterValue(value, rules);
+  }
+  return corrected;
 }
 
 export interface DerivedNoteHost {
@@ -81,7 +102,9 @@ export class DerivedNoteStore {
     const sourceId = String(version && version.meta && version.meta.sourceId || this.io.getSourceId(sourceContent, sourceFile));
     const prefix = String(label || "综合纪要").trim() || "综合纪要";
     const variantKind = String(version && version.meta && version.meta.kind || "minutes");
-    const stem = `【${prefix}】${sourceFile.basename}`;
+    const nameCorrections = version && Array.isArray(version.nameCorrections) ? version.nameCorrections : [];
+    const displayName = replaceTerms(sourceFile.basename, nameCorrections);
+    const stem = `【${prefix}】${displayName}`;
     const stableTarget = obsidian.normalizePath(sourceDir ? `${sourceDir}/${stem}.md` : `${stem}.md`);
     const existingClean = variantKind === "clean"
       ? this.findDerivedNoteForSource(sourceFile, sourceId, variantKind)
@@ -100,7 +123,7 @@ export class DerivedNoteStore {
         : this.io.findAvailableMarkdownPath(stableTarget));
     if (!target) throw new Error(t("Failed to generate a path for the derived note file"));
 
-    const sourceFm = this.io.getFileFrontmatter(sourceFile) || {};
+    const sourceFm = correctFrontmatter(this.io.getFileFrontmatter(sourceFile) || {}, nameCorrections);
     let versionFm: unknown = {};
     if (version && version.frontmatter) {
       try {
@@ -127,7 +150,7 @@ export class DerivedNoteStore {
     if (variantKind === "clean") setNamespaceFrontmatter(derivedFm, "mode", "cleanscript");
     const yaml = obsidian.stringifyYaml(derivedFm);
     const body = String(version && version.body || this.io.buildEmptyBody()).trim() || this.io.buildEmptyBody();
-    const heading = /^#\s/m.test(body) ? "" : `# ${prefix} · ${sourceFile.basename}\n\n`;
+    const heading = /^#\s/m.test(body) ? "" : `# ${prefix} · ${displayName}\n\n`;
     const backlink = variantKind === "clean"
       ? `> [!note] 从母本逐字稿忠实清理 · 母本：[[${sourceFile.basename}]]`
       : `> [!info] 基于原始转写重新生成 · 原始纪要：[[${sourceFile.basename}]]`;

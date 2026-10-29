@@ -155,6 +155,8 @@ describe("repolish execution flow", () => {
     expect(segments[0].text).toContain("QnALog项目");
     expect(sessionMeta._errata).toContain("张三项目 => QnALog项目");
     expect(sessionMeta._errataReplacements).toEqual([{ from: "张三项目", to: "QnALog项目" }]);
+    // The new version's file name and inherited properties are corrected with the same rules.
+    expect(calls.derived[0][2]).toMatchObject({ nameCorrections: [{ from: "张三项目", to: "QnALog项目" }] });
   });
 
   it("does not start a task when no transcript is present", async () => {

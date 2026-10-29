@@ -156,6 +156,7 @@ export async function repolishMarkdownFile(
     const fallbackVersion: DerivedNoteVersion = {
       body: versionParts.body.trim() || buildEmptyLlmOutputFallback(),
       frontmatter: versionParts.frontmatter || "",
+      nameCorrections: errata ? errata.replacements : [],
       meta: {
         sourceId: getSourceIdFromMarkdown(latestSourceContent, dailyTargetFile),
         createdAt: window.moment ? window.moment().format("YYYY-MM-DD HH:mm:ss") : new Date().toISOString(),
