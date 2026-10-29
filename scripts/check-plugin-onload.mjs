@@ -53,7 +53,10 @@ for (const [relativePath, interfaceName] of requiredErrataPorts) {
   }
 }
 const repolishServiceSource = readFileSync(new URL("../src/notes/repolish-service.ts", import.meta.url), "utf8");
-if ((repolishServiceSource.match(/loadErrata:\s*\(file\)\s*=>\s*this\.host\.errata\.loadForFile\(file\)/g) || []).length !== 3) {
+// 三个端口经 loadCorrectionRules 读取勘误（再并入全库词汇表的易错写法），该方法必须读取本篇勘误。
+const correctionRulesBody = repolishServiceSource.match(/async loadCorrectionRules\(file: obsidian\.TFile\)[^{]*\{([\s\S]*?)\n {2}\}/)?.[1] || "";
+if ((repolishServiceSource.match(/loadErrata:\s*\(file\)\s*=>\s*this\.loadCorrectionRules\(file\)/g) || []).length !== 3
+  || !/this\.host\.errata\.loadForFile\(file\)/.test(correctionRulesBody)) {
   process.stderr.write("[plugin-onload] the repolish, in-place, and clean flow ports must forward loadErrata\n");
   process.exit(1);
 }

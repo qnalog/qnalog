@@ -3,7 +3,7 @@ import { findProtectedRanges } from "../notes/text-correction";
 import { NS_SEGMENTS_BLOCK_RE } from "../shared/namespace";
 import { nsRe } from "../shared/namespace";
 import type { ErrataReplacement } from "./errata-parser";
-import { replaceTerms, type TextRange } from "../shared/term-replacement";
+import { replaceTerms, type TermReplacement, type TextRange } from "../shared/term-replacement";
 
 export interface ErrataRules {
   replacements: readonly ErrataReplacement[];
@@ -65,4 +65,14 @@ export function applyErrataToSegments<T extends { text?: string }>(segments: rea
     ...segment,
     text: removeNoise(applyReplacements(String(segment.text || ""), rules.replacements), rules.noise).text,
   }));
+}
+
+// 重新整理时，全库词汇表的「易错写法」与本篇勘误一起作用于已存的转写：转写早于词条写入、
+// 或当时的转写路径没有应用词表时，旧笔记里仍是错误写法。同一原词以本篇勘误为准。
+export function withGlossaryCorrections(errata: ErrataRules | null, glossary: readonly TermReplacement[]): ErrataRules | null {
+  if (!glossary.length) return errata;
+  const noteRules = errata ? errata.replacements : [];
+  const noteSources = new Set(noteRules.map((rule) => rule.from.toLocaleLowerCase()));
+  const replacements = [...glossary.filter((rule) => !noteSources.has(rule.from.toLocaleLowerCase())), ...noteRules];
+  return errata ? { ...errata, replacements } : { replacements, noise: [] };
 }
