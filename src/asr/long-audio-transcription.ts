@@ -1,6 +1,7 @@
 import { resolveBailianAsrRoute } from "./bailian-asr-registry";
 import { probeDashScopeFileTrans, estimateDashScopeFileTransDuration } from "./dashscope-filetrans-asr";
-import { resolveTranscribeProvider, transcribeAudio } from "./transcribe";
+import { applyVocabularyCorrectionsToResult, resolveTranscribeProvider, transcribeAudio } from "./transcribe";
+import { loadVocabularyGroups } from "../vocabulary";
 import { t } from "../shared/i18n";
 import { isOpenRouterDiarizeProvider, testOpenRouterDiarizeProvider, transcribeWithOpenRouterDiarize } from "./openrouter-diarize";
 import type { AsrTranscriptResult } from "./transcript-result";
@@ -57,10 +58,13 @@ export async function fetchImportTranscribeModels(plugin: { settings?: unknown }
 }
 export async function transcribeImportedAudio(plugin: { settings?: unknown }, blob: Blob, mime: string, options: LongAudioTranscriptionOptions = {}): Promise<LongAudioTranscriptionResult> {
   const provider = resolveTypedTranscribeProvider(plugin, options.providerId || asString(asRecord(plugin.settings).importTranscribeProvider));
-  if (isDashScopeFileTransProvider(provider)) return transcribeDashScopeFile(provider, blob, options);
+  if (isDashScopeFileTransProvider(provider)) {
+    return applyVocabularyCorrectionsToResult(await transcribeDashScopeFile(provider, blob, options), await loadVocabularyGroups(plugin));
+  }
   if (isOpenRouterDiarizeProvider(provider)) {
     options.onProgress?.({ phase: "submit", label: t("Submitting the full audio") });
-    return transcribeWithOpenRouterDiarize(provider, blob, mime, { timeoutMs: Number(options.timeoutMs) || undefined });
+    const result = await transcribeWithOpenRouterDiarize(provider, blob, mime, { timeoutMs: Number(options.timeoutMs) || undefined });
+    return applyVocabularyCorrectionsToResult(result, await loadVocabularyGroups(plugin));
   }
   options.onProgress?.({ phase: "submit", label: t("Submitting the full audio") });
   const result = await transcribeAudio(plugin, blob, mime, provider.id);
