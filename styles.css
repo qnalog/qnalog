@@ -6657,6 +6657,14 @@ button.qnalog-audio-channel-detect {
   color: var(--interactive-accent);
 }
 
+/* 队列行的图标列只有 10px；沿用 20px 的转圈图标会在 flex 容器里只被压缩宽度，显示成椭圆 */
+.qnalog-progress-queue-row .qnalog-progress-spinner {
+  flex: 0 0 auto;
+  width: 10px;
+  height: 10px;
+  border-width: 1.5px;
+}
+
 .qnalog-progress-queue-actions {
   display: flex;
   align-items: center;
